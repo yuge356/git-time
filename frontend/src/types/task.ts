@@ -18,12 +18,15 @@ export interface Task {
   estimated_seconds: number
   repeat_rule: TaskRepeatRule
   daily_reminder_time: string | null
+  repeat_end_date: string | null
   sort_order: number
   completed_at: string | null
   created_at: string
   updated_at: string
   direct_actual_seconds: number
   actual_seconds: number
+  children_estimated_seconds: number
+  is_leaf: boolean
   budget_usage_ratio: number | null
   budget_level: BudgetLevel
 }
@@ -35,6 +38,7 @@ export interface TaskCreatePayload {
   estimated_seconds: number
   repeat_rule: TaskRepeatRule
   daily_reminder_time: string | null
+  repeat_end_date?: string | null
 }
 
 export interface TaskUpdatePayload {
@@ -44,6 +48,7 @@ export interface TaskUpdatePayload {
   status?: TaskStatus
   repeat_rule?: TaskRepeatRule
   daily_reminder_time?: string | null
+  repeat_end_date?: string | null
 }
 
 export interface TaskNode extends Task {

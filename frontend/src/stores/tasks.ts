@@ -210,6 +210,7 @@ export const useTaskStore = defineStore('tasks', {
         estimated_seconds: payload.estimated_seconds,
         repeat_rule: payload.repeat_rule,
         daily_reminder_time: payload.daily_reminder_time,
+        repeat_end_date: payload.repeat_end_date ?? null,
         sort_order: siblings.length
           ? Math.max(...siblings.map((item) => item.sort_order)) + 1
           : 0,
@@ -218,6 +219,8 @@ export const useTaskStore = defineStore('tasks', {
         updated_at: now,
         direct_actual_seconds: 0,
         actual_seconds: 0,
+        children_estimated_seconds: 0,
+        is_leaf: true,
         budget_usage_ratio: payload.estimated_seconds > 0 ? 0 : null,
         budget_level: payload.estimated_seconds > 0 ? 'NORMAL' : 'NOT_SET',
       }

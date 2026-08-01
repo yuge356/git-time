@@ -1,11 +1,12 @@
 """Hierarchical learning task and time-budget model."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -77,6 +78,7 @@ class Task(TimestampMixin, Base):
         nullable=False,
         default=TaskRepeatRule.NONE,
     )
+    repeat_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     daily_reminder_time: Mapped[time | None] = mapped_column(Time(), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

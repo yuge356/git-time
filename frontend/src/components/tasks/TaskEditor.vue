@@ -24,7 +24,7 @@
 
       <fieldset class="budget-fieldset">
         <legend>预计学习时间</legend>
-        <div class="duration-grid">
+        <div v-if="!isParentTask" class="duration-grid">
           <label class="field">
             <span>小时</span>
             <input v-model.number="form.hours" type="number" min="0" max="87600" />
@@ -34,6 +34,7 @@
             <input v-model.number="form.minutes" type="number" min="0" max="59" />
           </label>
         </div>
+        <p v-else class="budget-readonly">子任务预算合计: {{ formatDuration(task!.children_estimated_seconds) }}</p>
         <small>设为 0 表示暂不设置时间预算。</small>
       </fieldset>
 
@@ -47,6 +48,12 @@
             <option value="WEEKLY">每周</option>
             <option value="MONTHLY">每月</option>
           </select>
+        </label>
+
+        <label v-if="form.repeat_rule !== 'NONE'" class="field">
+          <span>重复截止日期</span>
+          <input v-model="form.repeat_end_date" type="date" />
+          <small>留空表示永不截止。</small>
         </label>
 
         <div class="reminder-setting">
@@ -87,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import FormMessage from '@/components/FormMessage.vue'
 import type {
@@ -98,12 +105,15 @@ import type {
   TaskUpdatePayload,
 } from '@/types/task'
 import { getApiErrorMessage } from '@/utils/api-error'
+import { formatDuration } from '@/utils/time'
 
 const props = defineProps<{
   task: Task | null
   saving: boolean
   externalError?: string
 }>()
+
+const isParentTask = computed(() => props.task && !props.task.is_leaf)
 
 const emit = defineEmits<{
   close: []
@@ -117,6 +127,7 @@ interface EditorForm {
   minutes: number
   status: TaskStatus
   repeat_rule: TaskRepeatRule
+  repeat_end_date: string
   reminder_enabled: boolean
   reminder_time: string
 }
@@ -128,6 +139,7 @@ const form = reactive<EditorForm>({
   minutes: 0,
   status: 'TODO',
   repeat_rule: 'NONE',
+  repeat_end_date: '',
   reminder_enabled: false,
   reminder_time: '08:00',
 })
@@ -139,6 +151,7 @@ function resetForm(): void {
   form.minutes = Math.floor((seconds % 3600) / 60)
   form.status = props.task?.status ?? 'TODO'
   form.repeat_rule = props.task?.repeat_rule ?? 'NONE'
+  form.repeat_end_date = props.task?.repeat_end_date ?? ''
   form.reminder_enabled = Boolean(props.task?.daily_reminder_time)
   form.reminder_time = props.task?.daily_reminder_time?.slice(0, 5) ?? '08:00'
   errorMessage.value = ''
@@ -175,6 +188,7 @@ function submit(): void {
         estimated_seconds: estimatedSeconds,
         status: form.status,
         repeat_rule: form.repeat_rule,
+        repeat_end_date: form.repeat_end_date || null,
         daily_reminder_time: dailyReminderTime,
       })
     } else {
@@ -183,6 +197,7 @@ function submit(): void {
         parent_id: null,
         estimated_seconds: estimatedSeconds,
         repeat_rule: form.repeat_rule,
+        repeat_end_date: form.repeat_end_date || null,
         daily_reminder_time: dailyReminderTime,
       })
     }

@@ -32,6 +32,8 @@ def to_task_response(
     task: Task,
     actual_seconds: int = 0,
     direct_actual_seconds: int = 0,
+    children_estimated_seconds: int = 0,
+    is_leaf: bool = True,
 ) -> TaskResponse:
     """Build a task response from calculated direct and descendant totals."""
 
@@ -44,6 +46,7 @@ def to_task_response(
         status=task.status,
         estimated_seconds=task.estimated_seconds,
         repeat_rule=task.repeat_rule,
+        repeat_end_date=task.repeat_end_date,
         daily_reminder_time=task.daily_reminder_time,
         sort_order=task.sort_order,
         completed_at=task.completed_at,
@@ -51,6 +54,8 @@ def to_task_response(
         updated_at=task.updated_at,
         direct_actual_seconds=direct_actual_seconds,
         actual_seconds=actual_seconds,
+        children_estimated_seconds=children_estimated_seconds,
+        is_leaf=is_leaf,
         budget_usage_ratio=ratio,
         budget_level=calculate_budget_level(task.estimated_seconds, actual_seconds),
     )
@@ -113,6 +118,38 @@ def calculate_task_time_totals(
     return direct, totals
 
 
+def calculate_children_budgets(
+    tasks: Sequence[Task],
+) -> tuple[dict[UUID, int], dict[UUID, bool]]:
+    """Return children estimated_seconds sum and leaf status for every task."""
+    children_map: dict[UUID, list[UUID]] = {}
+    for task in tasks:
+        if task.parent_id is not None:
+            children_map.setdefault(task.parent_id, []).append(task.id)
+    
+    is_leaf = {task.id: task.id not in children_map for task in tasks}
+    
+    task_by_id = {task.id: task for task in tasks}
+    budget_totals: dict[UUID, int] = {}
+    
+    def visit(task_id: UUID) -> int:
+        if task_id in budget_totals:
+            return budget_totals[task_id]
+        total = 0
+        for child_id in children_map.get(task_id, []):
+            child = task_by_id.get(child_id)
+            if child:
+                child_children_sum = visit(child_id)
+                total += child.estimated_seconds if is_leaf[child_id] else child_children_sum
+        budget_totals[task_id] = total
+        return total
+    
+    for task in tasks:
+        visit(task.id)
+    
+    return budget_totals, is_leaf
+
+
 async def build_owned_task_responses(
     db: AsyncSession,
     owner_id: UUID,
@@ -133,11 +170,14 @@ async def build_owned_task_responses(
     )
     sessions = session_result.all()
     direct, totals = calculate_task_time_totals(tasks, sessions)
+    children_estimated, is_leaf = calculate_children_budgets(tasks)
     return [
         to_task_response(
             task,
             actual_seconds=totals.get(task.id, 0),
             direct_actual_seconds=direct.get(task.id, 0),
+            children_estimated_seconds=children_estimated.get(task.id, 0),
+            is_leaf=is_leaf.get(task.id, True),
         )
         for task in tasks
     ]

@@ -72,6 +72,7 @@ async def create_task(
         title=payload.title,
         estimated_seconds=payload.estimated_seconds,
         repeat_rule=payload.repeat_rule,
+        repeat_end_date=payload.repeat_end_date,
         daily_reminder_time=payload.daily_reminder_time,
         sort_order=await next_sort_order(db, current_user.id, payload.parent_id),
     )
@@ -122,6 +123,8 @@ async def update_task(
         task.estimated_seconds = changes["estimated_seconds"]
     if "repeat_rule" in changes:
         task.repeat_rule = changes["repeat_rule"]
+    if "repeat_end_date" in changes:
+        task.repeat_end_date = changes["repeat_end_date"]
     if "daily_reminder_time" in changes:
         task.daily_reminder_time = changes["daily_reminder_time"]
     if "status" in changes:

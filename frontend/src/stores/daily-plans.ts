@@ -169,6 +169,13 @@ export const useDailyPlanStore = defineStore('daily-plans', {
               serverPlan = await dailyPlanService.create(targetDate)
             }
             this.plan = await this.mergeServerPlan(serverPlan)
+            try {
+              const populated = await dailyPlanService.autoPopulate(this.plan.id)
+              if (populated.items.length > this.plan.items.length) {
+                this.plan = populated
+                await localDb.cachedDailyPlans.put(this.plan)
+              }
+            } catch { /* auto-populate is best-effort */ }
             this.checkIn = await dailyPlanService.checkIn(targetDate)
             return
           } catch (error) {

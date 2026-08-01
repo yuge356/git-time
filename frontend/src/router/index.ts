@@ -41,9 +41,7 @@ export const router = createRouter({
     },
     {
       path: '/sharing',
-      name: 'sharing',
-      component: () => import('@/views/SharingView.vue'),
-      meta: { requiresAuth: true },
+      redirect: '/partners',
     },
     {
       path: '/notifications',

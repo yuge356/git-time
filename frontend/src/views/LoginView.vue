@@ -65,7 +65,7 @@ async function submit(): Promise<void> {
   errorMessage.value = ''
   try {
     await auth.login(form)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/tasks'
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/today'
     await router.replace(redirect)
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)

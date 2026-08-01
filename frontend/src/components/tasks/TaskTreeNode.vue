@@ -20,16 +20,19 @@
           <TaskStatusBadge :status="task.status" />
         </span>
         <span
-          v-if="task.repeat_rule !== 'NONE' || task.daily_reminder_time"
+          v-if="task.repeat_rule !== 'NONE' || task.daily_reminder_time || task.repeat_end_date"
           class="task-row__schedule"
         >
           <span v-if="task.repeat_rule !== 'NONE'">{{ repeatLabel }}</span>
+          <span v-if="task.repeat_end_date" class="task-row__schedule-end">
+            截止 {{ task.repeat_end_date }}
+          </span>
           <span v-if="task.daily_reminder_time">
             每日 {{ task.daily_reminder_time.slice(0, 5) }} 提醒
           </span>
         </span>
         <BudgetIndicator
-          :estimated-seconds="task.estimated_seconds"
+          :estimated-seconds="task.is_leaf ? task.estimated_seconds : task.children_estimated_seconds"
           :actual-seconds="task.actual_seconds"
           :level="task.budget_level"
         />

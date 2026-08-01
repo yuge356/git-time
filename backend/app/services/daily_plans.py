@@ -4,11 +4,12 @@ from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.daily_plan import DailyPlan, DailyPlanItem, DailyPlanItemStatus
 from app.models.session import Session
+from app.models.task import Task, TaskRepeatRule
 from app.schemas.daily_plan import (
     CheckInResponse,
     DailyPlanItemResponse,
@@ -240,3 +241,70 @@ def mark_item_status(item: DailyPlanItem, incoming: DailyPlanItemStatus) -> None
 
     item.status = incoming
     item.completed_at = datetime.now(UTC) if incoming == DailyPlanItemStatus.DONE else None
+
+
+async def auto_populate_recurring_items(
+    db: AsyncSession,
+    owner_id: UUID,
+    plan_id: UUID,
+) -> DailyPlanResponse:
+    """Populate a daily plan with recurring tasks that don't already exist in it."""
+    
+    plan = await get_owned_daily_plan(db, owner_id, plan_id)
+    
+    task_result = await db.scalars(
+        select(Task).where(
+            Task.owner_id == owner_id,
+            Task.deleted_at.is_(None)
+        )
+    )
+    tasks = task_result.all()
+    
+    children_map = {t.parent_id for t in tasks if t.parent_id is not None}
+    is_weekday = plan.plan_date.weekday() < 5
+    
+    existing_items_result = await db.scalars(
+        select(DailyPlanItem).where(
+            DailyPlanItem.daily_plan_id == plan.id,
+            DailyPlanItem.deleted_at.is_(None)
+        )
+    )
+    existing_task_ids = {item.task_id for item in existing_items_result.all() if item.task_id is not None}
+    
+    current_max = await db.scalar(
+        select(func.max(DailyPlanItem.sort_order)).where(
+            DailyPlanItem.daily_plan_id == plan.id,
+            DailyPlanItem.deleted_at.is_(None),
+        )
+    )
+    sort_order = (current_max if current_max is not None else -1) + 1
+    
+    new_items = []
+    for t in tasks:
+        if t.id in children_map:
+            continue
+        if t.repeat_rule not in (TaskRepeatRule.DAILY, TaskRepeatRule.WEEKDAYS):
+            continue
+        if t.repeat_rule == TaskRepeatRule.WEEKDAYS and not is_weekday:
+            continue
+        if t.repeat_end_date and t.repeat_end_date < plan.plan_date:
+            continue
+        if t.id in existing_task_ids:
+            continue
+            
+        item = DailyPlanItem(
+            daily_plan_id=plan.id,
+            owner_id=owner_id,
+            task_id=t.id,
+            title=t.title,
+            estimated_seconds=t.estimated_seconds,
+            sort_order=sort_order
+        )
+        db.add(item)
+        sort_order += 1
+        new_items.append(item)
+        
+    if new_items:
+        await db.flush()
+        
+    return await build_daily_plan_response(db, plan)

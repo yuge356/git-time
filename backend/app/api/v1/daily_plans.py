@@ -26,6 +26,7 @@ from app.services.daily_plans import (
     get_owned_daily_plan,
     get_owned_daily_plan_by_date,
     mark_item_status,
+    auto_populate_recurring_items,
 )
 from app.services.notifications import create_notification, notification_manager
 from app.services.tasks import get_owned_task
@@ -72,6 +73,22 @@ async def create_daily_plan(
             status_code=status.HTTP_409_CONFLICT,
             detail="A daily plan already exists for this date",
         ) from exc
+
+
+@router.post(
+    "/daily-plans/{plan_id}/auto-populate",
+    response_model=DailyPlanResponse,
+)
+async def auto_populate_recurring(
+    plan_id: UUID,
+    db: DatabaseSession,
+    current_user: CurrentUser,
+) -> DailyPlanResponse:
+    """Auto-populate the daily plan with eligible recurring leaf tasks."""
+    
+    response = await auto_populate_recurring_items(db, current_user.id, plan_id)
+    await db.commit()
+    return response
 
 
 @router.get("/daily-plans/by-date/{plan_date}", response_model=DailyPlanResponse)

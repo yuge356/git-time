@@ -1,6 +1,6 @@
 """Task API input, output and budget-status schemas."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from enum import StrEnum
 from uuid import UUID
 
@@ -27,6 +27,7 @@ class TaskCreate(BaseModel):
     parent_id: UUID | None = None
     estimated_seconds: int = Field(default=0, ge=0, le=315_360_000)
     repeat_rule: TaskRepeatRule = TaskRepeatRule.NONE
+    repeat_end_date: date | None = None
     daily_reminder_time: time | None = None
 
     @field_validator("title")
@@ -46,6 +47,7 @@ class TaskUpdate(BaseModel):
     estimated_seconds: int | None = Field(default=None, ge=0, le=315_360_000)
     status: TaskStatus | None = None
     repeat_rule: TaskRepeatRule | None = None
+    repeat_end_date: date | None = None
     daily_reminder_time: time | None = None
 
     @field_validator("title")
@@ -78,6 +80,7 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     estimated_seconds: int
     repeat_rule: TaskRepeatRule
+    repeat_end_date: date | None
     daily_reminder_time: time | None
     sort_order: int
     completed_at: datetime | None
@@ -85,5 +88,7 @@ class TaskResponse(BaseModel):
     updated_at: datetime
     direct_actual_seconds: int
     actual_seconds: int
+    children_estimated_seconds: int
+    is_leaf: bool
     budget_usage_ratio: float | None
     budget_level: BudgetLevel
