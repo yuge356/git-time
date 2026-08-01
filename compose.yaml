@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: time-budget-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: time_budget_tracker
+      POSTGRES_USER: time_budget_app
+      POSTGRES_PASSWORD: time_budget_dev_password
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U time_budget_app -d time_budget_tracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+

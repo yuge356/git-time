@@ -1,0 +1,194 @@
+<template>
+  <section class="task-editor task-editor--inline" aria-labelledby="task-editor-title">
+    <header class="task-editor__header">
+      <div>
+        <p class="eyebrow">{{ task ? '编辑任务' : '新建任务' }}</p>
+        <h2 id="task-editor-title">{{ task ? task.title : '规划学习投入' }}</h2>
+      </div>
+      <button class="icon-button" type="button" aria-label="关闭编辑面板" @click="$emit('close')">
+        ×
+      </button>
+    </header>
+
+    <form class="form-stack" @submit.prevent="submit">
+      <label class="field">
+        <span>任务标题</span>
+        <input
+          v-model.trim="form.title"
+          type="text"
+          maxlength="200"
+          required
+          placeholder="例如：Python 第一章"
+        />
+      </label>
+
+      <fieldset class="budget-fieldset">
+        <legend>预计学习时间</legend>
+        <div class="duration-grid">
+          <label class="field">
+            <span>小时</span>
+            <input v-model.number="form.hours" type="number" min="0" max="87600" />
+          </label>
+          <label class="field">
+            <span>分钟</span>
+            <input v-model.number="form.minutes" type="number" min="0" max="59" />
+          </label>
+        </div>
+        <small>设为 0 表示暂不设置时间预算。</small>
+      </fieldset>
+
+      <div class="task-schedule-grid">
+        <label class="field">
+          <span>重复</span>
+          <select v-model="form.repeat_rule">
+            <option value="NONE">不重复</option>
+            <option value="DAILY">每天</option>
+            <option value="WEEKDAYS">仅工作日</option>
+            <option value="WEEKLY">每周</option>
+            <option value="MONTHLY">每月</option>
+          </select>
+        </label>
+
+        <div class="reminder-setting">
+          <label class="toggle-field">
+            <input v-model="form.reminder_enabled" type="checkbox" />
+            <span>每日提醒</span>
+          </label>
+          <label v-if="form.reminder_enabled" class="field">
+            <span>提醒时间</span>
+            <input v-model="form.reminder_time" type="time" required />
+          </label>
+          <small v-else>开启后可设置每天的提醒时间。</small>
+        </div>
+      </div>
+
+      <label v-if="task" class="field">
+        <span>任务状态</span>
+        <select v-model="form.status">
+          <option value="TODO">待开始</option>
+          <option value="IN_PROGRESS">进行中</option>
+          <option value="PAUSED">已暂停</option>
+          <option value="DONE">已完成</option>
+        </select>
+      </label>
+
+      <FormMessage :message="externalError || errorMessage" />
+
+      <div class="task-editor__actions">
+        <button class="button button--quiet" type="button" @click="$emit('close')">
+          取消
+        </button>
+        <button class="button button--primary" type="submit" :disabled="saving">
+          {{ saving ? '保存中…' : task ? '保存修改' : '创建任务' }}
+        </button>
+      </div>
+    </form>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { reactive, ref, watch } from 'vue'
+
+import FormMessage from '@/components/FormMessage.vue'
+import type {
+  Task,
+  TaskCreatePayload,
+  TaskRepeatRule,
+  TaskStatus,
+  TaskUpdatePayload,
+} from '@/types/task'
+import { getApiErrorMessage } from '@/utils/api-error'
+
+const props = defineProps<{
+  task: Task | null
+  saving: boolean
+  externalError?: string
+}>()
+
+const emit = defineEmits<{
+  close: []
+  create: [payload: TaskCreatePayload]
+  update: [taskId: string, payload: TaskUpdatePayload]
+}>()
+
+interface EditorForm {
+  title: string
+  hours: number
+  minutes: number
+  status: TaskStatus
+  repeat_rule: TaskRepeatRule
+  reminder_enabled: boolean
+  reminder_time: string
+}
+
+const errorMessage = ref('')
+const form = reactive<EditorForm>({
+  title: '',
+  hours: 0,
+  minutes: 0,
+  status: 'TODO',
+  repeat_rule: 'NONE',
+  reminder_enabled: false,
+  reminder_time: '08:00',
+})
+
+function resetForm(): void {
+  const seconds = props.task?.estimated_seconds ?? 0
+  form.title = props.task?.title ?? ''
+  form.hours = Math.floor(seconds / 3600)
+  form.minutes = Math.floor((seconds % 3600) / 60)
+  form.status = props.task?.status ?? 'TODO'
+  form.repeat_rule = props.task?.repeat_rule ?? 'NONE'
+  form.reminder_enabled = Boolean(props.task?.daily_reminder_time)
+  form.reminder_time = props.task?.daily_reminder_time?.slice(0, 5) ?? '08:00'
+  errorMessage.value = ''
+}
+
+watch(
+  () => props.task?.id,
+  resetForm,
+  { immediate: true },
+)
+
+function submit(): void {
+  errorMessage.value = ''
+  const estimatedSeconds = form.hours * 3600 + form.minutes * 60
+  if (!Number.isInteger(estimatedSeconds) || estimatedSeconds < 0) {
+    errorMessage.value = '预计时间必须是有效的非负整数。'
+    return
+  }
+  if (estimatedSeconds > 315360000) {
+    errorMessage.value = '预计时间不能超过 87600 小时。'
+    return
+  }
+  if (form.reminder_enabled && !form.reminder_time) {
+    errorMessage.value = '请选择每日提醒时间。'
+    return
+  }
+
+  const dailyReminderTime = form.reminder_enabled ? form.reminder_time : null
+
+  try {
+    if (props.task) {
+      emit('update', props.task.id, {
+        title: form.title,
+        estimated_seconds: estimatedSeconds,
+        status: form.status,
+        repeat_rule: form.repeat_rule,
+        daily_reminder_time: dailyReminderTime,
+      })
+    } else {
+      emit('create', {
+        title: form.title,
+        parent_id: null,
+        estimated_seconds: estimatedSeconds,
+        repeat_rule: form.repeat_rule,
+        daily_reminder_time: dailyReminderTime,
+      })
+    }
+  } catch (error) {
+    errorMessage.value = getApiErrorMessage(error)
+  }
+}
+
+</script>

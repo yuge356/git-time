@@ -1,0 +1,197 @@
+"""Daily planning, ad-hoc timer and check-in API tests."""
+
+from datetime import UTC, date, datetime, timedelta
+from uuid import uuid4
+
+from httpx import AsyncClient
+
+from tests.test_sessions_api import create_task
+from tests.test_tasks_api import auth_header, register_user
+
+
+async def create_plan(client: AsyncClient, token: str, plan_date: date) -> dict:
+    """Create and return a daily plan fixture."""
+
+    response = await client.post(
+        "/api/v1/daily-plans",
+        headers=auth_header(token),
+        json={"plan_date": plan_date.isoformat()},
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+async def add_item(
+    client: AsyncClient,
+    token: str,
+    plan_id: str,
+    *,
+    title: str | None = None,
+    task_id: str | None = None,
+) -> dict:
+    """Append one linked or ad-hoc item."""
+
+    response = await client.post(
+        f"/api/v1/daily-plans/{plan_id}/items",
+        headers=auth_header(token),
+        json={"title": title, "task_id": task_id, "estimated_seconds": 1_800},
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+async def test_daily_plan_items_progress_time_and_streak(client: AsyncClient) -> None:
+    token, _ = await register_user(client)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    task_id = await create_task(client, token, "Long-term task")
+
+    old_plan = await create_plan(client, token, yesterday)
+    old_item = await add_item(client, token, old_plan["id"], title="Review")
+    old_done = await client.patch(
+        f"/api/v1/daily-plan-items/{old_item['id']}",
+        headers=auth_header(token),
+        json={"status": "DONE"},
+    )
+    assert old_done.status_code == 200
+    assert old_done.json()["completed_at"] is not None
+
+    plan = await create_plan(client, token, today)
+    linked = await add_item(client, token, plan["id"], task_id=task_id)
+    ad_hoc = await add_item(client, token, plan["id"], title="Read notes")
+    assert linked["title"] == "Long-term task"
+    assert linked["task_id"] == task_id
+    assert ad_hoc["task_id"] is None
+
+    done = await client.patch(
+        f"/api/v1/daily-plan-items/{ad_hoc['id']}",
+        headers=auth_header(token),
+        json={"status": "DONE"},
+    )
+    assert done.status_code == 200
+
+    started = datetime.now(UTC)
+    ended = started + timedelta(minutes=12)
+    session = await client.put(
+        f"/api/v1/sessions/{uuid4()}",
+        headers=auth_header(token),
+        json={
+            "task_id": None,
+            "daily_plan_item_id": ad_hoc["id"],
+            "client_id": str(uuid4()),
+            "status": "COMPLETED",
+            "started_at": started.isoformat(),
+            "ended_at": ended.isoformat(),
+            "duration_seconds": 720,
+            "last_resumed_at": None,
+            "client_updated_at": ended.isoformat(),
+        },
+    )
+    assert session.status_code == 200
+
+    read = await client.get(
+        f"/api/v1/daily-plans/by-date/{today.isoformat()}",
+        headers=auth_header(token),
+    )
+    assert read.status_code == 200
+    data = read.json()
+    assert data["total_items"] == 2
+    assert data["completed_items"] == 1
+    assert data["completion_rate"] == 0.5
+    assert data["actual_seconds"] == 720
+
+    check_in = await client.get(
+        f"/api/v1/check-ins/{today.isoformat()}",
+        headers=auth_header(token),
+    )
+    assert check_in.status_code == 200
+    assert check_in.json() == {
+        "plan_date": today.isoformat(),
+        "learning_seconds": 720,
+        "completed_items": 1,
+        "total_items": 2,
+        "streak_days": 2,
+    }
+
+
+async def test_daily_plan_uniqueness_and_owner_isolation(client: AsyncClient) -> None:
+    first_token, _ = await register_user(client, "first")
+    second_token, _ = await register_user(client, "second")
+    today = date.today()
+    plan = await create_plan(client, first_token, today)
+    item = await add_item(client, first_token, plan["id"], title="Private")
+
+    duplicate = await client.post(
+        "/api/v1/daily-plans",
+        headers=auth_header(first_token),
+        json={"plan_date": today.isoformat()},
+    )
+    private_read = await client.get(
+        f"/api/v1/daily-plans/by-date/{today.isoformat()}",
+        headers=auth_header(second_token),
+    )
+    private_update = await client.patch(
+        f"/api/v1/daily-plan-items/{item['id']}",
+        headers=auth_header(second_token),
+        json={"status": "DONE"},
+    )
+    assert duplicate.status_code == 201
+    assert duplicate.json()["id"] == plan["id"]
+    assert private_read.status_code == 404
+    assert private_update.status_code == 404
+
+
+async def test_active_daily_item_timer_blocks_item_deletion(client: AsyncClient) -> None:
+    token, _ = await register_user(client)
+    plan = await create_plan(client, token, date.today())
+    item = await add_item(client, token, plan["id"], title="Focused reading")
+    started = datetime.now(UTC)
+    session = await client.put(
+        f"/api/v1/sessions/{uuid4()}",
+        headers=auth_header(token),
+        json={
+            "task_id": None,
+            "daily_plan_item_id": item["id"],
+            "client_id": str(uuid4()),
+            "status": "RUNNING",
+            "started_at": started.isoformat(),
+            "ended_at": None,
+            "duration_seconds": 0,
+            "last_resumed_at": started.isoformat(),
+            "client_updated_at": started.isoformat(),
+        },
+    )
+    assert session.status_code == 200
+
+    deleted = await client.delete(
+        f"/api/v1/daily-plan-items/{item['id']}",
+        headers=auth_header(token),
+    )
+    assert deleted.status_code == 409
+
+
+async def test_client_generated_daily_item_id_is_idempotent(
+    client: AsyncClient,
+) -> None:
+    token, _ = await register_user(client, "stable_daily_item")
+    plan = await create_plan(client, token, date.today())
+    item_id = str(uuid4())
+    payload = {
+        "id": item_id,
+        "title": "Offline-created item",
+        "task_id": None,
+        "estimated_seconds": 900,
+    }
+    first = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/items",
+        headers=auth_header(token),
+        json=payload,
+    )
+    replay = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/items",
+        headers=auth_header(token),
+        json=payload,
+    )
+    assert first.status_code == 201
+    assert replay.status_code == 201
+    assert replay.json()["id"] == item_id

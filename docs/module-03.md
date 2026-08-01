@@ -1,0 +1,94 @@
+# 模块 3：学习计时器与 Session
+
+## 本模块范围
+
+- 开始学习
+- 暂停计时
+- 恢复计时
+- 结束学习
+- Session 独立存储
+- 同一账户仅允许一个运行中或暂停中的 Session
+- 实际学习时长按 Session 汇总
+- 父任务实际时长包含全部子任务
+- Dexie 保存本地活动计时状态
+- 断网时保存最新 Session 快照并在联网后重试
+- 页面刷新、浏览器后台和设备休眠后的准确计时
+
+本模块没有提前实现每日计划、打卡、统计图表或伙伴功能。
+
+## 可靠计时方式
+
+前端不依赖每秒加一作为真实数据，而是保存：
+
+- `started_at`
+- `duration_seconds`
+- `last_resumed_at`
+- `client_updated_at`
+
+运行中的显示时间为：
+
+```text
+duration_seconds + 当前时间 - last_resumed_at
+```
+
+因此浏览器进入后台或设备休眠后，恢复页面仍能计算正确时长。
+
+## 离线同步
+
+Dexie 数据库包含：
+
+```text
+timerStates
+sessionOutbox
+metadata
+```
+
+每次开始、暂停、恢复或结束时：
+
+1. 先把完整 Session 快照写入 IndexedDB。
+2. 在线时立即调用后端同步。
+3. 断网时保留同一 Session 的最新快照。
+4. 网络恢复后按 `client_updated_at` 顺序提交。
+5. 后端忽略旧快照，避免重复累计。
+
+本地数据按账户 ID 隔离，切换账号不会读取其他账号的活动计时状态。
+
+## 数据库迁移
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+新增迁移：
+
+```text
+migrations/versions/0003_study_sessions.py
+```
+
+## Session API
+
+| 方法 | 地址 | 用途 |
+|---|---|---|
+| GET | `/api/v1/sessions` | 查询最近 Session |
+| GET | `/api/v1/sessions/active` | 查询活动 Session |
+| PUT | `/api/v1/sessions/{session_id}` | 幂等创建或更新完整快照 |
+
+`PUT` 使用客户端生成的 UUID。相同状态可以安全重试，服务端通过
+`client_updated_at` 忽略过期快照。
+
+## Session 状态
+
+```text
+RUNNING   正在计时
+PAUSED    已暂停，可以恢复或结束
+COMPLETED 已结束，不允许再修改时长
+```
+
+## 任务预算汇总
+
+- 子任务的 Session 计入子任务直接时长。
+- 父任务总时长包含自身直接时长和所有后代任务时长。
+- 活动 Session 会包含当前尚未落库的运行区间。
+- 任务预算提醒继续使用 80%、100%、150% 阈值。
+

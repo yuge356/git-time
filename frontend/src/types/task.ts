@@ -1,0 +1,51 @@
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'PAUSED' | 'DONE'
+
+export type TaskRepeatRule = 'NONE' | 'DAILY' | 'WEEKDAYS' | 'WEEKLY' | 'MONTHLY'
+
+export type BudgetLevel =
+  | 'NOT_SET'
+  | 'NORMAL'
+  | 'NEAR_LIMIT'
+  | 'EXHAUSTED'
+  | 'SEVERE'
+
+export interface Task {
+  id: string
+  owner_id: string
+  parent_id: string | null
+  title: string
+  status: TaskStatus
+  estimated_seconds: number
+  repeat_rule: TaskRepeatRule
+  daily_reminder_time: string | null
+  sort_order: number
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+  direct_actual_seconds: number
+  actual_seconds: number
+  budget_usage_ratio: number | null
+  budget_level: BudgetLevel
+}
+
+export interface TaskCreatePayload {
+  id?: string
+  title: string
+  parent_id: string | null
+  estimated_seconds: number
+  repeat_rule: TaskRepeatRule
+  daily_reminder_time: string | null
+}
+
+export interface TaskUpdatePayload {
+  title?: string
+  parent_id?: string | null
+  estimated_seconds?: number
+  status?: TaskStatus
+  repeat_rule?: TaskRepeatRule
+  daily_reminder_time?: string | null
+}
+
+export interface TaskNode extends Task {
+  children: TaskNode[]
+}
