@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.daily_plan import DailyPlan, DailyPlanItem, DailyPlanItemStatus
 from app.models.session import Session, SessionStatus
-from app.models.task import Task
+from app.models.task import Task, TaskNodeType
 from app.schemas.analytics import (
     AnalyticsSummary,
     BudgetComparison,
@@ -59,6 +59,7 @@ async def build_analytics_summary(
             )
         ).all()
     )
+    executable_tasks = [task for task in tasks if task.node_type == TaskNodeType.TASK]
     sessions = list(
         (
             await db.scalars(
@@ -139,7 +140,7 @@ async def build_analytics_summary(
                 else None
             ),
         )
-        for task in tasks
+        for task in executable_tasks
         if task.estimated_seconds > 0 or task_totals.get(task.id, 0) > 0
     ]
     budget_comparison.sort(key=lambda item: item.actual_seconds, reverse=True)
@@ -172,7 +173,7 @@ async def build_analytics_summary(
     completed_tasks = sum(
         task.completed_at is not None
         and start_at <= normalize_utc(task.completed_at) < end_at
-        for task in tasks
+        for task in executable_tasks
     )
     return AnalyticsSummary(
         date_from=date_from,
@@ -182,7 +183,7 @@ async def build_analytics_summary(
             session.status == SessionStatus.COMPLETED for session in sessions
         ),
         completed_task_count=completed_tasks,
-        total_task_count=len(tasks),
+        total_task_count=len(executable_tasks),
         task_distribution=distribution,
         daily_trend=daily_trend,
         budget_comparison=budget_comparison,

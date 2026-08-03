@@ -23,7 +23,10 @@
         :style="{ width: `${Math.min(percentage, 100)}%` }"
       />
     </div>
-    <small v-if="level !== 'NORMAL' && level !== 'NOT_SET'" class="budget-warning">
+    <small v-if="actualSeconds > estimatedSeconds && estimatedSeconds > 0" class="budget-warning">
+      ⚠ 已超时 {{ formatDuration(actualSeconds - estimatedSeconds) }}
+    </small>
+    <small v-else-if="level !== 'NORMAL' && level !== 'NOT_SET'" class="budget-warning">
       {{ levelLabels[level] }}
     </small>
   </div>
@@ -48,7 +51,9 @@ const percentage = computed(() => {
 
 const remainingLabel = computed(() => {
   const remaining = props.estimatedSeconds - props.actualSeconds
-  return remaining > 0 ? `剩余 ${formatDuration(remaining)}` : '预算已用完'
+  if (remaining > 0) return `剩余 ${formatDuration(remaining)}`
+  if (remaining === 0) return '已达到预算'
+  return `超出 ${formatDuration(Math.abs(remaining))}`
 })
 
 const budgetText = computed(() => `预算已使用 ${percentage.value}%`)
@@ -57,7 +62,7 @@ const levelLabels: Record<BudgetLevel, string> = {
   NOT_SET: '',
   NORMAL: '',
   NEAR_LIMIT: '已接近预算上限',
-  EXHAUSTED: '预算已耗尽',
+  EXHAUSTED: '已达到预算上限',
   SEVERE: '已严重超出预算',
 }
 </script>

@@ -45,16 +45,27 @@
 | `id` | UUID | PK |
 | `owner_id` | UUID | FK → `users.id`，级联删除 |
 | `parent_id` | UUID | 可空；与 `owner_id` 组成同所有者自引用 FK |
+| `node_type` | VARCHAR(16) | `PROJECT`、`MODULE` 或 `TASK` |
 | `title` | VARCHAR(200) | 任务标题 |
 | `status` | `task_status` | 默认 `TODO` |
-| `estimated_seconds` | INTEGER | ≥ 0 |
+| `estimated_seconds` | INTEGER | ≥ 0；仅 `TASK` 使用 |
+| `budget_mode` | VARCHAR(16) | `ROLLUP` 或 `FIXED_CAP` |
+| `fixed_budget_seconds` | INTEGER | 项目/模块固定上限，可空 |
+| `default_estimated_seconds` | INTEGER | 新任务默认预算，可空 |
+| `default_repeat_rule` | VARCHAR(16) | 新任务默认重复规则，可空 |
+| `default_daily_reminder_time` | TIME | 新任务默认提醒，可空 |
+| `repeat_rule` | VARCHAR(16) | 仅 `TASK` 使用 |
+| `repeat_end_date` | DATE | 可空；仅 `TASK` 使用 |
+| `daily_reminder_time` | TIME | 可空；仅 `TASK` 使用 |
 | `sort_order` | INTEGER | 同级排序 |
 | `completed_at` | TIMESTAMPTZ | 可空 |
 | `deleted_at` | TIMESTAMPTZ | 可空；软删除 |
 | `created_at` | TIMESTAMPTZ | 创建时间 |
 | `updated_at` | TIMESTAMPTZ | 更新时间 |
 
-任务触发器阻止层级循环；`(id, owner_id)` 唯一约束保证父子任务属于同一用户。
+层级固定为 `PROJECT → MODULE → TASK`。项目必须位于顶层，模块只能属于项目，任务只能属于模块；
+只有 `TASK` 可以完成、重复、提醒、计时或加入今日计划。触发器同时阻止层级循环和非法父子类型，
+`(id, owner_id)` 唯一约束保证父子节点属于同一用户。
 
 ## `sessions`
 

@@ -11,9 +11,10 @@
 | 资料 | `GET /profiles/me` | 当前资料 |
 | 资料 | `PATCH /profiles/me` | 修改资料、时区与可搜索性 |
 | 任务 | `GET /tasks` | 任务平铺列表及预算统计 |
-| 任务 | `POST /tasks` | 创建任务 |
+| 任务 | `POST /tasks` | 创建项目、模块或可执行任务 |
 | 任务 | `GET /tasks/{id}` | 任务详情 |
 | 任务 | `PATCH /tasks/{id}` | 修改任务 |
+| 任务 | `POST /tasks/{id}/apply-defaults` | 把项目/模块默认值应用到已有任务 |
 | 任务 | `DELETE /tasks/{id}` | 软删除任务子树 |
 | 计时 | `GET /sessions` | 最近 Session |
 | 计时 | `GET /sessions/active` | 当前活动 Session |

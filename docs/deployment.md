@@ -180,7 +180,7 @@ pnpm run build
 
 - 后端提示连接数据库失败：确认 PostgreSQL 容器健康，且 `backend/.env` 的连接地址正确。
 - Alembic 报密码错误：开发 `compose.yaml` 与 `backend/.env.example` 密码必须一致。
-- 前端无法请求 API：确认 `frontend/.env` 为
-  `VITE_API_BASE_URL=http://localhost:8000/api/v1`。
+- 前端无法请求 API：确认 `frontend/.env` 为 `VITE_API_BASE_URL=/api/v1`，开发环境由
+  Vite 把 `/api` 转发到 `127.0.0.1:8000`，容器环境由 Nginx 转发。
 - WebSocket 无通知：确认反向代理支持 Upgrade，并检查 `APP_CORS_ORIGINS` 是否包含页面来源。
 - 离线数据未立即出现在其他设备：恢复网络后保持页面打开，待“等待同步”数量归零。

@@ -1,6 +1,8 @@
 import { http } from './http'
 import type {
   Task,
+  TaskBulkApplyPayload,
+  TaskBulkApplyResponse,
   TaskCreatePayload,
   TaskUpdatePayload,
 } from '@/types/task'
@@ -24,5 +26,15 @@ export const taskService = {
   async remove(taskId: string): Promise<void> {
     await http.delete(`/tasks/${taskId}`)
   },
-}
 
+  async applyDefaults(
+    taskId: string,
+    payload: TaskBulkApplyPayload,
+  ): Promise<TaskBulkApplyResponse> {
+    const { data } = await http.post<TaskBulkApplyResponse>(
+      `/tasks/${taskId}/apply-defaults`,
+      payload,
+    )
+    return data
+  },
+}

@@ -6,7 +6,9 @@ interface ApiErrorBody {
 
 export function getApiErrorMessage(error: unknown): string {
   if (!axios.isAxiosError<ApiErrorBody>(error)) {
-    return '发生未知错误，请稍后重试。'
+    return error instanceof Error && error.message
+      ? error.message
+      : '发生未知错误，请稍后重试。'
   }
 
   const detail = error.response?.data?.detail
@@ -21,4 +23,3 @@ export function getApiErrorMessage(error: unknown): string {
   }
   return '请求失败，请稍后重试。'
 }
-

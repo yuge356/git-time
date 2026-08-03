@@ -3,7 +3,7 @@
 from datetime import UTC, date, datetime
 from uuid import uuid4
 
-from app.models.task import Task, TaskRepeatRule, TaskStatus
+from app.models.task import Task, TaskNodeType, TaskRepeatRule, TaskStatus
 from app.services.daily_plans import task_repeats_on_date
 
 
@@ -18,6 +18,7 @@ def recurring_task(
     task = Task(
         owner_id=uuid4(),
         title="Recurring task",
+        node_type=TaskNodeType.TASK,
         status=status,
         estimated_seconds=600,
         repeat_rule=rule,

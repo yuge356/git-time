@@ -15,8 +15,7 @@ async def test_analytics_aggregates_time_completion_and_budget(
 ) -> None:
     token, _ = await register_user(client)
     today = date.today()
-    parent_id = await create_task(client, token, "Course")
-    child_id = await create_task(client, token, "Lesson", parent_id)
+    child_id = await create_task(client, token, "Lesson")
     plan = await create_plan(client, token, today)
     item = await add_item(client, token, plan["id"], task_id=child_id)
     started = datetime.now(UTC)
@@ -62,7 +61,7 @@ async def test_analytics_aggregates_time_completion_and_budget(
     assert data["task_distribution"][0]["task_id"] == child_id
     budgets = {item["task_id"]: item for item in data["budget_comparison"]}
     assert budgets[child_id]["actual_seconds"] == 1_800
-    assert budgets[parent_id]["actual_seconds"] == 1_800
+    assert data["total_task_count"] == 1
 
 
 async def test_analytics_validates_range_and_isolates_owners(

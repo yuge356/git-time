@@ -13,6 +13,8 @@ import {
 import { taskService } from '@/services/tasks'
 import type {
   Task,
+  TaskBulkApplyPayload,
+  TaskBulkApplyResponse,
   TaskCreatePayload,
   TaskNode,
   TaskUpdatePayload,
@@ -31,6 +33,15 @@ interface TaskState {
 function compareTasks(left: Task, right: Task): number {
   if (left.sort_order !== right.sort_order) return left.sort_order - right.sort_order
   return left.created_at.localeCompare(right.created_at)
+}
+
+function budgetLevel(estimatedSeconds: number, actualSeconds: number): Task['budget_level'] {
+  if (estimatedSeconds <= 0) return 'NOT_SET'
+  const ratio = actualSeconds / estimatedSeconds
+  if (ratio >= 1.5) return 'SEVERE'
+  if (ratio >= 1) return 'EXHAUSTED'
+  if (ratio >= 0.8) return 'NEAR_LIMIT'
+  return 'NORMAL'
 }
 
 function updateWasApplied(task: Task, payload: TaskUpdatePayload): boolean {
@@ -70,6 +81,46 @@ export const useTaskStore = defineStore('tasks', {
         items.forEach((item) => sortTree(item.children))
       }
       sortTree(roots)
+      const summarize = (node: TaskNode): { estimated: number; actual: number; count: number; done: number } => {
+        if (node.node_type === 'TASK') {
+          node.is_leaf = true
+          node.planned_seconds = node.estimated_seconds
+          node.children_estimated_seconds = 0
+          node.task_count = 1
+          node.completed_task_count = node.status === 'DONE' ? 1 : 0
+          node.progress_ratio = node.completed_task_count
+          node.budget_usage_ratio = node.estimated_seconds > 0
+            ? node.actual_seconds / node.estimated_seconds
+            : null
+          node.budget_level = budgetLevel(node.estimated_seconds, node.actual_seconds)
+          return {
+            estimated: node.estimated_seconds,
+            actual: node.actual_seconds,
+            count: 1,
+            done: node.completed_task_count,
+          }
+        }
+        const childSummaries = node.children.map(summarize)
+        const estimated = childSummaries.reduce((sum, item) => sum + item.estimated, 0)
+        const actual = node.direct_actual_seconds
+          + childSummaries.reduce((sum, item) => sum + item.actual, 0)
+        const count = childSummaries.reduce((sum, item) => sum + item.count, 0)
+        const done = childSummaries.reduce((sum, item) => sum + item.done, 0)
+        const planned = node.budget_mode === 'FIXED_CAP'
+          ? (node.fixed_budget_seconds ?? 0)
+          : estimated
+        node.is_leaf = false
+        node.children_estimated_seconds = estimated
+        node.actual_seconds = actual
+        node.planned_seconds = planned
+        node.task_count = count
+        node.completed_task_count = done
+        node.progress_ratio = count > 0 ? done / count : null
+        node.budget_usage_ratio = planned > 0 ? actual / planned : null
+        node.budget_level = budgetLevel(planned, actual)
+        return { estimated, actual, count, done }
+      }
+      roots.forEach(summarize)
       return roots
     },
   },
@@ -205,12 +256,18 @@ export const useTaskStore = defineStore('tasks', {
         id,
         owner_id: this.ownerId,
         parent_id: payload.parent_id,
+        node_type: payload.node_type,
         title: payload.title,
         status: 'TODO',
-        estimated_seconds: payload.estimated_seconds,
-        repeat_rule: payload.repeat_rule,
-        daily_reminder_time: payload.daily_reminder_time,
-        repeat_end_date: payload.repeat_end_date ?? null,
+        estimated_seconds: payload.node_type === 'TASK' ? payload.estimated_seconds : 0,
+        budget_mode: payload.budget_mode ?? 'ROLLUP',
+        fixed_budget_seconds: payload.fixed_budget_seconds ?? null,
+        default_estimated_seconds: payload.default_estimated_seconds ?? null,
+        default_repeat_rule: payload.default_repeat_rule ?? null,
+        default_daily_reminder_time: payload.default_daily_reminder_time ?? null,
+        repeat_rule: payload.node_type === 'TASK' ? payload.repeat_rule : 'NONE',
+        daily_reminder_time: payload.node_type === 'TASK' ? payload.daily_reminder_time : null,
+        repeat_end_date: payload.node_type === 'TASK' ? (payload.repeat_end_date ?? null) : null,
         sort_order: siblings.length
           ? Math.max(...siblings.map((item) => item.sort_order)) + 1
           : 0,
@@ -219,10 +276,22 @@ export const useTaskStore = defineStore('tasks', {
         updated_at: now,
         direct_actual_seconds: 0,
         actual_seconds: 0,
+        planned_seconds: payload.node_type === 'TASK'
+          ? payload.estimated_seconds
+          : payload.budget_mode === 'FIXED_CAP'
+            ? (payload.fixed_budget_seconds ?? 0)
+            : 0,
         children_estimated_seconds: 0,
-        is_leaf: true,
-        budget_usage_ratio: payload.estimated_seconds > 0 ? 0 : null,
-        budget_level: payload.estimated_seconds > 0 ? 'NORMAL' : 'NOT_SET',
+        is_leaf: payload.node_type === 'TASK',
+        task_count: payload.node_type === 'TASK' ? 1 : 0,
+        completed_task_count: 0,
+        progress_ratio: payload.node_type === 'TASK' ? 0 : null,
+        budget_usage_ratio: payload.node_type === 'TASK' && payload.estimated_seconds > 0
+          ? 0
+          : null,
+        budget_level: payload.node_type === 'TASK' && payload.estimated_seconds > 0
+          ? 'NORMAL'
+          : 'NOT_SET',
       }
       try {
         this.items.push(task)
@@ -301,6 +370,24 @@ export const useTaskStore = defineStore('tasks', {
         await enqueueSyncOperation(this.ownerId, 'task', taskId, 'delete', {})
         this.pendingCount = await pendingSyncCount(this.ownerId)
         await this.flush()
+      } finally {
+        this.saving = false
+      }
+    },
+
+    async applyDefaults(
+      taskId: string,
+      payload: TaskBulkApplyPayload,
+    ): Promise<TaskBulkApplyResponse> {
+      if (!this.ownerId) throw new Error('Task store is not initialized')
+      if (!navigator.onLine) throw new Error('批量应用需要连接服务器后执行。')
+      this.saving = true
+      try {
+        await this.flush()
+        const response = await taskService.applyDefaults(taskId, payload)
+        this.items = response.tasks
+        await localDb.cachedTasks.bulkPut(response.tasks)
+        return response
       } finally {
         this.saving = false
       }

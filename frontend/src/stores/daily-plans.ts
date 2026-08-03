@@ -6,6 +6,7 @@ import {
   localDb,
   pendingSyncCount,
   readCachedDailyPlan,
+  saveCachedDailyPlan,
 } from '@/db/local'
 import { dailyPlanService } from '@/services/daily-plans'
 import {
@@ -137,7 +138,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         created_at: now,
         updated_at: now,
       }
-      await localDb.cachedDailyPlans.put(plan)
+      await saveCachedDailyPlan(plan)
       await enqueueSyncOperation(this.ownerId, 'daily_plan', plan.id, 'create', {
         id: plan.id,
         plan_date: plan.plan_date,
@@ -145,10 +146,13 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       return plan
     },
 
-    async load(planDate?: string): Promise<void> {
+    async load(
+      planDate?: string,
+      options: { silent?: boolean } = {},
+    ): Promise<void> {
       if (!this.ownerId) throw new Error('Daily plan store is not initialized')
       const targetDate = planDate ?? this.selectedDate
-      this.loading = true
+      if (!options.silent) this.loading = true
       this.selectedDate = targetDate
       this.online = navigator.onLine
       try {
@@ -202,7 +206,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         this.failedCount = await getFailedSyncCount(this.ownerId)
         await this.buildLocalCheckIn()
       } finally {
-        this.loading = false
+        if (!options.silent) this.loading = false
       }
     },
 
@@ -233,10 +237,11 @@ export const useDailyPlanStore = defineStore('daily-plans', {
             })
           } catch (error) {
             // If the source project was deleted, the daily snapshot still
-            // belongs to this day and is restored as an ad-hoc item.
+            // belongs to this day and is restored as an ad-hoc item. The same
+            // applies to legacy roots that became project/module containers.
             if (
               !axios.isAxiosError(error) ||
-              error.response?.status !== 404 ||
+              ![404, 409].includes(error.response?.status ?? 0) ||
               cachedItem.task_id === null
             ) {
               throw error
@@ -304,12 +309,12 @@ export const useDailyPlanStore = defineStore('daily-plans', {
           .map((item) => ({ ...item, daily_plan_id: serverPlan.id }))
         merged = recalculatePlan({ ...serverPlan, items: [...items, ...retainedLocalItems] })
       }
-      await localDb.cachedDailyPlans.put(merged)
+      await saveCachedDailyPlan(merged)
       return merged
     },
 
-    async refresh(): Promise<void> {
-      await this.load(this.selectedDate)
+    async refresh(options: { silent?: boolean } = {}): Promise<void> {
+      await this.load(this.selectedDate, options)
     },
 
     async flushAndRefresh(): Promise<void> {
@@ -318,12 +323,13 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       if (navigator.onLine) {
         try {
           this.pendingCount = await syncPendingChanges(this.ownerId)
+          this.online = true
         } catch (error) {
           if (!isNetworkError(error)) throw error
           this.online = false
         }
       }
-      await this.load(this.selectedDate)
+      this.failedCount = await getFailedSyncCount(this.ownerId)
     },
 
     async addItem(payload: DailyPlanItemCreate): Promise<void> {
@@ -350,7 +356,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
           ...this.plan,
           items: [...this.plan.items, item],
         })
-        await localDb.cachedDailyPlans.put(this.plan)
+        await saveCachedDailyPlan(this.plan)
 
         const pendingPlanCreates = await getPendingOperations(this.ownerId, 'daily_plan')
         const planCreatePending = pendingPlanCreates.some(
@@ -371,7 +377,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
                 ...this.plan,
                 items: this.plan.items.filter((candidate) => candidate.id !== id),
               })
-              await localDb.cachedDailyPlans.put(this.plan)
+              await saveCachedDailyPlan(this.plan)
               await this.buildLocalCheckIn()
               throw error
             }
@@ -384,7 +390,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
                 candidate.id === id ? savedItem : candidate,
               ),
             })
-            await localDb.cachedDailyPlans.put(this.plan)
+            await saveCachedDailyPlan(this.plan)
             try {
               this.checkIn = await dailyPlanService.checkIn(this.selectedDate)
             } catch (error) {
@@ -424,7 +430,24 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         ...this.plan,
         items: this.plan.items.map((item) => (item.id === itemId ? finished : item)),
       })
-      await localDb.cachedDailyPlans.put(this.plan)
+      await saveCachedDailyPlan(this.plan)
+      await this.buildLocalCheckIn()
+    },
+
+    async applyStoppedTimer(itemId: string, actualSeconds: number): Promise<void> {
+      if (!this.plan) return
+      const existing = this.plan.items.find((item) => item.id === itemId)
+      if (!existing) return
+      const updated: DailyPlanItem = {
+        ...existing,
+        actual_seconds: Math.max(existing.actual_seconds, actualSeconds),
+        updated_at: new Date().toISOString(),
+      }
+      this.plan = recalculatePlan({
+        ...this.plan,
+        items: this.plan.items.map((item) => (item.id === itemId ? updated : item)),
+      })
+      await saveCachedDailyPlan(this.plan)
       await this.buildLocalCheckIn()
     },
 
@@ -449,7 +472,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
           ...this.plan,
           items: this.plan.items.map((item) => (item.id === itemId ? updated : item)),
         })
-        await localDb.cachedDailyPlans.put(this.plan)
+        await saveCachedDailyPlan(this.plan)
         await enqueueSyncOperation(this.ownerId, 'daily_plan_item', itemId, 'update', {
           ...payload,
           daily_plan_id: this.plan.id,
@@ -469,7 +492,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
           ...this.plan,
           items: this.plan.items.filter((item) => item.id !== itemId),
         })
-        await localDb.cachedDailyPlans.put(this.plan)
+        await saveCachedDailyPlan(this.plan)
         await enqueueSyncOperation(this.ownerId, 'daily_plan_item', itemId, 'delete', {
           daily_plan_id: this.plan.id,
         })

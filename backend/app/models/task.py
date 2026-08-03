@@ -41,6 +41,21 @@ class TaskRepeatRule(StrEnum):
     MONTHLY = "MONTHLY"
 
 
+class TaskNodeType(StrEnum):
+    """Stable business role for each node in the three-level task tree."""
+
+    PROJECT = "PROJECT"
+    MODULE = "MODULE"
+    TASK = "TASK"
+
+
+class TaskBudgetMode(StrEnum):
+    """How a project or module obtains its display budget."""
+
+    ROLLUP = "ROLLUP"
+    FIXED_CAP = "FIXED_CAP"
+
+
 class Task(TimestampMixin, Base):
     """A node in an owner's learning-task tree."""
 
@@ -54,8 +69,17 @@ class Task(TimestampMixin, Base):
             ondelete="CASCADE",
         ),
         CheckConstraint("estimated_seconds >= 0", name="ck_tasks_estimated_seconds"),
+        CheckConstraint(
+            "fixed_budget_seconds IS NULL OR fixed_budget_seconds >= 0",
+            name="ck_tasks_fixed_budget_seconds",
+        ),
+        CheckConstraint(
+            "default_estimated_seconds IS NULL OR default_estimated_seconds >= 0",
+            name="ck_tasks_default_estimated_seconds",
+        ),
         CheckConstraint("parent_id IS NULL OR parent_id <> id", name="ck_tasks_not_own_parent"),
         Index("ix_tasks_owner_parent_sort", "owner_id", "parent_id", "sort_order"),
+        Index("ix_tasks_owner_node_type", "owner_id", "node_type"),
         Index("ix_tasks_owner_status", "owner_id", "status"),
         Index("ix_tasks_owner_updated", "owner_id", "updated_at"),
     )
@@ -66,6 +90,11 @@ class Task(TimestampMixin, Base):
         nullable=False,
     )
     parent_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    node_type: Mapped[TaskNodeType] = mapped_column(
+        Enum(TaskNodeType, name="task_node_type", native_enum=False),
+        nullable=False,
+        default=TaskNodeType.PROJECT,
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus, name="task_status"),
@@ -73,6 +102,15 @@ class Task(TimestampMixin, Base):
         default=TaskStatus.TODO,
     )
     estimated_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    budget_mode: Mapped[TaskBudgetMode] = mapped_column(
+        Enum(TaskBudgetMode, name="task_budget_mode", native_enum=False),
+        nullable=False,
+        default=TaskBudgetMode.ROLLUP,
+    )
+    fixed_budget_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    default_estimated_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    default_repeat_rule: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    default_daily_reminder_time: Mapped[time | None] = mapped_column(Time(), nullable=True)
     repeat_rule: Mapped[str] = mapped_column(
         String(16),
         nullable=False,

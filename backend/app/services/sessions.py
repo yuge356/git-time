@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.daily_plan import DailyPlanItem, DailyPlanItemStatus
 from app.models.session import Session, SessionStatus
+from app.models.task import TaskNodeType
 from app.schemas.session import SessionStateUpsert
 from app.services.daily_plans import get_owned_daily_item, mark_item_status
-from app.services.tasks import get_owned_task, normalize_utc
+from app.services.tasks import get_owned_executable_task, get_owned_task, normalize_utc
 
 
 def same_instant(left: datetime | None, right: datetime | None) -> bool:
@@ -43,6 +44,24 @@ def complete_daily_item(daily_item: DailyPlanItem | None) -> None:
 
     if daily_item is not None and daily_item.status != DailyPlanItemStatus.DONE:
         mark_item_status(daily_item, DailyPlanItemStatus.DONE)
+
+
+def sync_daily_item_status(
+    daily_item: DailyPlanItem | None,
+    session_status: SessionStatus,
+    *,
+    complete_on_finish: bool,
+) -> None:
+    """Mirror active timer state without treating pause as completion."""
+
+    if daily_item is None:
+        return
+    if session_status == SessionStatus.RUNNING:
+        mark_item_status(daily_item, DailyPlanItemStatus.IN_PROGRESS)
+    elif session_status == SessionStatus.PAUSED:
+        mark_item_status(daily_item, DailyPlanItemStatus.PAUSED)
+    elif session_status == SessionStatus.COMPLETED and complete_on_finish:
+        complete_daily_item(daily_item)
 
 
 def validate_transition(current: SessionStatus, incoming: SessionStatus) -> None:
@@ -79,23 +98,34 @@ async def apply_session_snapshot(
     existing = await get_owned_session(db, owner_id, session_id)
     if existing is None:
         daily_item: DailyPlanItem | None = None
-        if payload.task_id is not None:
-            await get_owned_task(db, owner_id, payload.task_id)
         if payload.daily_plan_item_id is not None:
             daily_item = await get_owned_daily_item(
                 db,
                 owner_id,
                 payload.daily_plan_item_id,
             )
-            if daily_item.task_id != payload.task_id:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Session task must match the daily plan item task",
-                )
+        resolved_task_id = payload.task_id
+        if daily_item is not None and daily_item.task_id is not None:
+            linked_task = await get_owned_task(db, owner_id, daily_item.task_id)
+            if linked_task.node_type != TaskNodeType.TASK:
+                # Compatibility for daily snapshots created before explicit
+                # project/module roles existed. They remain timeable as ad-hoc
+                # daily items, but containers themselves are never timed.
+                legacy_task_id = daily_item.task_id
+                daily_item.task_id = None
+                if resolved_task_id == legacy_task_id:
+                    resolved_task_id = None
+        if resolved_task_id is not None:
+            await get_owned_executable_task(db, owner_id, resolved_task_id)
+        if daily_item is not None and daily_item.task_id != resolved_task_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Session task must match the daily plan item task",
+            )
         session = Session(
             id=session_id,
             owner_id=owner_id,
-            task_id=payload.task_id,
+            task_id=resolved_task_id,
             daily_plan_item_id=payload.daily_plan_item_id,
             client_id=payload.client_id,
             status=payload.status,
@@ -106,8 +136,11 @@ async def apply_session_snapshot(
             client_updated_at=payload.client_updated_at,
         )
         db.add(session)
-        if payload.status == SessionStatus.COMPLETED:
-            complete_daily_item(daily_item)
+        sync_daily_item_status(
+            daily_item,
+            payload.status,
+            complete_on_finish=payload.complete_daily_item,
+        )
         return session
 
     if normalize_utc(payload.client_updated_at) <= normalize_utc(existing.client_updated_at):
@@ -154,8 +187,14 @@ async def apply_session_snapshot(
     existing.duration_seconds = payload.duration_seconds
     existing.last_resumed_at = payload.last_resumed_at
     existing.client_updated_at = payload.client_updated_at
-    if payload.status == SessionStatus.COMPLETED and existing.daily_plan_item_id is not None:
-        complete_daily_item(
-            await get_owned_daily_item(db, owner_id, existing.daily_plan_item_id)
-        )
+    daily_item = (
+        await get_owned_daily_item(db, owner_id, existing.daily_plan_item_id)
+        if existing.daily_plan_item_id is not None
+        else None
+    )
+    sync_daily_item_status(
+        daily_item,
+        payload.status,
+        complete_on_finish=payload.complete_daily_item,
+    )
     return existing

@@ -6,7 +6,7 @@ from uuid import uuid4
 from httpx import AsyncClient
 
 from tests.test_sessions_api import create_task
-from tests.test_tasks_api import auth_header, register_user
+from tests.test_tasks_api import auth_header, create_structured_task, register_user
 
 
 async def create_plan(client: AsyncClient, token: str, plan_date: date) -> dict:
@@ -208,22 +208,14 @@ async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) ->
     today = date.today()
     yesterday = today - timedelta(days=1)
 
-    project = await client.post(
-        "/api/v1/tasks",
-        headers=auth_header(token),
-        json={
-            "title": "每日项目",
-            "repeat_rule": "DAILY",
-            "estimated_seconds": 3_600,
-        },
-    )
-    assert project.status_code == 201
+    _, module, _ = await create_structured_task(client, token, "占位")
     child = await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
         json={
             "title": "每日子任务",
-            "parent_id": project.json()["id"],
+            "node_type": "TASK",
+            "parent_id": module["id"],
             "repeat_rule": "DAILY",
             "estimated_seconds": 900,
         },
@@ -234,6 +226,8 @@ async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) ->
         headers=auth_header(token),
         json={
             "title": "已截止任务",
+            "node_type": "TASK",
+            "parent_id": module["id"],
             "repeat_rule": "DAILY",
             "repeat_end_date": yesterday.isoformat(),
         },
@@ -252,10 +246,7 @@ async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) ->
 
     assert first.status_code == 200
     assert replay.status_code == 200
-    assert {item["title"] for item in first.json()["items"]} == {
-        "每日项目",
-        "每日子任务",
-    }
+    assert {item["title"] for item in first.json()["items"]} == {"每日子任务"}
     assert {item["id"] for item in replay.json()["items"]} == {
         item["id"] for item in first.json()["items"]
     }
@@ -264,16 +255,17 @@ async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) ->
 async def test_completed_project_keeps_existing_today_item(client: AsyncClient) -> None:
     token, _ = await register_user(client, "keep_done_item")
     today = date.today()
-    task = await client.post(
-        "/api/v1/tasks",
-        headers=auth_header(token),
-        json={
-            "title": "今天已安排的项目任务",
-            "repeat_rule": "DAILY",
-            "estimated_seconds": 1_800,
-        },
+    _, _, task = await create_structured_task(
+        client,
+        token,
+        "今天已安排的项目任务",
     )
-    assert task.status_code == 201
+    recurring = await client.patch(
+        f"/api/v1/tasks/{task['id']}",
+        headers=auth_header(token),
+        json={"repeat_rule": "DAILY", "estimated_seconds": 1_800},
+    )
+    assert recurring.status_code == 200
     plan = await create_plan(client, token, today)
     populated = await client.post(
         f"/api/v1/daily-plans/{plan['id']}/auto-populate",
@@ -283,7 +275,7 @@ async def test_completed_project_keeps_existing_today_item(client: AsyncClient) 
     item_id = populated.json()["items"][0]["id"]
 
     completed = await client.patch(
-        f"/api/v1/tasks/{task.json()['id']}",
+        f"/api/v1/tasks/{task['id']}",
         headers=auth_header(token),
         json={"status": "DONE"},
     )

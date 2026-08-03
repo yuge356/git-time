@@ -29,14 +29,51 @@ def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+async def create_structured_task(
+    client: AsyncClient,
+    token: str,
+    task_title: str,
+) -> tuple[dict, dict, dict]:
+    """Create one project/module/task branch and return all three responses."""
+
+    project = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={"title": f"{task_title} project", "node_type": "PROJECT"},
+    )
+    assert project.status_code == 201
+    module = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": f"{task_title} module",
+            "node_type": "MODULE",
+            "parent_id": project.json()["id"],
+        },
+    )
+    assert module.status_code == 201
+    task = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": task_title,
+            "node_type": "TASK",
+            "parent_id": module.json()["id"],
+            "estimated_seconds": 3_600,
+        },
+    )
+    assert task.status_code == 201
+    return project.json(), module.json(), task.json()
+
+
 async def test_client_generated_task_id_is_idempotent(client: AsyncClient) -> None:
     token, _ = await register_user(client, "stable_task_id")
     task_id = str(uuid4())
     payload = {
         "id": task_id,
-        "title": "Offline-created task",
+        "title": "Offline-created project",
+        "node_type": "PROJECT",
         "parent_id": None,
-        "estimated_seconds": 600,
     }
     first = await client.post(
         "/api/v1/tasks",
@@ -60,41 +97,52 @@ async def test_create_and_list_task_tree(client: AsyncClient) -> None:
     root = await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
-        json={"title": "Python 课程", "estimated_seconds": 72_000},
+        json={"title": "Python 课程", "node_type": "PROJECT"},
     )
     assert root.status_code == 201
     root_body = root.json()
     assert root_body["owner_id"] == owner_id
     assert root_body["parent_id"] is None
-    assert root_body["budget_level"] == "NORMAL"
+    assert root_body["node_type"] == "PROJECT"
+    assert root_body["budget_level"] == "NOT_SET"
     assert root_body["direct_actual_seconds"] == 0
     assert root_body["actual_seconds"] == 0
 
-    child = await client.post(
+    module = await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
         json={
             "title": "第一章",
+            "node_type": "MODULE",
             "parent_id": root_body["id"],
+        },
+    )
+    assert module.status_code == 201
+    task = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "练习 1",
+            "node_type": "TASK",
+            "parent_id": module.json()["id"],
             "estimated_seconds": 7_200,
         },
     )
-    assert child.status_code == 201
-    assert child.json()["parent_id"] == root_body["id"]
+    assert task.status_code == 201
 
     response = await client.get("/api/v1/tasks", headers=auth_header(token))
     assert response.status_code == 200
-    assert {item["title"] for item in response.json()} == {"Python 课程", "第一章"}
+    by_title = {item["title"]: item for item in response.json()}
+    assert set(by_title) == {"Python 课程", "第一章", "练习 1"}
+    assert by_title["Python 课程"]["task_count"] == 1
+    assert by_title["Python 课程"]["planned_seconds"] == 7_200
+    assert by_title["第一章"]["parent_id"] == root_body["id"]
 
 
 async def test_task_status_controls_completed_timestamp(client: AsyncClient) -> None:
     token, _ = await register_user(client)
-    created = await client.post(
-        "/api/v1/tasks",
-        headers=auth_header(token),
-        json={"title": "练习"},
-    )
-    task_id = created.json()["id"]
+    _, _, created = await create_structured_task(client, token, "练习")
+    task_id = created["id"]
 
     completed = await client.patch(
         f"/api/v1/tasks/{task_id}",
@@ -117,11 +165,14 @@ async def test_task_recurrence_and_daily_reminder_are_persisted(
     client: AsyncClient,
 ) -> None:
     token, _ = await register_user(client, "recurring")
+    _, module, _ = await create_structured_task(client, token, "占位任务")
     created = await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
         json={
             "title": "每日复习",
+            "node_type": "TASK",
+            "parent_id": module["id"],
             "repeat_rule": "DAILY",
             "daily_reminder_time": "20:30",
         },
@@ -148,21 +199,25 @@ async def test_task_hierarchy_rejects_cycles(client: AsyncClient) -> None:
     root = await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
-        json={"title": "课程"},
+        json={"title": "课程", "node_type": "PROJECT"},
     )
     child = await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
-        json={"title": "章节", "parent_id": root.json()["id"]},
+        json={
+            "title": "章节",
+            "node_type": "MODULE",
+            "parent_id": root.json()["id"],
+        },
     )
 
     response = await client.patch(
-        f"/api/v1/tasks/{root.json()['id']}",
+        f"/api/v1/tasks/{child.json()['id']}",
         headers=auth_header(token),
         json={"parent_id": child.json()["id"]},
     )
     assert response.status_code == 400
-    assert response.json()["detail"] == "Task hierarchy cannot contain a cycle"
+    assert response.json()["detail"] == "A task cannot be its own parent"
 
 
 async def test_deleting_parent_soft_deletes_the_subtree(client: AsyncClient) -> None:
@@ -170,12 +225,16 @@ async def test_deleting_parent_soft_deletes_the_subtree(client: AsyncClient) -> 
     root = await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
-        json={"title": "课程"},
+        json={"title": "课程", "node_type": "PROJECT"},
     )
     await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
-        json={"title": "章节", "parent_id": root.json()["id"]},
+        json={
+            "title": "章节",
+            "node_type": "MODULE",
+            "parent_id": root.json()["id"],
+        },
     )
 
     deleted = await client.delete(
@@ -196,7 +255,7 @@ async def test_user_cannot_read_or_attach_to_another_users_task(
     private_task = await client.post(
         "/api/v1/tasks",
         headers=auth_header(first_token),
-        json={"title": "Private task"},
+        json={"title": "Private project", "node_type": "PROJECT"},
     )
     task_id = private_task.json()["id"]
 
@@ -204,11 +263,97 @@ async def test_user_cannot_read_or_attach_to_another_users_task(
     attach = await client.post(
         "/api/v1/tasks",
         headers=auth_header(second_token),
-        json={"title": "Invalid child", "parent_id": task_id},
+        json={"title": "Invalid module", "node_type": "MODULE", "parent_id": task_id},
     )
 
     assert read.status_code == 404
     assert attach.status_code == 404
+
+
+async def test_container_defaults_inherit_and_bulk_apply_safely(
+    client: AsyncClient,
+) -> None:
+    token, _ = await register_user(client, "defaults")
+    project = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "技术信息学",
+            "node_type": "PROJECT",
+            "default_estimated_seconds": 1_800,
+            "default_repeat_rule": "WEEKDAYS",
+            "default_daily_reminder_time": "09:00",
+        },
+    )
+    module = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "练习",
+            "node_type": "MODULE",
+            "parent_id": project.json()["id"],
+        },
+    )
+    inherited = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "练习 1",
+            "node_type": "TASK",
+            "parent_id": module.json()["id"],
+        },
+    )
+    assert inherited.status_code == 201
+    assert inherited.json()["estimated_seconds"] == 1_800
+    assert inherited.json()["repeat_rule"] == "WEEKDAYS"
+    assert inherited.json()["daily_reminder_time"] == "09:00:00"
+
+    empty = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "练习 2",
+            "node_type": "TASK",
+            "parent_id": module.json()["id"],
+            "estimated_seconds": 0,
+            "repeat_rule": "NONE",
+            "daily_reminder_time": None,
+        },
+    )
+    applied = await client.post(
+        f"/api/v1/tasks/{project.json()['id']}/apply-defaults",
+        headers=auth_header(token),
+        json={"overwrite": False},
+    )
+    assert applied.status_code == 200
+    refreshed = {task["id"]: task for task in applied.json()["tasks"]}
+    assert refreshed[empty.json()["id"]]["estimated_seconds"] == 1_800
+    assert refreshed[empty.json()["id"]]["repeat_rule"] == "WEEKDAYS"
+
+
+async def test_container_progress_and_fixed_budget_are_derived(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "summary")
+    project, module, first = await create_structured_task(client, token, "练习 1")
+    fixed = await client.patch(
+        f"/api/v1/tasks/{project['id']}",
+        headers=auth_header(token),
+        json={"budget_mode": "FIXED_CAP", "fixed_budget_seconds": 1_800},
+    )
+    assert fixed.status_code == 200
+    assert fixed.json()["planned_seconds"] == 1_800
+    assert fixed.json()["children_estimated_seconds"] == 3_600
+
+    completed = await client.patch(
+        f"/api/v1/tasks/{first['id']}",
+        headers=auth_header(token),
+        json={"status": "DONE"},
+    )
+    assert completed.status_code == 200
+    listed = await client.get("/api/v1/tasks", headers=auth_header(token))
+    by_id = {task["id"]: task for task in listed.json()}
+    assert by_id[module["id"]]["progress_ratio"] == 1
+    assert by_id[project["id"]]["completed_task_count"] == 1
+    assert by_id[project["id"]]["task_count"] == 1
 
 
 async def test_active_session_prevents_task_subtree_deletion(client: AsyncClient) -> None:
@@ -216,18 +361,14 @@ async def test_active_session_prevents_task_subtree_deletion(client: AsyncClient
     from uuid import uuid4
 
     token, _ = await register_user(client)
-    task = await client.post(
-        "/api/v1/tasks",
-        headers=auth_header(token),
-        json={"title": "Active task"},
-    )
+    project, _, task = await create_structured_task(client, token, "Active task")
     now = datetime.now(UTC).isoformat()
     session_id = str(uuid4())
     session = await client.put(
         f"/api/v1/sessions/{session_id}",
         headers=auth_header(token),
         json={
-            "task_id": task.json()["id"],
+            "task_id": task["id"],
             "client_id": str(uuid4()),
             "status": "RUNNING",
             "started_at": now,
@@ -240,7 +381,7 @@ async def test_active_session_prevents_task_subtree_deletion(client: AsyncClient
     assert session.status_code == 200
 
     deleted = await client.delete(
-        f"/api/v1/tasks/{task.json()['id']}",
+        f"/api/v1/tasks/{project['id']}",
         headers=auth_header(token),
     )
     assert deleted.status_code == 409

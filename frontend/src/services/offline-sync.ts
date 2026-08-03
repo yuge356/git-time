@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-import { localDb, pendingSyncCount } from '@/db/local'
+import { localDb, pendingSyncCount, saveCachedDailyPlan } from '@/db/local'
 import { http } from '@/services/http'
 import type { DailyPlan, DailyPlanItem } from '@/types/daily-plan'
 import type { SyncOperation } from '@/types/offline'
@@ -8,6 +8,14 @@ import type { Task } from '@/types/task'
 
 export function isNetworkError(error: unknown): boolean {
   return axios.isAxiosError(error) && !error.response
+}
+
+function isNonExecutableTaskConflict(error: unknown): boolean {
+  if (!axios.isAxiosError<{ detail?: string }>(error)) return false
+  return (
+    error.response?.status === 409
+    && error.response.data?.detail === 'Only executable tasks can be timed or added to a daily plan'
+  )
 }
 
 async function replaceCachedDailyItem(item: DailyPlanItem): Promise<void> {
@@ -20,7 +28,7 @@ async function replaceCachedDailyItem(item: DailyPlanItem): Promise<void> {
   )
   if (!plan) return
   const items = plan.items.map((existing) => (existing.id === item.id ? item : existing))
-  await localDb.cachedDailyPlans.put(recalculatePlan({ ...plan, items }))
+  await saveCachedDailyPlan(recalculatePlan({ ...plan, items }))
 }
 
 function recalculatePlan(plan: DailyPlan): DailyPlan {
@@ -41,7 +49,7 @@ async function remapDailyPlan(
   serverPlan: DailyPlan,
 ): Promise<void> {
   if (localPlanId === serverPlan.id) {
-    await localDb.cachedDailyPlans.put(serverPlan)
+    await saveCachedDailyPlan(serverPlan)
     return
   }
   const localPlan = await localDb.cachedDailyPlans.get(localPlanId)
@@ -54,7 +62,7 @@ async function remapDailyPlan(
     items: remappedItems.length > 0 ? remappedItems : serverPlan.items,
   })
   await localDb.cachedDailyPlans.delete(localPlanId)
-  await localDb.cachedDailyPlans.put(remappedPlan)
+  await saveCachedDailyPlan(remappedPlan)
   const operations = await localDb.syncOperations.where('owner_id').equals(ownerId).toArray()
   for (const operation of operations) {
     if (
@@ -100,10 +108,23 @@ async function replayOperation(operation: SyncOperation): Promise<void> {
   if (operation.action === 'create') {
     const body = { ...operation.payload }
     delete body.daily_plan_id
-    const { data } = await http.post<DailyPlanItem>(
-      `/daily-plans/${dailyPlanId}/items`,
-      body,
-    )
+    let data: DailyPlanItem
+    try {
+      const response = await http.post<DailyPlanItem>(
+        `/daily-plans/${dailyPlanId}/items`,
+        body,
+      )
+      data = response.data
+    } catch (error) {
+      // Structured task trees turned legacy top-level tasks into containers.
+      // Keep their daily snapshots usable by replaying them as ad-hoc items.
+      if (!isNonExecutableTaskConflict(error) || body.task_id == null) throw error
+      const response = await http.post<DailyPlanItem>(
+        `/daily-plans/${dailyPlanId}/items`,
+        { ...body, task_id: null },
+      )
+      data = response.data
+    }
     await replaceCachedDailyItem(data)
   } else if (operation.action === 'update') {
     const body = { ...operation.payload }
@@ -158,9 +179,13 @@ async function runPendingSync(ownerId: string): Promise<number> {
       if (isNetworkError(error)) break
       await localDb.syncOperations.update(operation.id, {
         retry_count: operation.retry_count + 1,
-        last_error: '服务器拒绝了该离线操作',
+        last_error: axios.isAxiosError<{ detail?: string }>(error)
+          ? (error.response?.data?.detail ?? '服务器拒绝了该离线操作')
+          : '服务器拒绝了该离线操作',
       })
-      throw error
+      // Quarantine a rejected operation and keep syncing independent work
+      // behind it. One stale legacy record must not block new timer sessions.
+      continue
     }
   }
   return pendingSyncCount(ownerId)

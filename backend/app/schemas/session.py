@@ -20,6 +20,7 @@ class SessionStateUpsert(BaseModel):
     duration_seconds: int = Field(ge=0, le=315_360_000)
     last_resumed_at: datetime | None = None
     client_updated_at: datetime
+    complete_daily_item: bool = True
 
     @field_validator(
         "started_at",

@@ -1,7 +1,7 @@
 """Task-tree validation and budget-calculation helpers."""
 
 from collections.abc import Iterable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import Session, SessionStatus
-from app.models.task import Task
+from app.models.task import Task, TaskBudgetMode, TaskNodeType, TaskStatus
 from app.schemas.task import BudgetLevel, TaskResponse
 
 
@@ -32,19 +32,27 @@ def to_task_response(
     task: Task,
     actual_seconds: int = 0,
     direct_actual_seconds: int = 0,
+    planned_seconds: int = 0,
     children_estimated_seconds: int = 0,
-    is_leaf: bool = True,
+    task_count: int = 0,
+    completed_task_count: int = 0,
 ) -> TaskResponse:
-    """Build a task response from calculated direct and descendant totals."""
+    """Build a response from server-owned hierarchy and budget summaries."""
 
-    ratio = actual_seconds / task.estimated_seconds if task.estimated_seconds > 0 else None
+    ratio = actual_seconds / planned_seconds if planned_seconds > 0 else None
     return TaskResponse(
         id=task.id,
         owner_id=task.owner_id,
         parent_id=task.parent_id,
+        node_type=task.node_type,
         title=task.title,
         status=task.status,
         estimated_seconds=task.estimated_seconds,
+        budget_mode=task.budget_mode,
+        fixed_budget_seconds=task.fixed_budget_seconds,
+        default_estimated_seconds=task.default_estimated_seconds,
+        default_repeat_rule=task.default_repeat_rule,
+        default_daily_reminder_time=task.default_daily_reminder_time,
         repeat_rule=task.repeat_rule,
         repeat_end_date=task.repeat_end_date,
         daily_reminder_time=task.daily_reminder_time,
@@ -54,10 +62,14 @@ def to_task_response(
         updated_at=task.updated_at,
         direct_actual_seconds=direct_actual_seconds,
         actual_seconds=actual_seconds,
+        planned_seconds=planned_seconds,
         children_estimated_seconds=children_estimated_seconds,
-        is_leaf=is_leaf,
+        is_leaf=task.node_type == TaskNodeType.TASK,
+        task_count=task_count,
+        completed_task_count=completed_task_count,
+        progress_ratio=(completed_task_count / task_count if task_count else None),
         budget_usage_ratio=ratio,
-        budget_level=calculate_budget_level(task.estimated_seconds, actual_seconds),
+        budget_level=calculate_budget_level(planned_seconds, actual_seconds),
     )
 
 
@@ -118,36 +130,69 @@ def calculate_task_time_totals(
     return direct, totals
 
 
-def calculate_children_budgets(
+def calculate_task_summaries(
     tasks: Sequence[Task],
-) -> tuple[dict[UUID, int], dict[UUID, bool]]:
-    """Return children estimated_seconds sum and leaf status for every task."""
+) -> tuple[dict[UUID, int], dict[UUID, int], dict[UUID, int], dict[UUID, int]]:
+    """Return descendant budgets, display budgets and task completion totals."""
+
     children_map: dict[UUID, list[UUID]] = {}
     for task in tasks:
         if task.parent_id is not None:
             children_map.setdefault(task.parent_id, []).append(task.id)
-    
-    is_leaf = {task.id: task.id not in children_map for task in tasks}
-    
+
     task_by_id = {task.id: task for task in tasks}
-    budget_totals: dict[UUID, int] = {}
-    
-    def visit(task_id: UUID) -> int:
-        if task_id in budget_totals:
-            return budget_totals[task_id]
-        total = 0
+    descendant_budgets: dict[UUID, int] = {}
+    planned_budgets: dict[UUID, int] = {}
+    task_counts: dict[UUID, int] = {}
+    completed_counts: dict[UUID, int] = {}
+
+    def visit(task_id: UUID, active_path: set[UUID]) -> tuple[int, int, int]:
+        if task_id in descendant_budgets:
+            task = task_by_id[task_id]
+            return (
+                (
+                    task.estimated_seconds
+                    if task.node_type == TaskNodeType.TASK
+                    else descendant_budgets[task_id]
+                ),
+                task_counts[task_id],
+                completed_counts[task_id],
+            )
+        task = task_by_id[task_id]
+        if task_id in active_path:
+            return (0, 0, 0)
+        if task.node_type == TaskNodeType.TASK:
+            descendant_budgets[task_id] = 0
+            planned_budgets[task_id] = task.estimated_seconds
+            task_counts[task_id] = 1
+            completed_counts[task_id] = int(task.status == TaskStatus.DONE)
+            return (task.estimated_seconds, 1, completed_counts[task_id])
+
+        next_path = {*active_path, task_id}
+        rolled_up_budget = 0
+        task_count = 0
+        completed_count = 0
         for child_id in children_map.get(task_id, []):
-            child = task_by_id.get(child_id)
-            if child:
-                child_children_sum = visit(child_id)
-                total += child.estimated_seconds if is_leaf[child_id] else child_children_sum
-        budget_totals[task_id] = total
-        return total
-    
+            if child_id not in task_by_id:
+                continue
+            child_budget, child_count, child_completed = visit(child_id, next_path)
+            rolled_up_budget += child_budget
+            task_count += child_count
+            completed_count += child_completed
+        descendant_budgets[task_id] = rolled_up_budget
+        planned_budgets[task_id] = (
+            task.fixed_budget_seconds or 0
+            if task.budget_mode == TaskBudgetMode.FIXED_CAP
+            else rolled_up_budget
+        )
+        task_counts[task_id] = task_count
+        completed_counts[task_id] = completed_count
+        return (rolled_up_budget, task_count, completed_count)
+
     for task in tasks:
-        visit(task.id)
-    
-    return budget_totals, is_leaf
+        visit(task.id, set())
+
+    return descendant_budgets, planned_budgets, task_counts, completed_counts
 
 
 async def build_owned_task_responses(
@@ -170,14 +215,16 @@ async def build_owned_task_responses(
     )
     sessions = session_result.all()
     direct, totals = calculate_task_time_totals(tasks, sessions)
-    children_estimated, is_leaf = calculate_children_budgets(tasks)
+    children_estimated, planned, task_counts, completed_counts = calculate_task_summaries(tasks)
     return [
         to_task_response(
             task,
             actual_seconds=totals.get(task.id, 0),
             direct_actual_seconds=direct.get(task.id, 0),
+            planned_seconds=planned.get(task.id, 0),
             children_estimated_seconds=children_estimated.get(task.id, 0),
-            is_leaf=is_leaf.get(task.id, True),
+            task_count=task_counts.get(task.id, 0),
+            completed_task_count=completed_counts.get(task.id, 0),
         )
         for task in tasks
     ]
@@ -202,16 +249,43 @@ async def get_owned_task(
     return task
 
 
+async def get_owned_executable_task(
+    db: AsyncSession,
+    owner_id: UUID,
+    task_id: UUID,
+) -> Task:
+    """Return an owned executable task and reject project/module containers."""
+
+    task = await get_owned_task(db, owner_id, task_id)
+    if task.node_type != TaskNodeType.TASK:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only executable tasks can be timed or added to a daily plan",
+        )
+    return task
+
+
 async def validate_parent(
     db: AsyncSession,
     owner_id: UUID,
     parent_id: UUID | None,
+    node_type: TaskNodeType,
     task_id: UUID | None = None,
 ) -> Task | None:
-    """Ensure a parent exists, belongs to the owner and does not form a cycle."""
+    """Enforce PROJECT -> MODULE -> TASK and prevent hierarchy cycles."""
 
-    if parent_id is None:
+    if node_type == TaskNodeType.PROJECT:
+        if parent_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Projects must stay at the top level",
+            )
         return None
+    if parent_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{node_type.value.title()} nodes require a parent",
+        )
     if task_id is not None and parent_id == task_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -219,6 +293,18 @@ async def validate_parent(
         )
 
     parent = await get_owned_task(db, owner_id, parent_id)
+    expected_parent_type = {
+        TaskNodeType.MODULE: TaskNodeType.PROJECT,
+        TaskNodeType.TASK: TaskNodeType.MODULE,
+    }[node_type]
+    if parent.node_type != expected_parent_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"{node_type.value.title()} nodes must be placed under "
+                f"{expected_parent_type.value.lower()} nodes"
+            ),
+        )
     if task_id is None:
         return parent
 
@@ -243,6 +329,31 @@ async def validate_parent(
         else:
             current = await get_owned_task(db, owner_id, current.parent_id)
     return parent
+
+
+async def resolve_container_defaults(
+    db: AsyncSession,
+    owner_id: UUID,
+    module: Task,
+) -> tuple[int | None, str | None, time | None]:
+    """Resolve new-task defaults with module values taking priority over project values."""
+
+    project = (
+        await get_owned_task(db, owner_id, module.parent_id)
+        if module.parent_id is not None
+        else None
+    )
+    estimated = module.default_estimated_seconds
+    repeat_rule = module.default_repeat_rule
+    reminder = module.default_daily_reminder_time
+    if project is not None:
+        if estimated is None:
+            estimated = project.default_estimated_seconds
+        if repeat_rule is None:
+            repeat_rule = project.default_repeat_rule
+        if reminder is None:
+            reminder = project.default_daily_reminder_time
+    return estimated, repeat_rule, reminder
 
 
 def collect_subtree_ids(tasks: Sequence[Task], root_id: UUID) -> set[UUID]:

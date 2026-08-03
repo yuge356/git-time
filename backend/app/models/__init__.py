@@ -11,7 +11,7 @@ from app.models.sharing import (
     Notification,
     NotificationType,
 )
-from app.models.task import Task, TaskStatus
+from app.models.task import Task, TaskBudgetMode, TaskNodeType, TaskStatus
 from app.models.user import User
 
 __all__ = [
@@ -29,6 +29,8 @@ __all__ = [
     "Session",
     "SessionStatus",
     "Task",
+    "TaskBudgetMode",
+    "TaskNodeType",
     "TaskStatus",
     "User",
     "UserBlock",

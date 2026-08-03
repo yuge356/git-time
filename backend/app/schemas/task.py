@@ -6,7 +6,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.task import TaskRepeatRule, TaskStatus
+from app.models.task import (
+    TaskBudgetMode,
+    TaskNodeType,
+    TaskRepeatRule,
+    TaskStatus,
+)
 
 
 class BudgetLevel(StrEnum):
@@ -20,12 +25,18 @@ class BudgetLevel(StrEnum):
 
 
 class TaskCreate(BaseModel):
-    """Fields accepted when creating a root task or child task."""
+    """Fields accepted when creating a project, module or executable task."""
 
     id: UUID | None = None
     title: str = Field(min_length=1, max_length=200)
     parent_id: UUID | None = None
+    node_type: TaskNodeType = TaskNodeType.PROJECT
     estimated_seconds: int = Field(default=0, ge=0, le=315_360_000)
+    budget_mode: TaskBudgetMode = TaskBudgetMode.ROLLUP
+    fixed_budget_seconds: int | None = Field(default=None, ge=0, le=315_360_000)
+    default_estimated_seconds: int | None = Field(default=None, ge=0, le=315_360_000)
+    default_repeat_rule: TaskRepeatRule | None = None
+    default_daily_reminder_time: time | None = None
     repeat_rule: TaskRepeatRule = TaskRepeatRule.NONE
     repeat_end_date: date | None = None
     daily_reminder_time: time | None = None
@@ -45,6 +56,11 @@ class TaskUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     parent_id: UUID | None = None
     estimated_seconds: int | None = Field(default=None, ge=0, le=315_360_000)
+    budget_mode: TaskBudgetMode | None = None
+    fixed_budget_seconds: int | None = Field(default=None, ge=0, le=315_360_000)
+    default_estimated_seconds: int | None = Field(default=None, ge=0, le=315_360_000)
+    default_repeat_rule: TaskRepeatRule | None = None
+    default_daily_reminder_time: time | None = None
     status: TaskStatus | None = None
     repeat_rule: TaskRepeatRule | None = None
     repeat_end_date: date | None = None
@@ -60,7 +76,7 @@ class TaskUpdate(BaseModel):
             raise ValueError("Task title cannot be blank")
         return normalized
 
-    @field_validator("estimated_seconds", "status", "repeat_rule")
+    @field_validator("estimated_seconds", "status", "repeat_rule", "budget_mode")
     @classmethod
     def reject_null_required_fields(cls, value: object) -> object:
         if value is None:
@@ -76,9 +92,15 @@ class TaskResponse(BaseModel):
     id: UUID
     owner_id: UUID
     parent_id: UUID | None
+    node_type: TaskNodeType
     title: str
     status: TaskStatus
     estimated_seconds: int
+    budget_mode: TaskBudgetMode
+    fixed_budget_seconds: int | None
+    default_estimated_seconds: int | None
+    default_repeat_rule: TaskRepeatRule | None
+    default_daily_reminder_time: time | None
     repeat_rule: TaskRepeatRule
     repeat_end_date: date | None
     daily_reminder_time: time | None
@@ -88,7 +110,28 @@ class TaskResponse(BaseModel):
     updated_at: datetime
     direct_actual_seconds: int
     actual_seconds: int
+    planned_seconds: int
     children_estimated_seconds: int
     is_leaf: bool
+    task_count: int
+    completed_task_count: int
+    progress_ratio: float | None
     budget_usage_ratio: float | None
     budget_level: BudgetLevel
+
+
+class TaskBulkApplyRequest(BaseModel):
+    """Choose which container defaults to apply to descendant tasks."""
+
+    overwrite: bool = False
+    apply_estimated_seconds: bool = True
+    apply_repeat_rule: bool = True
+    apply_daily_reminder_time: bool = True
+
+
+class TaskBulkApplyResponse(BaseModel):
+    """Impact summary plus the refreshed flat task list."""
+
+    affected_count: int
+    skipped_count: int
+    tasks: list[TaskResponse]

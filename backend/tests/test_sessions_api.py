@@ -1,26 +1,46 @@
 """Reliable session state, idempotency and task aggregation API tests."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 from httpx import AsyncClient
 
-from tests.test_tasks_api import auth_header, register_user
+from tests.test_tasks_api import auth_header, create_structured_task, register_user
 
 
 async def create_task(
     client: AsyncClient,
     token: str,
     title: str,
-    parent_id: str | None = None,
 ) -> str:
-    response = await client.post(
+    project = await client.post(
         "/api/v1/tasks",
         headers=auth_header(token),
-        json={"title": title, "parent_id": parent_id, "estimated_seconds": 3_600},
+        json={"title": f"{title} project", "node_type": "PROJECT"},
     )
-    assert response.status_code == 201
-    return response.json()["id"]
+    assert project.status_code == 201
+    module = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": f"{title} module",
+            "node_type": "MODULE",
+            "parent_id": project.json()["id"],
+        },
+    )
+    assert module.status_code == 201
+    task = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": title,
+            "node_type": "TASK",
+            "parent_id": module.json()["id"],
+            "estimated_seconds": 3_600,
+        },
+    )
+    assert task.status_code == 201
+    return task.json()["id"]
 
 
 def snapshot(
@@ -214,10 +234,145 @@ async def test_only_one_active_session_is_allowed(client: AsyncClient) -> None:
     assert second.status_code == 409
 
 
+async def test_switching_from_paused_timer_keeps_previous_daily_item_open(
+    client: AsyncClient,
+) -> None:
+    token, _ = await register_user(client, "switch_paused")
+    first_task = await create_task(client, token, "任务一")
+    second_task = await create_task(client, token, "任务二")
+    plan = await client.post(
+        "/api/v1/daily-plans",
+        headers=auth_header(token),
+        json={"plan_date": date.today().isoformat()},
+    )
+    assert plan.status_code == 201
+    item = await client.post(
+        f"/api/v1/daily-plans/{plan.json()['id']}/items",
+        headers=auth_header(token),
+        json={"task_id": first_task, "estimated_seconds": 1_800},
+    )
+    assert item.status_code == 201
+    item_id = item.json()["id"]
+    await client.patch(
+        f"/api/v1/daily-plan-items/{item_id}",
+        headers=auth_header(token),
+        json={"status": "IN_PROGRESS"},
+    )
+
+    session_id = str(uuid4())
+    client_id = str(uuid4())
+    started = datetime.now(UTC)
+    paused_at = started + timedelta(minutes=10)
+    running_payload = snapshot(
+        first_task,
+        client_id,
+        "RUNNING",
+        started,
+        started,
+        0,
+        last_resumed_at=started,
+    )
+    running_payload["daily_plan_item_id"] = item_id
+    paused_payload = snapshot(
+        first_task,
+        client_id,
+        "PAUSED",
+        started,
+        paused_at,
+        600,
+    )
+    paused_payload["daily_plan_item_id"] = item_id
+    completed_payload = snapshot(
+        first_task,
+        client_id,
+        "COMPLETED",
+        started,
+        paused_at + timedelta(seconds=1),
+        600,
+        ended_at=paused_at + timedelta(seconds=1),
+    )
+    completed_payload.update(
+        {"daily_plan_item_id": item_id, "complete_daily_item": False}
+    )
+
+    assert (
+        await client.put(
+            f"/api/v1/sessions/{session_id}",
+            headers=auth_header(token),
+            json=running_payload,
+        )
+    ).status_code == 200
+    assert (
+        await client.put(
+            f"/api/v1/sessions/{session_id}",
+            headers=auth_header(token),
+            json=paused_payload,
+        )
+    ).status_code == 200
+    assert (
+        await client.put(
+            f"/api/v1/sessions/{session_id}",
+            headers=auth_header(token),
+            json=completed_payload,
+        )
+    ).status_code == 200
+
+    second_started = paused_at + timedelta(seconds=2)
+    second = await client.put(
+        f"/api/v1/sessions/{uuid4()}",
+        headers=auth_header(token),
+        json=snapshot(
+            second_task,
+            str(uuid4()),
+            "RUNNING",
+            second_started,
+            second_started,
+            0,
+            last_resumed_at=second_started,
+        ),
+    )
+    refreshed_plan = await client.get(
+        f"/api/v1/daily-plans/by-date/{date.today().isoformat()}",
+        headers=auth_header(token),
+    )
+    refreshed_item = next(
+        candidate for candidate in refreshed_plan.json()["items"] if candidate["id"] == item_id
+    )
+
+    assert second.status_code == 200
+    assert refreshed_item["status"] == "PAUSED"
+    assert refreshed_item["actual_seconds"] == 600
+
+
 async def test_child_session_time_rolls_up_to_parent_budget(client: AsyncClient) -> None:
     token, _ = await register_user(client)
-    parent_id = await create_task(client, token, "课程")
-    child_id = await create_task(client, token, "章节", parent_id)
+    project = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={"title": "课程", "node_type": "PROJECT"},
+    )
+    module = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "章节",
+            "node_type": "MODULE",
+            "parent_id": project.json()["id"],
+        },
+    )
+    child = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "练习",
+            "node_type": "TASK",
+            "parent_id": module.json()["id"],
+            "estimated_seconds": 3_600,
+        },
+    )
+    parent_id = project.json()["id"]
+    module_id = module.json()["id"]
+    child_id = child.json()["id"]
     started = datetime.now(UTC)
     ended = started + timedelta(minutes=30)
 
@@ -240,6 +395,7 @@ async def test_child_session_time_rolls_up_to_parent_budget(client: AsyncClient)
     by_id = {task["id"]: task for task in tasks.json()}
     assert by_id[child_id]["direct_actual_seconds"] == 1_800
     assert by_id[child_id]["actual_seconds"] == 1_800
+    assert by_id[module_id]["actual_seconds"] == 1_800
     assert by_id[parent_id]["direct_actual_seconds"] == 0
     assert by_id[parent_id]["actual_seconds"] == 1_800
 
@@ -264,3 +420,24 @@ async def test_session_cannot_use_another_users_task(client: AsyncClient) -> Non
         ),
     )
     assert response.status_code == 404
+
+
+async def test_session_rejects_project_and_module_containers(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "container_timer")
+    project, _, _ = await create_structured_task(client, token, "可计时任务")
+    started = datetime.now(UTC)
+    response = await client.put(
+        f"/api/v1/sessions/{uuid4()}",
+        headers=auth_header(token),
+        json=snapshot(
+            project["id"],
+            str(uuid4()),
+            "RUNNING",
+            started,
+            started,
+            0,
+            last_resumed_at=started,
+        ),
+    )
+    assert response.status_code == 409
+    assert "Only executable tasks" in response.json()["detail"]

@@ -44,6 +44,13 @@ function isNetworkError(error: unknown): boolean {
   return axios.isAxiosError(error) && !error.response
 }
 
+async function normalizeLegacySnapshot(snapshot: SessionSnapshot): Promise<SessionSnapshot> {
+  if (snapshot.task_id === null || snapshot.daily_plan_item_id === null) return snapshot
+  const task = await localDb.cachedTasks.get(snapshot.task_id)
+  if (!task || task.node_type === 'TASK') return snapshot
+  return { ...snapshot, task_id: null }
+}
+
 export const useTimerStore = defineStore('timer', {
   state: (): TimerState => ({
     ownerId: null,
@@ -163,7 +170,20 @@ export const useTimerStore = defineStore('timer', {
         )
         for (const item of pending) {
           try {
-            await sessionService.upsert(item.session_id, item.snapshot)
+            const snapshot = await normalizeLegacySnapshot(item.snapshot)
+            if (snapshot !== item.snapshot) {
+              await localDb.sessionOutbox.update(item.session_id, { snapshot })
+              if (this.active?.session_id === item.session_id) {
+                this.active = { ...this.active, snapshot }
+                await saveActiveTimer(
+                  this.ownerId,
+                  item.session_id,
+                  snapshot,
+                  this.targetSeconds,
+                )
+              }
+            }
+            await sessionService.upsert(item.session_id, snapshot)
             await localDb.sessionOutbox.delete(item.session_id)
           } catch (error) {
             if (isNetworkError(error)) {
@@ -174,8 +194,9 @@ export const useTimerStore = defineStore('timer', {
               retry_count: item.retry_count + 1,
               last_error: '服务器拒绝了该计时状态。',
             })
-            this.syncError = '存在需要处理的计时同步冲突。'
-            throw error
+            // Keep the rejected historical snapshot for inspection, but do
+            // not prevent independent, newer sessions from reaching server.
+            continue
           }
         }
       } finally {
@@ -225,7 +246,20 @@ export const useTimerStore = defineStore('timer', {
       const queued = await localDb.sessionOutbox.get(sessionId)
       if (!queued) return
       try {
-        await sessionService.upsert(sessionId, queued.snapshot)
+        const snapshot = await normalizeLegacySnapshot(queued.snapshot)
+        if (snapshot !== queued.snapshot) {
+          await localDb.sessionOutbox.update(sessionId, { snapshot })
+          if (this.active?.session_id === sessionId) {
+            this.active = { ...this.active, snapshot }
+            await saveActiveTimer(
+              this.ownerId,
+              sessionId,
+              snapshot,
+              this.targetSeconds,
+            )
+          }
+        }
+        await sessionService.upsert(sessionId, snapshot)
         await localDb.sessionOutbox.delete(sessionId)
         this.pendingCount = await localDb.sessionOutbox
           .where('owner_id')
@@ -245,8 +279,16 @@ export const useTimerStore = defineStore('timer', {
       dailyPlanItemId: string | null = null,
       targetSeconds: number | null = null,
     ): Promise<void> {
-      if (this.active) throw new Error('已有活动计时器')
+      if (this.active?.snapshot.status === 'RUNNING') {
+        throw new Error('请先暂停当前计时，再切换到其他任务。')
+      }
+      if (this.active?.snapshot.status === 'PAUSED') {
+        // Close the old local segment without waiting for the network. The
+        // outbox replays it before the new RUNNING segment in timestamp order.
+        await this.finish(false, false)
+      }
       this.busy = true
+      this.syncError = ''
       this.targetSeconds = targetSeconds && targetSeconds > 0 ? targetSeconds : null
       const sessionId = crypto.randomUUID()
       const now = nextTimestamp()
@@ -265,15 +307,17 @@ export const useTimerStore = defineStore('timer', {
       try {
         await this.persistSnapshot(sessionId, snapshot, true)
         try {
-          await this.syncLatestOrKeepOffline(sessionId)
+          // Structural changes must be attempted before their session, but a
+          // rejected or temporarily blocked sync must not cancel local timing.
+          await this.syncPending()
+          if (!this.online) {
+            this.syncError = '计时已在本机开始，联网后将自动同步。'
+          }
         } catch (error) {
-          if (!this.ownerId) throw error
-          await clearActiveTimer(this.ownerId)
-          await localDb.sessionOutbox.delete(sessionId)
-          this.active = null
-          this.displaySeconds = 0
-          this.targetSeconds = null
-          throw error
+          if (isNetworkError(error)) this.online = false
+          this.syncError = isNetworkError(error)
+            ? '计时已在本机开始，联网后将自动同步。'
+            : '计时已开始，但新任务或计时记录暂未同步，请稍后重试。'
         }
       } finally {
         this.pendingCount = this.ownerId
@@ -320,7 +364,10 @@ export const useTimerStore = defineStore('timer', {
       }
     },
 
-    async finish(): Promise<void> {
+    async finish(
+      completeDailyItem = true,
+      syncImmediately = true,
+    ): Promise<void> {
       if (!this.active) return
       this.busy = true
       const sessionId = this.active.session_id
@@ -333,11 +380,14 @@ export const useTimerStore = defineStore('timer', {
           duration_seconds: snapshotDuration(this.active.snapshot, new Date(now)),
           last_resumed_at: null,
           client_updated_at: now,
+          complete_daily_item: completeDailyItem,
         }
         await this.persistSnapshot(sessionId, snapshot, false)
         this.targetSeconds = null
-        await this.syncLatestOrKeepOffline(sessionId)
-        await this.refreshHistory()
+        if (syncImmediately) {
+          await this.syncLatestOrKeepOffline(sessionId)
+          await this.refreshHistory()
+        }
         this.completedRevision += 1
       } finally {
         this.busy = false

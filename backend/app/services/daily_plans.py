@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.daily_plan import DailyPlan, DailyPlanItem, DailyPlanItemStatus
 from app.models.session import Session
-from app.models.task import Task, TaskRepeatRule, TaskStatus
+from app.models.task import Task, TaskNodeType, TaskRepeatRule, TaskStatus
 from app.schemas.daily_plan import (
     CheckInResponse,
     DailyPlanItemResponse,
@@ -251,7 +251,11 @@ def task_repeats_on_date(
 ) -> bool:
     """Return whether a recurring task is due on one calendar date."""
 
-    if task.status == TaskStatus.DONE or task.repeat_rule == TaskRepeatRule.NONE:
+    if (
+        task.node_type != TaskNodeType.TASK
+        or task.status == TaskStatus.DONE
+        or task.repeat_rule == TaskRepeatRule.NONE
+    ):
         return False
     timezone = resolve_timezone(timezone_name)
     start_date = normalize_utc(task.created_at).astimezone(timezone).date()
@@ -289,6 +293,7 @@ async def auto_populate_recurring_items(
         select(Task)
         .where(
             Task.owner_id == owner_id,
+            Task.node_type == TaskNodeType.TASK,
             Task.deleted_at.is_(None),
         )
         .order_by(Task.sort_order, Task.created_at, Task.id)

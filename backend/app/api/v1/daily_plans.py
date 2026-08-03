@@ -29,7 +29,7 @@ from app.services.daily_plans import (
     mark_item_status,
 )
 from app.services.notifications import create_notification, notification_manager
-from app.services.tasks import get_owned_task
+from app.services.tasks import get_owned_executable_task
 
 router = APIRouter(tags=["daily plans"])
 
@@ -135,7 +135,7 @@ async def add_daily_plan_item(
             response = await build_daily_plan_response(db, plan)
             return next(item for item in response.items if item.id == existing.id)
     linked_task = (
-        await get_owned_task(db, current_user.id, payload.task_id)
+        await get_owned_executable_task(db, current_user.id, payload.task_id)
         if payload.task_id is not None
         else None
     )

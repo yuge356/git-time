@@ -13,7 +13,7 @@
         </label>
       </section>
 
-      <FormMessage :message="errorMessage" />
+      <FormMessage :message="errorMessage || timer.syncError" />
 
       <div v-if="!daily.online || daily.pendingCount > 0" class="sync-banner">
         <strong>{{ daily.online ? '等待同步' : '当前离线' }}</strong>
@@ -117,9 +117,9 @@
           <span>从项目中挑一项任务，或添加一个临时事项。</span>
         </div>
 
-        <ol v-else class="daily-item-list">
+        <TransitionGroup v-else tag="ol" name="daily-list" class="daily-item-list">
           <li
-            v-for="item in daily.plan?.items"
+            v-for="item in orderedDailyItems"
             :key="item.id"
             :class="{
               'daily-item--selected': selectedItemId === item.id,
@@ -191,10 +191,11 @@
                 class="button button--small"
                 :class="selectedItemId === item.id ? 'button--primary' : 'button--quiet'"
                 type="button"
-                :disabled="timer.busy || Boolean(timer.active) || item.status === 'DONE'"
+                :disabled="startItemDisabled(item)"
+                :title="startItemTitle(item)"
                 @click="startItem(item)"
               >
-                {{ timer.active ? '计时占用中' : '开始' }}
+                {{ startItemLabel(item) }}
               </button>
               <button
                 class="daily-remove"
@@ -207,7 +208,7 @@
               </button>
             </div>
           </li>
-        </ol>
+        </TransitionGroup>
 
         <details class="quick-add">
           <summary>+ 添加今日任务</summary>
@@ -262,8 +263,6 @@ const adHocTitle = ref('')
 const estimatedMinutes = ref(30)
 const selectedItemId = ref('')
 const errorMessage = ref('')
-const autoFinishing = ref(false)
-const autoFinishEnabled = ref(false)
 let dayRolloverTimer: number | null = null
 let lastRealDate = ''
 
@@ -299,16 +298,35 @@ const plannedTaskIds = computed(
   () => new Set(daily.plan?.items.flatMap((item) => (item.task_id ? [item.task_id] : []))),
 )
 const availableTasks = computed(() =>
-  tasks.items.filter((task) => !plannedTaskIds.value.has(task.id)),
+  tasks.items.filter(
+    (task) => task.node_type === 'TASK' && !plannedTaskIds.value.has(task.id),
+  ),
 )
 const canAdd = computed(() =>
   itemKind.value === 'task' ? Boolean(planTaskId.value) : Boolean(adHocTitle.value),
 )
+const orderedDailyItems = computed(() => {
+  const items = [...(daily.plan?.items ?? [])]
+  return items.sort((left, right) => {
+    const leftTiming = isTiming(left)
+    const rightTiming = isTiming(right)
+    if (leftTiming !== rightTiming) return leftTiming ? -1 : 1
+    const leftDone = left.status === 'DONE'
+    const rightDone = right.status === 'DONE'
+    if (leftDone !== rightDone) return leftDone ? 1 : -1
+    if (leftDone && rightDone) {
+      const completionOrder = (right.completed_at ?? '').localeCompare(left.completed_at ?? '')
+      if (completionOrder !== 0) return completionOrder
+    }
+    if (left.sort_order !== right.sort_order) return left.sort_order - right.sort_order
+    return left.created_at.localeCompare(right.created_at)
+  })
+})
 /**
  * Seconds accrued by the running timer since the last server-persisted
  * snapshot. Added on top of server-known values so learning time, budget
- * remaining and the daily list all tick live while timing — every timer
- * action re-syncs the base values from the server.
+ * remaining and the daily list all tick live while timing. Completed timer
+ * actions update the local snapshot immediately and synchronize separately.
  */
 const liveTimerExtra = computed(() => {
   if (!timer.active || timer.active.snapshot.status !== 'RUNNING') return 0
@@ -376,30 +394,6 @@ watch(
   { immediate: true },
 )
 
-watch(
-  [
-    () => timer.displaySeconds,
-    () => timer.active?.snapshot.status,
-    () => timer.targetSeconds,
-  ],
-  () => {
-    if (
-      timer.active?.snapshot.status === 'RUNNING' &&
-      timer.targetSeconds !== null &&
-      timer.displaySeconds >= timer.targetSeconds &&
-      autoFinishEnabled.value &&
-      !timer.busy &&
-      !autoFinishing.value
-    ) {
-      autoFinishing.value = true
-      void finish().finally(() => {
-        autoFinishing.value = false
-      })
-    }
-  },
-  { immediate: true },
-)
-
 function localDateString(date = new Date()): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -419,7 +413,6 @@ onMounted(async () => {
       daily.initialize(ownerId, selectedDate.value, activeItemId),
     ])
     await restoreMissingActiveItem()
-    autoFinishEnabled.value = true
   })
 })
 
@@ -490,6 +483,32 @@ function statusLabel(item: DailyPlanItem): string {
   return '待开始'
 }
 
+function startItemDisabled(item: DailyPlanItem): boolean {
+  return (
+    timer.busy
+    || item.status === 'DONE'
+    || timer.active?.snapshot.status === 'RUNNING'
+  )
+}
+
+function startItemLabel(item: DailyPlanItem): string {
+  if (timer.busy) return '处理中…'
+  if (item.status === 'DONE') return '已完成'
+  if (timer.active?.snapshot.status === 'PAUSED') return '切换并开始'
+  if (timer.active?.snapshot.status === 'RUNNING') return '请先暂停'
+  return '开始'
+}
+
+function startItemTitle(item: DailyPlanItem): string {
+  if (timer.busy) return '正在处理计时状态'
+  if (item.status === 'DONE') return '已完成的任务需先重新打开才能计时'
+  if (timer.active?.snapshot.status === 'PAUSED') {
+    return '保存当前已暂停的计时，然后开始该任务'
+  }
+  if (timer.active?.snapshot.status === 'RUNNING') return '请先暂停当前计时'
+  return '开始该任务的计时'
+}
+
 async function runAction(action: () => Promise<void>): Promise<void> {
   errorMessage.value = ''
   try {
@@ -499,15 +518,10 @@ async function runAction(action: () => Promise<void>): Promise<void> {
   }
 }
 
-/**
- * Timer sessions update task/plan actual seconds on the server — refresh
- * both stores after every timer action so budgets stay in sync.
- */
 async function runTimerAction(action: () => Promise<void>): Promise<void> {
   await runAction(async () => {
     await action()
     daily.setActiveItem(timer.active?.snapshot.daily_plan_item_id ?? null)
-    await Promise.all([tasks.load(), daily.refresh()])
   })
 }
 
@@ -542,12 +556,22 @@ async function toggleDone(item: DailyPlanItem): Promise<void> {
 
 async function startItem(item: DailyPlanItem): Promise<void> {
   selectedItemId.value = item.id
+  const previousItem = activeTimerItem.value
+  const previousActualSeconds = previousItem ? displayActual(previousItem) : 0
   await runTimerAction(async () => {
-    const remainingSeconds =
-      item.estimated_seconds > 0
-        ? Math.max(1, item.estimated_seconds - item.actual_seconds)
-        : null
-    await timer.start(item.task_id, item.id, remainingSeconds)
+    const remaining = item.estimated_seconds - item.actual_seconds
+    const remainingSeconds = item.estimated_seconds > 0 && remaining > 0
+      ? remaining
+      : null
+    const executableTaskId = tasks.items.some(
+      (task) => task.id === item.task_id && task.node_type === 'TASK',
+    )
+      ? item.task_id
+      : null
+    await timer.start(executableTaskId, item.id, remainingSeconds)
+    if (previousItem && previousItem.id !== item.id) {
+      await daily.applyStoppedTimer(previousItem.id, previousActualSeconds)
+    }
     if (item.status !== 'IN_PROGRESS') {
       await daily.updateItem(item.id, { status: 'IN_PROGRESS' })
     }
@@ -560,7 +584,12 @@ async function startSelectedItem(): Promise<void> {
 }
 
 async function pause(): Promise<void> {
-  await runTimerAction(() => timer.pause())
+  const item = activeTimerItem.value
+  const actualSeconds = item ? displayActual(item) : 0
+  await runTimerAction(async () => {
+    await timer.pause()
+    if (item) await daily.applyStoppedTimer(item.id, actualSeconds)
+  })
 }
 
 async function resume(): Promise<void> {
