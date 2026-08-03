@@ -16,6 +16,11 @@ export const dailyPlanService = {
     return data
   },
 
+  async autoPopulate(planId: string): Promise<DailyPlan> {
+    const { data } = await http.post<DailyPlan>(`/daily-plans/${planId}/auto-populate`)
+    return data
+  },
+
   async readByDate(planDate: string): Promise<DailyPlan> {
     const { data } = await http.get<DailyPlan>(`/daily-plans/by-date/${planDate}`)
     return data

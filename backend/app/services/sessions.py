@@ -7,9 +7,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.daily_plan import DailyPlanItem, DailyPlanItemStatus
 from app.models.session import Session, SessionStatus
 from app.schemas.session import SessionStateUpsert
-from app.services.daily_plans import get_owned_daily_item
+from app.services.daily_plans import get_owned_daily_item, mark_item_status
 from app.services.tasks import get_owned_task, normalize_utc
 
 
@@ -35,6 +36,13 @@ async def get_owned_session(
             Session.deleted_at.is_(None),
         )
     )
+
+
+def complete_daily_item(daily_item: DailyPlanItem | None) -> None:
+    """Complete the linked daily item when its timer is finished."""
+
+    if daily_item is not None and daily_item.status != DailyPlanItemStatus.DONE:
+        mark_item_status(daily_item, DailyPlanItemStatus.DONE)
 
 
 def validate_transition(current: SessionStatus, incoming: SessionStatus) -> None:
@@ -70,6 +78,7 @@ async def apply_session_snapshot(
 
     existing = await get_owned_session(db, owner_id, session_id)
     if existing is None:
+        daily_item: DailyPlanItem | None = None
         if payload.task_id is not None:
             await get_owned_task(db, owner_id, payload.task_id)
         if payload.daily_plan_item_id is not None:
@@ -97,6 +106,8 @@ async def apply_session_snapshot(
             client_updated_at=payload.client_updated_at,
         )
         db.add(session)
+        if payload.status == SessionStatus.COMPLETED:
+            complete_daily_item(daily_item)
         return session
 
     if normalize_utc(payload.client_updated_at) <= normalize_utc(existing.client_updated_at):
@@ -143,4 +154,8 @@ async def apply_session_snapshot(
     existing.duration_seconds = payload.duration_seconds
     existing.last_resumed_at = payload.last_resumed_at
     existing.client_updated_at = payload.client_updated_at
+    if payload.status == SessionStatus.COMPLETED and existing.daily_plan_item_id is not None:
+        complete_daily_item(
+            await get_owned_daily_item(db, owner_id, existing.daily_plan_item_id)
+        )
     return existing

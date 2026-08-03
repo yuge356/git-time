@@ -3,7 +3,7 @@
     <header class="form-header">
       <p class="eyebrow">开始使用</p>
       <h2>创建账户</h2>
-      <p>创建你的学习时间预算空间。</p>
+      <p>创建你的项目与任务时间预算空间。</p>
     </header>
 
     <form class="form-stack" @submit.prevent="submit">

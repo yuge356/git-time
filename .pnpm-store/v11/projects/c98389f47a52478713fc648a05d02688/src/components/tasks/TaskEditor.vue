@@ -1,9 +1,9 @@
 <template>
-  <section class="task-editor task-editor--inline" aria-labelledby="task-editor-title">
+  <section class="task-editor task-editor--inline" :aria-labelledby="editorTitleId">
     <header class="task-editor__header">
       <div>
-        <p class="eyebrow">{{ task ? '编辑任务' : '新建任务' }}</p>
-        <h2 id="task-editor-title">{{ task ? task.title : '规划学习投入' }}</h2>
+        <p class="eyebrow">{{ editorEyebrow }}</p>
+        <h2 :id="editorTitleId">{{ editorTitle }}</h2>
       </div>
       <button class="icon-button" type="button" aria-label="关闭编辑面板" @click="$emit('close')">
         ×
@@ -12,19 +12,19 @@
 
     <form class="form-stack" @submit.prevent="submit">
       <label class="field">
-        <span>任务标题</span>
+        <span>{{ titleFieldLabel }}</span>
         <input
           v-model.trim="form.title"
           type="text"
           maxlength="200"
           required
-          placeholder="例如：Python 第一章"
+          :placeholder="titlePlaceholder"
         />
       </label>
 
       <fieldset class="budget-fieldset">
-        <legend>预计学习时间</legend>
-        <div class="duration-grid">
+        <legend>预计投入时间</legend>
+        <div v-if="!isParentTask" class="duration-grid">
           <label class="field">
             <span>小时</span>
             <input v-model.number="form.hours" type="number" min="0" max="87600" />
@@ -34,6 +34,7 @@
             <input v-model.number="form.minutes" type="number" min="0" max="59" />
           </label>
         </div>
+        <p v-else class="budget-readonly">子任务预算合计: {{ formatDuration(task!.children_estimated_seconds) }}</p>
         <small>设为 0 表示暂不设置时间预算。</small>
       </fieldset>
 
@@ -47,6 +48,12 @@
             <option value="WEEKLY">每周</option>
             <option value="MONTHLY">每月</option>
           </select>
+        </label>
+
+        <label v-if="form.repeat_rule !== 'NONE'" class="field">
+          <span>重复截止日期</span>
+          <input v-model="form.repeat_end_date" type="date" />
+          <small>留空表示永不截止。</small>
         </label>
 
         <div class="reminder-setting">
@@ -79,7 +86,7 @@
           取消
         </button>
         <button class="button button--primary" type="submit" :disabled="saving">
-          {{ saving ? '保存中…' : task ? '保存修改' : '创建任务' }}
+          {{ saving ? '保存中…' : task ? '保存修改' : parentId ? '创建子任务' : '创建项目' }}
         </button>
       </div>
     </form>
@@ -87,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import FormMessage from '@/components/FormMessage.vue'
 import type {
@@ -98,12 +105,33 @@ import type {
   TaskUpdatePayload,
 } from '@/types/task'
 import { getApiErrorMessage } from '@/utils/api-error'
+import { formatDuration } from '@/utils/time'
 
 const props = defineProps<{
   task: Task | null
   saving: boolean
   externalError?: string
+  parentId?: string | null
+  parentTitle?: string
 }>()
+
+const isParentTask = computed(() => props.task && !props.task.is_leaf)
+const editorEyebrow = computed(() => {
+  if (props.task) return props.task.parent_id ? '编辑任务' : '编辑项目'
+  return props.parentId ? '添加子任务' : '新建项目'
+})
+const editorTitle = computed(() => {
+  if (props.task) return props.task.title
+  return props.parentId ? `添加到“${props.parentTitle ?? '父任务'}”` : '规划项目投入'
+})
+const isProjectEditor = computed(() => !props.parentId && !props.task?.parent_id)
+const titleFieldLabel = computed(() => (isProjectEditor.value ? '项目名称' : '任务标题'))
+const titlePlaceholder = computed(() =>
+  isProjectEditor.value ? '例如：网站改版项目' : '例如：完成首页原型',
+)
+const editorTitleId = computed(() =>
+  `task-editor-title-${props.task?.id ?? props.parentId ?? 'root'}`,
+)
 
 const emit = defineEmits<{
   close: []
@@ -117,6 +145,7 @@ interface EditorForm {
   minutes: number
   status: TaskStatus
   repeat_rule: TaskRepeatRule
+  repeat_end_date: string
   reminder_enabled: boolean
   reminder_time: string
 }
@@ -128,6 +157,7 @@ const form = reactive<EditorForm>({
   minutes: 0,
   status: 'TODO',
   repeat_rule: 'NONE',
+  repeat_end_date: '',
   reminder_enabled: false,
   reminder_time: '08:00',
 })
@@ -139,13 +169,14 @@ function resetForm(): void {
   form.minutes = Math.floor((seconds % 3600) / 60)
   form.status = props.task?.status ?? 'TODO'
   form.repeat_rule = props.task?.repeat_rule ?? 'NONE'
+  form.repeat_end_date = props.task?.repeat_end_date ?? ''
   form.reminder_enabled = Boolean(props.task?.daily_reminder_time)
   form.reminder_time = props.task?.daily_reminder_time?.slice(0, 5) ?? '08:00'
   errorMessage.value = ''
 }
 
 watch(
-  () => props.task?.id,
+  () => [props.task?.id, props.parentId],
   resetForm,
   { immediate: true },
 )
@@ -175,14 +206,16 @@ function submit(): void {
         estimated_seconds: estimatedSeconds,
         status: form.status,
         repeat_rule: form.repeat_rule,
+        repeat_end_date: form.repeat_end_date || null,
         daily_reminder_time: dailyReminderTime,
       })
     } else {
       emit('create', {
         title: form.title,
-        parent_id: null,
+        parent_id: props.parentId ?? null,
         estimated_seconds: estimatedSeconds,
         repeat_rule: form.repeat_rule,
+        repeat_end_date: form.repeat_end_date || null,
         daily_reminder_time: dailyReminderTime,
       })
     }

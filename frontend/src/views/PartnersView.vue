@@ -4,7 +4,7 @@
       <section class="page-heading collaboration-heading">
         <div>
           <p class="eyebrow">伙伴协作</p>
-          <h1>一起学习，彼此看见</h1>
+          <h1>一起推进，彼此看见</h1>
           <p>分享计划、查看伙伴进度和管理关系，现在都在这里。</p>
         </div>
         <label class="field collaboration-date">
@@ -200,7 +200,7 @@
                 <h3>我的伙伴</h3>
                 <span>{{ partners.length }}</span>
               </header>
-              <p v-if="partners.length === 0" class="empty-state">还没有学习伙伴。</p>
+              <p v-if="partners.length === 0" class="empty-state">还没有协作伙伴。</p>
               <ProfileRow v-for="item in partners" v-else :key="item.id" :profile="item.partner">
                 <button class="button button--quiet button--small" type="button" @click="remove(item.id)">解除</button>
                 <button class="text-action text-action--danger" type="button" @click="block(item.partner.id)">屏蔽</button>
@@ -404,7 +404,7 @@ async function decide(partnershipId: string, accept: boolean): Promise<void> {
   await runAction(async () => {
     await partnershipService.decide(partnershipId, accept)
     await refreshRelationships()
-    successMessage.value = accept ? '已成为学习伙伴。' : '邀请已拒绝。'
+    successMessage.value = accept ? '已成为协作伙伴。' : '邀请已拒绝。'
   })
 }
 

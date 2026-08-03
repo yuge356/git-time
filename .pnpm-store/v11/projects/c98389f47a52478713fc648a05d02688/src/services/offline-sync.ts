@@ -44,8 +44,17 @@ async function remapDailyPlan(
     await localDb.cachedDailyPlans.put(serverPlan)
     return
   }
+  const localPlan = await localDb.cachedDailyPlans.get(localPlanId)
+  const remappedItems = (localPlan?.items ?? []).map((item) => ({
+    ...item,
+    daily_plan_id: serverPlan.id,
+  }))
+  const remappedPlan = recalculatePlan({
+    ...serverPlan,
+    items: remappedItems.length > 0 ? remappedItems : serverPlan.items,
+  })
   await localDb.cachedDailyPlans.delete(localPlanId)
-  await localDb.cachedDailyPlans.put(serverPlan)
+  await localDb.cachedDailyPlans.put(remappedPlan)
   const operations = await localDb.syncOperations.where('owner_id').equals(ownerId).toArray()
   for (const operation of operations) {
     if (
@@ -138,8 +147,13 @@ async function runPendingSync(ownerId: string): Promise<number> {
   )
   for (const operation of operations) {
     try {
-      await replayOperation(operation)
-      await localDb.syncOperations.delete(operation.id)
+      // Plan creation can remap the payloads of item operations that were
+      // already included in this batch. Reload each operation so the next
+      // request always uses the newest server plan id.
+      const current = await localDb.syncOperations.get(operation.id)
+      if (!current) continue
+      await replayOperation(current)
+      await localDb.syncOperations.delete(current.id)
     } catch (error) {
       if (isNetworkError(error)) break
       await localDb.syncOperations.update(operation.id, {

@@ -3,10 +3,10 @@
     <section class="auth-intro" aria-labelledby="product-title">
       <AppLogo />
       <div class="auth-intro__content">
-        <p class="eyebrow">TIME BUDGET LEARNING TRACKER</p>
-        <h1 id="product-title">把时间花在整个学习目标上。</h1>
+        <p class="eyebrow">TIME BUDGET PROJECT TRACKER</p>
+        <h1 id="product-title">把时间花在真正重要的目标上。</h1>
         <p>
-          用预算、实际投入和进度偏差判断学习节奏，避免在单个章节投入过多时间。
+          用预算、实际投入和进度偏差管理项目与个人任务，让每一段时间都有清晰去向。
         </p>
       </div>
     </section>
@@ -22,4 +22,3 @@
 <script setup lang="ts">
 import AppLogo from './AppLogo.vue'
 </script>
-

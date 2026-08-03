@@ -192,6 +192,107 @@ async def test_client_generated_daily_item_id_is_idempotent(
         headers=auth_header(token),
         json=payload,
     )
+    reloaded = await client.get(
+        f"/api/v1/daily-plans/by-date/{date.today().isoformat()}",
+        headers=auth_header(token),
+    )
     assert first.status_code == 201
     assert replay.status_code == 201
     assert replay.json()["id"] == item_id
+    assert reloaded.status_code == 200
+    assert [item["id"] for item in reloaded.json()["items"]] == [item_id]
+
+
+async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "auto_populate")
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    project = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "每日项目",
+            "repeat_rule": "DAILY",
+            "estimated_seconds": 3_600,
+        },
+    )
+    assert project.status_code == 201
+    child = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "每日子任务",
+            "parent_id": project.json()["id"],
+            "repeat_rule": "DAILY",
+            "estimated_seconds": 900,
+        },
+    )
+    assert child.status_code == 201
+    expired = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "已截止任务",
+            "repeat_rule": "DAILY",
+            "repeat_end_date": yesterday.isoformat(),
+        },
+    )
+    assert expired.status_code == 201
+
+    plan = await create_plan(client, token, today)
+    first = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/auto-populate",
+        headers=auth_header(token),
+    )
+    replay = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/auto-populate",
+        headers=auth_header(token),
+    )
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert {item["title"] for item in first.json()["items"]} == {
+        "每日项目",
+        "每日子任务",
+    }
+    assert {item["id"] for item in replay.json()["items"]} == {
+        item["id"] for item in first.json()["items"]
+    }
+
+
+async def test_completed_project_keeps_existing_today_item(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "keep_done_item")
+    today = date.today()
+    task = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "今天已安排的项目任务",
+            "repeat_rule": "DAILY",
+            "estimated_seconds": 1_800,
+        },
+    )
+    assert task.status_code == 201
+    plan = await create_plan(client, token, today)
+    populated = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/auto-populate",
+        headers=auth_header(token),
+    )
+    assert populated.status_code == 200
+    item_id = populated.json()["items"][0]["id"]
+
+    completed = await client.patch(
+        f"/api/v1/tasks/{task.json()['id']}",
+        headers=auth_header(token),
+        json={"status": "DONE"},
+    )
+    assert completed.status_code == 200
+
+    reopened = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/auto-populate",
+        headers=auth_header(token),
+    )
+    assert reopened.status_code == 200
+    assert [item["id"] for item in reopened.json()["items"]] == [item_id]
+    assert reopened.json()["items"][0]["title"] == "今天已安排的项目任务"

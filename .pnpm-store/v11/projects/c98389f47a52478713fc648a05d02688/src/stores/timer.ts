@@ -23,12 +23,14 @@ interface TimerState {
   active: LocalTimerState | null
   history: StudySession[]
   displaySeconds: number
+  targetSeconds: number | null
   pendingCount: number
   initialized: boolean
   busy: boolean
   syncing: boolean
   online: boolean
   syncError: string
+  completedRevision: number
   tickerId: number | null
   onlineListenerBound: boolean
 }
@@ -48,12 +50,14 @@ export const useTimerStore = defineStore('timer', {
     active: null,
     history: [],
     displaySeconds: 0,
+    targetSeconds: null,
     pendingCount: 0,
     initialized: false,
     busy: false,
     syncing: false,
     online: navigator.onLine,
     syncError: '',
+    completedRevision: 0,
     tickerId: null,
     onlineListenerBound: false,
   }),
@@ -73,6 +77,7 @@ export const useTimerStore = defineStore('timer', {
       this.ownerId = ownerId
       this.initialized = false
       this.active = (await loadActiveTimer(ownerId)) ?? null
+      this.targetSeconds = this.active?.target_seconds ?? null
       this.history = []
       this.syncError = ''
       this.online = navigator.onLine
@@ -103,6 +108,7 @@ export const useTimerStore = defineStore('timer', {
               id: ownerId,
               owner_id: ownerId,
               session_id: serverActive.id,
+              target_seconds: this.targetSeconds,
               snapshot: {
                 task_id: serverActive.task_id,
                 daily_plan_item_id: serverActive.daily_plan_item_id,
@@ -115,7 +121,12 @@ export const useTimerStore = defineStore('timer', {
                 client_updated_at: serverActive.client_updated_at,
               },
             }
-            await saveActiveTimer(ownerId, this.active.session_id, this.active.snapshot)
+            await saveActiveTimer(
+              ownerId,
+              this.active.session_id,
+              this.active.snapshot,
+              this.targetSeconds,
+            )
             this.displaySeconds = snapshotDuration(this.active.snapshot)
           }
         }
@@ -183,11 +194,17 @@ export const useTimerStore = defineStore('timer', {
     ): Promise<void> {
       if (!this.ownerId) throw new Error('Timer store is not initialized')
       if (keepActive) {
-        await saveActiveTimer(this.ownerId, sessionId, snapshot)
+        await saveActiveTimer(
+          this.ownerId,
+          sessionId,
+          snapshot,
+          this.targetSeconds,
+        )
         this.active = {
           id: this.ownerId,
           owner_id: this.ownerId,
           session_id: sessionId,
+          target_seconds: this.targetSeconds,
           snapshot,
         }
         this.displaySeconds = snapshotDuration(snapshot)
@@ -226,9 +243,11 @@ export const useTimerStore = defineStore('timer', {
     async start(
       taskId: string | null,
       dailyPlanItemId: string | null = null,
+      targetSeconds: number | null = null,
     ): Promise<void> {
       if (this.active) throw new Error('已有活动计时器')
       this.busy = true
+      this.targetSeconds = targetSeconds && targetSeconds > 0 ? targetSeconds : null
       const sessionId = crypto.randomUUID()
       const now = nextTimestamp()
       const snapshot: SessionSnapshot = {
@@ -253,6 +272,7 @@ export const useTimerStore = defineStore('timer', {
           await localDb.sessionOutbox.delete(sessionId)
           this.active = null
           this.displaySeconds = 0
+          this.targetSeconds = null
           throw error
         }
       } finally {
@@ -315,8 +335,10 @@ export const useTimerStore = defineStore('timer', {
           client_updated_at: now,
         }
         await this.persistSnapshot(sessionId, snapshot, false)
+        this.targetSeconds = null
         await this.syncLatestOrKeepOffline(sessionId)
         await this.refreshHistory()
+        this.completedRevision += 1
       } finally {
         this.busy = false
       }

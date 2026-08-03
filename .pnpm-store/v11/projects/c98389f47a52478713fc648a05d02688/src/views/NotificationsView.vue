@@ -81,7 +81,7 @@ function notificationBody(item: Notification): string {
     return encouragements[item.payload.encouragement_type ?? ''] ?? '伙伴为你加油'
   }
   if (item.notification_type === 'PLAN_SHARED') return '打开计划分享页查看进度'
-  if (item.notification_type === 'PARTNER_INVITE') return '前往学习伙伴页处理邀请'
+  if (item.notification_type === 'PARTNER_INVITE') return '前往伙伴协作页处理邀请'
   return '你们现在可以互相分享每日计划'
 }
 

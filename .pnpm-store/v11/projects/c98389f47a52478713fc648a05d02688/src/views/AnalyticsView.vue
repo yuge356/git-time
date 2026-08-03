@@ -3,7 +3,7 @@
     <main class="analytics-page">
       <section class="page-heading analytics-heading">
         <div>
-          <p class="eyebrow">学习统计</p>
+          <p class="eyebrow">时间统计</p>
           <h1>看清时间去了哪里</h1>
           <p>统计来自计时记录、任务预算与每日计划完成状态。</p>
         </div>
@@ -26,7 +26,7 @@
 
       <section class="analytics-metrics">
         <article>
-          <span>总学习时长</span>
+          <span>总投入时长</span>
           <strong>{{ readableDuration(summary?.total_learning_seconds ?? 0) }}</strong>
         </article>
         <article>
@@ -34,7 +34,7 @@
           <strong>{{ summary?.completed_session_count ?? 0 }} 次</strong>
         </article>
         <article>
-          <span>完成长期任务</span>
+          <span>完成项目任务</span>
           <strong>
             {{ summary?.completed_task_count ?? 0 }}/{{ summary?.total_task_count ?? 0 }}
           </strong>
@@ -45,10 +45,10 @@
         <article class="analytics-card analytics-card--wide">
           <header>
             <p class="eyebrow">每日趋势</p>
-            <h2>学习时长与完成项</h2>
+            <h2>投入时长与完成项</h2>
           </header>
-          <p v-if="!hasDailyActivity" class="empty-state">所选日期内还没有学习记录。</p>
-          <div v-else class="trend-chart" role="img" aria-label="每日学习时长柱状图">
+          <p v-if="!hasDailyActivity" class="empty-state">所选日期内还没有计时记录。</p>
+          <div v-else class="trend-chart" role="img" aria-label="每日投入时长柱状图">
             <div v-for="point in summary?.daily_trend" :key="point.date" class="trend-column">
               <span class="trend-value">{{ compactDuration(point.seconds) }}</span>
               <div class="trend-track">
@@ -69,7 +69,7 @@
             <h2>直接投入占比</h2>
           </header>
           <p v-if="summary?.task_distribution.length === 0" class="empty-state">
-            暂无可分配的学习时长。
+            暂无可分配的投入时长。
           </p>
           <ol v-else class="distribution-list">
             <li v-for="item in summary?.task_distribution" :key="item.task_id ?? 'adhoc'">
@@ -91,7 +91,7 @@
             <h2>计划用时与实际投入</h2>
           </header>
           <p v-if="summary?.budget_comparison.length === 0" class="empty-state">
-            还没有设置任务预算或产生学习时长。
+            还没有设置任务预算或产生投入时长。
           </p>
           <div v-else class="budget-table-wrap">
             <table class="budget-table">
@@ -126,11 +126,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
 import { analyticsService } from '@/services/analytics'
+import { useTimerStore } from '@/stores/timer'
 import type { AnalyticsSummary } from '@/types/analytics'
 import { getApiErrorMessage } from '@/utils/api-error'
 
@@ -147,6 +148,7 @@ weekStart.setDate(today.getDate() - 6)
 const dateFrom = ref(localDateString(weekStart))
 const dateTo = ref(localDateString(today))
 const summary = ref<AnalyticsSummary | null>(null)
+const timer = useTimerStore()
 const loading = ref(false)
 const errorMessage = ref('')
 const maxDailySeconds = computed(() =>
@@ -157,6 +159,11 @@ const hasDailyActivity = computed(() =>
 )
 
 onMounted(load)
+
+watch(
+  () => timer.completedRevision,
+  () => void load(),
+)
 
 async function load(): Promise<void> {
   errorMessage.value = ''

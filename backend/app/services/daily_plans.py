@@ -1,5 +1,6 @@
 """Daily-plan ownership, progress and check-in calculations."""
 
+from calendar import monthrange
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
@@ -9,14 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.daily_plan import DailyPlan, DailyPlanItem, DailyPlanItemStatus
 from app.models.session import Session
-from app.models.task import Task, TaskRepeatRule
+from app.models.task import Task, TaskRepeatRule, TaskStatus
 from app.schemas.daily_plan import (
     CheckInResponse,
     DailyPlanItemResponse,
     DailyPlanResponse,
 )
 from app.services.analytics import resolve_timezone
-from app.services.tasks import effective_session_duration
+from app.services.tasks import effective_session_duration, normalize_utc
 
 
 async def get_owned_daily_plan(
@@ -243,34 +244,69 @@ def mark_item_status(item: DailyPlanItem, incoming: DailyPlanItemStatus) -> None
     item.completed_at = datetime.now(UTC) if incoming == DailyPlanItemStatus.DONE else None
 
 
+def task_repeats_on_date(
+    task: Task,
+    target_date: date,
+    timezone_name: str = "UTC",
+) -> bool:
+    """Return whether a recurring task is due on one calendar date."""
+
+    if task.status == TaskStatus.DONE or task.repeat_rule == TaskRepeatRule.NONE:
+        return False
+    timezone = resolve_timezone(timezone_name)
+    start_date = normalize_utc(task.created_at).astimezone(timezone).date()
+    if target_date < start_date:
+        return False
+    if task.repeat_end_date is not None and target_date > task.repeat_end_date:
+        return False
+    if task.repeat_rule == TaskRepeatRule.DAILY:
+        return True
+    if task.repeat_rule == TaskRepeatRule.WEEKDAYS:
+        return target_date.weekday() < 5
+    if task.repeat_rule == TaskRepeatRule.WEEKLY:
+        return (target_date - start_date).days % 7 == 0
+    if task.repeat_rule == TaskRepeatRule.MONTHLY:
+        due_day = min(start_date.day, monthrange(target_date.year, target_date.month)[1])
+        return target_date.day == due_day
+    return False
+
+
 async def auto_populate_recurring_items(
     db: AsyncSession,
     owner_id: UUID,
     plan_id: UUID,
+    timezone_name: str = "UTC",
 ) -> DailyPlanResponse:
-    """Populate a daily plan with recurring tasks that don't already exist in it."""
-    
+    """Add recurring tasks due on the date without removing existing items.
+
+    Daily-plan items are durable snapshots: once a task has entered a day's
+    plan, completing the source project task must not remove that item.
+    """
+
     plan = await get_owned_daily_plan(db, owner_id, plan_id)
-    
+
     task_result = await db.scalars(
-        select(Task).where(
+        select(Task)
+        .where(
             Task.owner_id == owner_id,
-            Task.deleted_at.is_(None)
+            Task.deleted_at.is_(None),
         )
+        .order_by(Task.sort_order, Task.created_at, Task.id)
     )
     tasks = task_result.all()
-    
-    children_map = {t.parent_id for t in tasks if t.parent_id is not None}
-    is_weekday = plan.plan_date.weekday() < 5
-    
+
     existing_items_result = await db.scalars(
         select(DailyPlanItem).where(
             DailyPlanItem.daily_plan_id == plan.id,
-            DailyPlanItem.deleted_at.is_(None)
+            DailyPlanItem.deleted_at.is_(None),
         )
     )
-    existing_task_ids = {item.task_id for item in existing_items_result.all() if item.task_id is not None}
-    
+    existing_task_ids = {
+        item.task_id
+        for item in existing_items_result.all()
+        if item.task_id is not None
+    }
+
     current_max = await db.scalar(
         select(func.max(DailyPlanItem.sort_order)).where(
             DailyPlanItem.daily_plan_id == plan.id,
@@ -278,33 +314,32 @@ async def auto_populate_recurring_items(
         )
     )
     sort_order = (current_max if current_max is not None else -1) + 1
-    
-    new_items = []
-    for t in tasks:
-        if t.id in children_map:
+
+    new_items: list[DailyPlanItem] = []
+    for task in tasks:
+        # Existing daily items are intentionally retained regardless of the
+        # source task's current status. Only the explicit item-delete endpoint
+        # is allowed to remove them from this day's plan.
+        if task.id in existing_task_ids or not task_repeats_on_date(
+            task,
+            plan.plan_date,
+            timezone_name,
+        ):
             continue
-        if t.repeat_rule not in (TaskRepeatRule.DAILY, TaskRepeatRule.WEEKDAYS):
-            continue
-        if t.repeat_rule == TaskRepeatRule.WEEKDAYS and not is_weekday:
-            continue
-        if t.repeat_end_date and t.repeat_end_date < plan.plan_date:
-            continue
-        if t.id in existing_task_ids:
-            continue
-            
+
         item = DailyPlanItem(
             daily_plan_id=plan.id,
             owner_id=owner_id,
-            task_id=t.id,
-            title=t.title,
-            estimated_seconds=t.estimated_seconds,
-            sort_order=sort_order
+            task_id=task.id,
+            title=task.title,
+            estimated_seconds=task.estimated_seconds,
+            sort_order=sort_order,
         )
         db.add(item)
         sort_order += 1
         new_items.append(item)
-        
+
     if new_items:
         await db.flush()
-        
+
     return await build_daily_plan_response(db, plan)

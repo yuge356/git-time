@@ -3,12 +3,12 @@
     <main class="today-page">
       <section class="page-heading today-heading">
         <div>
-          <p class="eyebrow">每日计划</p>
-          <h1>安排今天，专注当下</h1>
-          <p>把长期任务或临时事项放进当天清单，计时同步累计到任务，完成后形成连续打卡。</p>
+          <p class="eyebrow">今天</p>
+          <h1>选一项，开始专注</h1>
+          <p>{{ displayDate }}</p>
         </div>
         <label class="field today-date">
-          <span>计划日期</span>
+          <span>切换日期</span>
           <input v-model="selectedDate" type="date" @change="loadSelectedDate" />
         </label>
       </section>
@@ -26,278 +26,212 @@
         </span>
       </div>
 
-      <section class="check-in-grid" aria-label="当日打卡概览">
-        <article class="stat-card stat-card--purple">
-          <span>学习时长</span>
-          <strong>{{ formatDuration(displayLearningSeconds) }}</strong>
-        </article>
-        <article class="stat-card stat-card--pink">
-          <span>完成进度</span>
-          <strong>
-            {{ daily.checkIn?.completed_items ?? 0 }}/{{ daily.checkIn?.total_items ?? 0 }}
-          </strong>
-        </article>
-        <article class="stat-card stat-card--blue">
-          <span>连续打卡</span>
-          <strong>{{ daily.checkIn?.streak_days ?? 0 }} 天</strong>
-        </article>
-      </section>
+      <section
+        :class="[
+          'focus-timer',
+          { 'focus-timer--active': timer.active, 'focus-timer--paused': timer.active?.snapshot.status === 'PAUSED' },
+        ]"
+        aria-labelledby="focus-timer-title"
+      >
+        <header class="focus-timer__header">
+          <div>
+            <p class="eyebrow">专注计时</p>
+            <h2 id="focus-timer-title">{{ timerTargetTitle }}</h2>
+          </div>
+          <span
+            :class="[
+              'timer-state',
+              { 'timer-state--paused': timer.active?.snapshot.status === 'PAUSED' },
+            ]"
+          >
+            {{ timerStateLabel }}
+          </span>
+        </header>
 
-      <section class="timer-workspace">
-        <article class="timer-card">
+        <div class="focus-timer__body">
+          <time class="focus-timer__display" aria-live="polite">
+            {{ timer.active ? formatTimer(timer.displaySeconds) : '00:00:00' }}
+          </time>
+          <p v-if="timerTargetItem">
+            已投入 {{ formatDuration(displayActual(timerTargetItem)) }}
+            <template v-if="timerTargetItem.estimated_seconds > 0">
+              · 计划 {{ formatDuration(timerTargetItem.estimated_seconds) }}
+              · 剩余 {{ formatDuration(timerRemainingSeconds) }}
+            </template>
+          </p>
+          <p v-else>从下方今日任务中选择一项，然后开始计时。</p>
+        </div>
+
+        <div class="focus-timer__actions">
           <template v-if="timer.active">
-            <header class="timer-card__header">
-              <div>
-                <p class="eyebrow">
-                  {{ timer.active.snapshot.status === 'RUNNING' ? '正在学习' : '计时已暂停' }}
-                </p>
-                <h2>{{ activeTask?.title ?? activePlanItem?.title ?? '学习任务' }}</h2>
-              </div>
-              <span
-                :class="[
-                  'timer-state',
-                  { 'timer-state--paused': timer.active.snapshot.status === 'PAUSED' },
-                ]"
-              >
-                {{ timer.active.snapshot.status === 'RUNNING' ? '计时中' : '已暂停' }}
-              </span>
-            </header>
-
-            <div class="timer-display" aria-live="polite">
-              {{ formatTimer(timer.displaySeconds) }}
-            </div>
-
-            <div class="timer-meta">
-              <span>开始于 {{ formatDate(timer.active.snapshot.started_at) }}</span>
-              <span v-if="activeTask && activeTask.estimated_seconds > 0">
-                任务预算 {{ formatDuration(activeTask.estimated_seconds) }} · 已用
-                {{ formatDuration(activeTaskUsed) }} · 剩余
-                {{ formatDuration(activeTaskRemaining) }}
-              </span>
-              <span v-else-if="activePlanItem && activePlanItem.estimated_seconds > 0">
-                计划 {{ formatDuration(activePlanItem.estimated_seconds) }} · 剩余
-                {{ formatDuration(activeItemRemaining) }}
-              </span>
-            </div>
-
-            <div class="timer-actions">
-              <button
-                v-if="timer.active.snapshot.status === 'RUNNING'"
-                class="button button--quiet"
-                type="button"
-                :disabled="timer.busy"
-                @click="pause"
-              >
-                暂停
-              </button>
-              <button
-                v-else
-                class="button button--primary"
-                type="button"
-                :disabled="timer.busy"
-                @click="resume"
-              >
-                恢复
-              </button>
-              <button
-                class="button button--finish"
-                type="button"
-                :disabled="timer.busy"
-                @click="finish"
-              >
-                结束学习
-              </button>
-            </div>
-          </template>
-
-          <template v-else>
-            <header class="timer-card__header">
-              <div>
-                <p class="eyebrow">开始学习</p>
-                <h2>选择一个任务</h2>
-              </div>
-            </header>
-
-            <label class="field timer-task-select">
-              <span>计时任务</span>
-              <select v-model="timerTaskId" :disabled="tasks.loading">
-                <option value="">请选择任务</option>
-                <option v-for="task in tasks.items" :key="task.id" :value="task.id">
-                  {{ task.title }}
-                </option>
-              </select>
-            </label>
-
-            <div class="timer-empty-display" aria-hidden="true">00:00:00</div>
-
             <button
-              class="button button--primary timer-start-button"
+              v-if="timer.active.snapshot.status === 'RUNNING'"
+              class="button button--quiet"
               type="button"
-              :disabled="!timerTaskId || timer.busy"
-              @click="startTimer"
+              :disabled="timer.busy"
+              @click="pause"
             >
-              {{ timer.busy ? '启动中…' : '开始学习' }}
+              暂停
+            </button>
+            <button
+              v-else
+              class="button button--primary"
+              type="button"
+              :disabled="timer.busy"
+              @click="resume"
+            >
+              继续
+            </button>
+            <button class="button button--finish" type="button" :disabled="timer.busy" @click="finish">
+              结束计时
             </button>
           </template>
-        </article>
-
-        <aside class="session-history">
-          <header>
-            <p class="eyebrow">SESSION 记录</p>
-            <h2>最近学习</h2>
-          </header>
-
-          <p v-if="timer.history.length === 0" class="history-empty">
-            完成一次学习后，记录会显示在这里。
-          </p>
-
-          <ol v-else class="history-list">
-            <li v-for="session in timer.history" :key="session.id">
-              <div>
-                <strong>{{ taskTitle(session.task_id) }}</strong>
-                <span>{{ formatDate(session.started_at) }}</span>
-              </div>
-              <time>{{ formatTimer(session.duration_seconds) }}</time>
-            </li>
-          </ol>
-        </aside>
+          <button
+            v-else
+            class="button button--primary"
+            type="button"
+            :disabled="!selectedTimerItem || timer.busy"
+            @click="startSelectedItem"
+          >
+            {{ selectedTimerItem ? '开始计时' : '请先选择任务' }}
+          </button>
+        </div>
       </section>
 
-      <section class="today-layout">
-        <article class="today-card">
-          <header class="today-card__header">
-            <div>
-              <p class="eyebrow">当日清单</p>
-              <h2>{{ displayDate }}</h2>
-            </div>
-            <span class="completion-pill">{{ completionPercent }}%</span>
-          </header>
+      <section class="today-checklist">
+        <header class="today-checklist__header">
+          <div>
+            <h2>今日任务</h2>
+            <p>点击任务即可选中；色块表示已使用的计划时间。</p>
+          </div>
+          <div class="today-summary" aria-label="今日投入概览">
+            <span><strong>{{ formatDuration(displayLearningSeconds) }}</strong> 已投入</span>
+            <span><strong>{{ daily.checkIn?.completed_items ?? 0 }}/{{ daily.checkIn?.total_items ?? 0 }}</strong> 已完成</span>
+            <span><strong>{{ daily.checkIn?.streak_days ?? 0 }} 天</strong> 连续打卡</span>
+          </div>
+        </header>
 
-          <p v-if="daily.loading" class="empty-state">正在读取计划…</p>
-          <p v-else-if="daily.plan?.items.length === 0" class="empty-state">
-            还没有计划项，从右侧添加一个长期任务或临时事项。
-          </p>
+        <p v-if="daily.loading" class="empty-state">正在读取计划…</p>
+        <div v-else-if="daily.plan?.items.length === 0" class="today-empty">
+          <strong>今天还没有任务</strong>
+          <span>从项目中挑一项任务，或添加一个临时事项。</span>
+        </div>
 
-          <ol v-else class="daily-item-list">
-            <li
-              v-for="item in daily.plan?.items"
-              :key="item.id"
-              :class="{ 'daily-item--timing': isTiming(item) }"
+        <ol v-else class="daily-item-list">
+          <li
+            v-for="item in daily.plan?.items"
+            :key="item.id"
+            :class="{
+              'daily-item--selected': selectedItemId === item.id,
+              'daily-item--timing': isTiming(item),
+              'daily-item--overrun': isOverrun(item),
+              'daily-item--done': item.status === 'DONE',
+            }"
+            :style="progressStyle(item)"
+          >
+            <button
+              class="daily-check"
+              :class="{ 'daily-check--done': item.status === 'DONE' }"
+              type="button"
+              :aria-label="item.status === 'DONE' ? `将${item.title}标为未完成` : `完成${item.title}`"
+              :disabled="daily.saving || isTiming(item)"
+              @click="toggleDone(item)"
             >
+              {{ item.status === 'DONE' ? '✓' : '' }}
+            </button>
+
+            <button
+              class="daily-item-main"
+              type="button"
+              :aria-pressed="selectedItemId === item.id"
+              :disabled="item.status === 'DONE'"
+              @click="selectedItemId = item.id"
+            >
+              <strong :class="{ 'is-complete': item.status === 'DONE' }">{{ item.title }}</strong>
+              <span>
+                {{ item.status === 'DONE' ? '已完成' : statusLabel(item) }}
+                <template v-if="item.estimated_seconds > 0">
+                  · 计划 {{ formatDuration(item.estimated_seconds) }}
+                </template>
+              </span>
+            </button>
+
+            <div class="daily-item-usage">
+              <strong>{{ isTiming(item) ? formatTimer(timer.displaySeconds) : formatDuration(displayActual(item)) }}</strong>
+              <span v-if="isOverrun(item)" class="daily-overrun">⚠ 已超时 {{ formatDuration(overrunSeconds(item)) }}</span>
+              <span v-else>{{ progressPercent(item) }}% 用时</span>
+            </div>
+
+            <div class="daily-item-actions">
+              <template v-if="isTiming(item)">
+                <button
+                  v-if="timer.active?.snapshot.status === 'RUNNING'"
+                  class="button button--quiet button--small"
+                  type="button"
+                  :disabled="timer.busy"
+                  @click="pause"
+                >
+                  暂停
+                </button>
+                <button
+                  v-else
+                  class="button button--primary button--small"
+                  type="button"
+                  :disabled="timer.busy"
+                  @click="resume"
+                >
+                  继续
+                </button>
+                <button class="button button--finish button--small" type="button" :disabled="timer.busy" @click="finish">
+                  结束
+                </button>
+              </template>
               <button
-                class="daily-check"
-                :class="{ 'daily-check--done': item.status === 'DONE' }"
-                type="button"
-                :aria-label="item.status === 'DONE' ? '标记为待办' : '标记为完成'"
-                :disabled="daily.saving"
-                @click="toggleDone(item)"
-              >
-                {{ item.status === 'DONE' ? '✓' : '' }}
-              </button>
-
-              <div class="daily-item-main">
-                <strong :class="{ 'is-complete': item.status === 'DONE' }">
-                  {{ item.title }}
-                </strong>
-                <span>
-                  计划 {{ formatDuration(item.estimated_seconds) }} · 已学习
-                  {{ formatDuration(displayActual(item)) }}
-                  <template v-if="remainingLabel(item)"> · {{ remainingLabel(item) }}</template>
-                </span>
-              </div>
-
-              <select
-                :value="item.status"
-                class="daily-status"
-                :disabled="daily.saving"
-                :aria-label="`${item.title}状态`"
-                @change="changeStatus(item, $event)"
-              >
-                <option value="TODO">待办</option>
-                <option value="IN_PROGRESS">进行中</option>
-                <option value="PAUSED">已暂停</option>
-                <option value="DONE">已完成</option>
-              </select>
-
-              <button
-                class="button button--primary button--small"
+                v-else
+                class="button button--small"
+                :class="selectedItemId === item.id ? 'button--primary' : 'button--quiet'"
                 type="button"
                 :disabled="timer.busy || Boolean(timer.active) || item.status === 'DONE'"
                 @click="startItem(item)"
               >
-                {{ isTiming(item) ? '计时中' : '计时' }}
+                {{ timer.active ? '计时占用中' : '开始' }}
               </button>
               <button
-                class="button button--quiet button--small"
+                class="daily-remove"
                 type="button"
-                :disabled="daily.saving"
+                :aria-label="`从今日计划移除${item.title}`"
+                :disabled="daily.saving || isTiming(item)"
                 @click="removeItem(item)"
               >
-                删除
+                ×
               </button>
-            </li>
-          </ol>
-        </article>
+            </div>
+          </li>
+        </ol>
 
-        <aside class="today-card today-add-card">
-          <header>
-            <p class="eyebrow">添加计划项</p>
-            <h2>今天准备做什么？</h2>
-          </header>
-
-          <div class="segmented-control" role="group" aria-label="计划项类型">
-            <button
-              type="button"
-              :class="{ active: itemKind === 'task' }"
-              @click="itemKind = 'task'"
-            >
-              长期任务
-            </button>
-            <button
-              type="button"
-              :class="{ active: itemKind === 'adhoc' }"
-              @click="itemKind = 'adhoc'"
-            >
-              临时事项
-            </button>
-          </div>
-
-          <form class="today-add-form" @submit.prevent="addItem">
-            <label v-if="itemKind === 'task'" class="field">
-              <span>选择任务</span>
-              <select v-model="planTaskId" required>
-                <option value="">请选择任务</option>
-                <option v-for="task in availableTasks" :key="task.id" :value="task.id">
-                  {{ task.title }}
-                </option>
+        <details class="quick-add">
+          <summary>+ 添加今日任务</summary>
+          <div class="quick-add__body">
+            <div class="quick-add__tabs" role="group" aria-label="任务类型">
+              <button type="button" :class="{ active: itemKind === 'task' }" @click="itemKind = 'task'">项目任务</button>
+              <button type="button" :class="{ active: itemKind === 'adhoc' }" @click="itemKind = 'adhoc'">临时事项</button>
+            </div>
+            <form class="quick-add__form" @submit.prevent="addItem">
+              <select v-if="itemKind === 'task'" v-model="planTaskId" class="quick-add__select" required aria-label="选择项目任务">
+                <option value="">选择项目任务…</option>
+                <option v-for="task in availableTasks" :key="task.id" :value="task.id">{{ task.title }}</option>
               </select>
-            </label>
-
-            <label v-else class="field">
-              <span>事项名称</span>
-              <input
-                v-model.trim="adHocTitle"
-                maxlength="200"
-                placeholder="例如：阅读课程资料"
-                required
-              />
-            </label>
-
-            <label class="field">
-              <span>计划用时（分钟）</span>
-              <input v-model.number="estimatedMinutes" type="number" min="0" max="5256000" />
-              <small v-if="itemKind === 'task' && planTaskHint">{{ planTaskHint }}</small>
-            </label>
-
-            <button
-              class="button button--primary"
-              type="submit"
-              :disabled="daily.saving || !canAdd"
-            >
-              {{ daily.saving ? '添加中…' : '加入今日计划' }}
-            </button>
-          </form>
-        </aside>
+              <input v-else v-model.trim="adHocTitle" class="quick-add__input" maxlength="200" placeholder="输入临时事项…" required aria-label="临时事项名称" />
+              <label class="quick-add__duration">
+                <input v-model.number="estimatedMinutes" type="number" min="0" max="5256000" class="quick-add__minutes" aria-label="计划分钟数" />
+                <span>分钟</span>
+              </label>
+              <button class="button button--primary button--small" type="submit" :disabled="daily.saving || !canAdd">
+                {{ daily.saving ? '添加中…' : '添加' }}
+              </button>
+            </form>
+          </div>
+        </details>
       </section>
     </main>
   </AppShell>
@@ -313,7 +247,6 @@ import { useDailyPlanStore } from '@/stores/daily-plans'
 import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
 import type { DailyPlanItem } from '@/types/daily-plan'
-import type { TaskStatus } from '@/types/task'
 import { getApiErrorMessage } from '@/utils/api-error'
 import { formatDuration } from '@/utils/time'
 import { formatTimer } from '@/utils/timer'
@@ -322,13 +255,15 @@ const auth = useAuthStore()
 const daily = useDailyPlanStore()
 const tasks = useTaskStore()
 const timer = useTimerStore()
-const selectedDate = ref(daily.selectedDate)
+const selectedDate = ref(localDateString())
 const itemKind = ref<'task' | 'adhoc'>('task')
 const planTaskId = ref('')
-const timerTaskId = ref('')
 const adHocTitle = ref('')
 const estimatedMinutes = ref(30)
+const selectedItemId = ref('')
 const errorMessage = ref('')
+const autoFinishing = ref(false)
+const autoFinishEnabled = ref(false)
 let dayRolloverTimer: number | null = null
 let lastRealDate = ''
 
@@ -352,9 +287,6 @@ function startDayRolloverWatch(): void {
   }, 30_000)
 }
 
-const completionPercent = computed(() =>
-  Math.round((daily.plan?.completion_rate ?? 0) * 100),
-)
 const displayDate = computed(() =>
   new Date(`${selectedDate.value}T00:00:00`).toLocaleDateString('zh-CN', {
     year: 'numeric',
@@ -372,18 +304,6 @@ const availableTasks = computed(() =>
 const canAdd = computed(() =>
   itemKind.value === 'task' ? Boolean(planTaskId.value) : Boolean(adHocTitle.value),
 )
-const activeTask = computed(() =>
-  tasks.items.find((task) => task.id === timer.active?.snapshot.task_id),
-)
-const activePlanItem = computed(() =>
-  daily.plan?.items.find((item) => item.id === timer.active?.snapshot.daily_plan_item_id),
-)
-const planTaskHint = computed(() => {
-  const task = tasks.items.find((item) => item.id === planTaskId.value)
-  if (!task || task.estimated_seconds <= 0) return ''
-  return `已按任务预计学习时间填入 ${formatDuration(task.estimated_seconds)}`
-})
-
 /**
  * Seconds accrued by the running timer since the last server-persisted
  * snapshot. Added on top of server-known values so learning time, budget
@@ -398,25 +318,32 @@ const liveTimerExtra = computed(() => {
 const displayLearningSeconds = computed(
   () => (daily.checkIn?.learning_seconds ?? 0) + liveTimerExtra.value,
 )
-
-const activeTaskUsed = computed(() => {
-  if (!activeTask.value) return 0
-  return activeTask.value.actual_seconds + liveTimerExtra.value
+const selectedTimerItem = computed(() =>
+  daily.plan?.items.find((item) => item.id === selectedItemId.value && item.status !== 'DONE'),
+)
+const activeTimerItem = computed(() =>
+  daily.plan?.items.find((item) => item.id === timer.active?.snapshot.daily_plan_item_id),
+)
+const timerTargetItem = computed(() =>
+  timer.active ? activeTimerItem.value : selectedTimerItem.value,
+)
+const timerTargetTitle = computed(() => {
+  if (timerTargetItem.value) return timerTargetItem.value.title
+  const activeTaskId = timer.active?.snapshot.task_id
+  if (activeTaskId) {
+    return tasks.items.find((task) => task.id === activeTaskId)?.title ?? '进行中的任务'
+  }
+  if (timer.active) return '进行中的临时事项'
+  return '选择一个今日任务'
 })
-
-const activeTaskRemaining = computed(() => {
-  if (!activeTask.value) return 0
-  return Math.max(0, activeTask.value.estimated_seconds - activeTaskUsed.value)
+const timerStateLabel = computed(() => {
+  if (!timer.active) return '等待开始'
+  return timer.active.snapshot.status === 'RUNNING' ? '计时中' : '已暂停'
 })
-
-const activeItemRemaining = computed(() => {
-  if (!activePlanItem.value) return 0
-  return Math.max(
-    0,
-    activePlanItem.value.estimated_seconds -
-      activePlanItem.value.actual_seconds -
-      liveTimerExtra.value,
-  )
+const timerRemainingSeconds = computed(() => {
+  const item = timerTargetItem.value
+  if (!item || item.estimated_seconds <= 0) return 0
+  return Math.max(0, item.estimated_seconds - displayActual(item))
 })
 
 // Selecting a task pre-fills the planned duration with the task's own
@@ -427,6 +354,51 @@ watch(planTaskId, (taskId) => {
     estimatedMinutes.value = Math.max(1, Math.round(task.estimated_seconds / 60))
   }
 })
+
+watch(
+  [
+    () => daily.plan?.items,
+    () => timer.active?.snapshot.daily_plan_item_id,
+  ],
+  ([items, activeId]) => {
+    if (!items?.length) {
+      selectedItemId.value = ''
+      return
+    }
+    if (activeId && items.some((item) => item.id === activeId)) {
+      selectedItemId.value = activeId
+      return
+    }
+    if (!items.some((item) => item.id === selectedItemId.value && item.status !== 'DONE')) {
+      selectedItemId.value = items.find((item) => item.status !== 'DONE')?.id ?? items[0]!.id
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  [
+    () => timer.displaySeconds,
+    () => timer.active?.snapshot.status,
+    () => timer.targetSeconds,
+  ],
+  () => {
+    if (
+      timer.active?.snapshot.status === 'RUNNING' &&
+      timer.targetSeconds !== null &&
+      timer.displaySeconds >= timer.targetSeconds &&
+      autoFinishEnabled.value &&
+      !timer.busy &&
+      !autoFinishing.value
+    ) {
+      autoFinishing.value = true
+      void finish().finally(() => {
+        autoFinishing.value = false
+      })
+    }
+  },
+  { immediate: true },
+)
 
 function localDateString(date = new Date()): string {
   const year = date.getFullYear()
@@ -440,11 +412,14 @@ onMounted(async () => {
   const ownerId = auth.user?.profile.id
   if (!ownerId) return
   await runAction(async () => {
+    await timer.initialize(ownerId)
+    const activeItemId = timer.active?.snapshot.daily_plan_item_id ?? null
     await Promise.all([
       tasks.initialize(ownerId),
-      daily.initialize(ownerId),
-      timer.initialize(ownerId),
+      daily.initialize(ownerId, selectedDate.value, activeItemId),
     ])
+    await restoreMissingActiveItem()
+    autoFinishEnabled.value = true
   })
 })
 
@@ -464,27 +439,55 @@ function displayActual(item: DailyPlanItem): number {
   return item.actual_seconds + liveExtra(item)
 }
 
-function remainingLabel(item: DailyPlanItem): string | null {
-  if (item.estimated_seconds <= 0) return null
-  const remaining = item.estimated_seconds - displayActual(item)
-  return remaining > 0 ? `剩余 ${formatDuration(remaining)}` : '已用完计划用时'
+async function restoreMissingActiveItem(): Promise<void> {
+  const snapshot = timer.active?.snapshot
+  if (
+    !snapshot?.daily_plan_item_id ||
+    daily.plan?.items.some((item) => item.id === snapshot.daily_plan_item_id)
+  ) {
+    return
+  }
+  const task = snapshot.task_id
+    ? tasks.items.find((candidate) => candidate.id === snapshot.task_id)
+    : null
+  await daily.addItem({
+    id: snapshot.daily_plan_item_id,
+    task_id: snapshot.task_id,
+    title: task?.title ?? '进行中的临时事项',
+    estimated_seconds: task?.estimated_seconds ?? timer.targetSeconds ?? 0,
+  })
 }
 
 function isTiming(item: DailyPlanItem): boolean {
   return timer.active?.snapshot.daily_plan_item_id === item.id
 }
 
-function taskTitle(taskId: string | null): string {
-  return tasks.items.find((task) => task.id === taskId)?.title ?? '已删除任务'
+function progressPercent(item: DailyPlanItem): number {
+  if (item.estimated_seconds <= 0) return 0
+  return Math.round((displayActual(item) / item.estimated_seconds) * 100)
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+function isOverrun(item: DailyPlanItem): boolean {
+  return item.estimated_seconds > 0 && displayActual(item) > item.estimated_seconds
+}
+
+function overrunSeconds(item: DailyPlanItem): number {
+  return Math.max(0, displayActual(item) - item.estimated_seconds)
+}
+
+function progressStyle(item: DailyPlanItem): Record<string, string> {
+  return {
+    '--task-progress': `${Math.min(100, progressPercent(item))}%`,
+  }
+}
+
+function statusLabel(item: DailyPlanItem): string {
+  if (isTiming(item)) {
+    return timer.active?.snapshot.status === 'RUNNING' ? '正在专注' : '计时已暂停'
+  }
+  if (item.status === 'IN_PROGRESS') return '进行中'
+  if (item.status === 'PAUSED') return '已暂停'
+  return '待开始'
 }
 
 async function runAction(action: () => Promise<void>): Promise<void> {
@@ -503,6 +506,7 @@ async function runAction(action: () => Promise<void>): Promise<void> {
 async function runTimerAction(action: () => Promise<void>): Promise<void> {
   await runAction(async () => {
     await action()
+    daily.setActiveItem(timer.active?.snapshot.daily_plan_item_id ?? null)
     await Promise.all([tasks.load(), daily.refresh()])
   })
 }
@@ -536,23 +540,23 @@ async function toggleDone(item: DailyPlanItem): Promise<void> {
   )
 }
 
-async function changeStatus(item: DailyPlanItem, event: Event): Promise<void> {
-  const status = (event.target as HTMLSelectElement).value as TaskStatus
-  await runAction(() => daily.updateItem(item.id, { status }))
-}
-
 async function startItem(item: DailyPlanItem): Promise<void> {
+  selectedItemId.value = item.id
   await runTimerAction(async () => {
-    await timer.start(item.task_id, item.id)
+    const remainingSeconds =
+      item.estimated_seconds > 0
+        ? Math.max(1, item.estimated_seconds - item.actual_seconds)
+        : null
+    await timer.start(item.task_id, item.id, remainingSeconds)
     if (item.status !== 'IN_PROGRESS') {
       await daily.updateItem(item.id, { status: 'IN_PROGRESS' })
     }
   })
 }
 
-async function startTimer(): Promise<void> {
-  if (!timerTaskId.value) return
-  await runTimerAction(() => timer.start(timerTaskId.value))
+async function startSelectedItem(): Promise<void> {
+  if (!selectedTimerItem.value) return
+  await startItem(selectedTimerItem.value)
 }
 
 async function pause(): Promise<void> {
@@ -564,8 +568,13 @@ async function resume(): Promise<void> {
 }
 
 async function finish(): Promise<void> {
-  await runTimerAction(() => timer.finish())
-  timerTaskId.value = ''
+  const item = activeTimerItem.value
+  const actualSeconds = item ? displayActual(item) : 0
+  await runAction(async () => {
+    await timer.finish()
+    daily.setActiveItem(null)
+    if (item) await daily.applyFinishedTimer(item.id, actualSeconds)
+  })
 }
 
 async function removeItem(item: DailyPlanItem): Promise<void> {

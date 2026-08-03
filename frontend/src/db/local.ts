@@ -58,12 +58,14 @@ export async function saveActiveTimer(
   ownerId: string,
   sessionId: string,
   snapshot: SessionSnapshot,
+  targetSeconds: number | null = null,
 ): Promise<void> {
   await localDb.timerStates.put({
     id: ownerId,
     owner_id: ownerId,
     session_id: sessionId,
     snapshot,
+    target_seconds: targetSeconds,
   })
 }
 

@@ -19,11 +19,6 @@ async def test_analytics_aggregates_time_completion_and_budget(
     child_id = await create_task(client, token, "Lesson", parent_id)
     plan = await create_plan(client, token, today)
     item = await add_item(client, token, plan["id"], task_id=child_id)
-    await client.patch(
-        f"/api/v1/daily-plan-items/{item['id']}",
-        headers=auth_header(token),
-        json={"status": "DONE"},
-    )
     started = datetime.now(UTC)
     ended = started + timedelta(minutes=30)
     completed = await client.put(
@@ -43,6 +38,16 @@ async def test_analytics_aggregates_time_completion_and_budget(
         },
     )
     assert completed.status_code == 200
+
+    refreshed_plan = await client.get(
+        f"/api/v1/daily-plans/by-date/{today.isoformat()}",
+        headers=auth_header(token),
+    )
+    assert refreshed_plan.status_code == 200
+    refreshed_item = refreshed_plan.json()["items"][0]
+    assert refreshed_item["status"] == "DONE"
+    assert refreshed_item["actual_seconds"] == 1_800
+    assert refreshed_plan.json()["completed_items"] == 1
 
     response = await client.get(
         "/api/v1/analytics/summary",

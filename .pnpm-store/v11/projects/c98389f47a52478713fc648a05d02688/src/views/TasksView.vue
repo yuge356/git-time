@@ -2,9 +2,9 @@
   <AppShell>
     <main class="tasks-page">
       <section class="page-heading tasks-page__heading">
-        <p class="eyebrow">学习任务</p>
-        <h1>任务与时间预算</h1>
-        <p>按课程、章节和练习拆分目标，并提前限定每项学习投入。</p>
+        <p class="eyebrow">项目</p>
+        <h1>项目与时间预算</h1>
+        <p>把项目拆分为阶段和任务，并提前限定每项工作的时间投入。</p>
       </section>
 
       <div v-if="!tasks.online || tasks.pendingCount > 0" class="sync-banner">
@@ -16,16 +16,16 @@
         <div class="task-list-panel">
           <header class="panel-header">
             <div>
-              <h2>任务树</h2>
+              <h2>项目与任务</h2>
               <p>{{ tasks.items.length }} 个任务</p>
             </div>
             <button class="button button--primary" type="button" @click="openCreate">
-              新建任务
+              新建项目
             </button>
           </header>
 
           <p class="task-drag-help">
-            拖动任务卡片到另一任务上可设为其子任务；拖到“顶层任务”区域可恢复为顶层。
+            按住项目或任务卡片任意位置即可拖动；拖到另一项上可设为其子任务，拖到“顶层项目”区域可恢复为顶层。
           </p>
 
           <FormMessage :message="loadError" />
@@ -43,10 +43,10 @@
 
           <div v-else-if="tasks.tree.length === 0 && !creating" class="empty-state">
             <span aria-hidden="true">01</span>
-            <h3>从第一个学习目标开始</h3>
-            <p>创建课程、章节、练习或项目实践，并为它设置预计时间。</p>
+            <h3>从第一个项目开始</h3>
+            <p>创建项目，再把它拆分为阶段和子任务，并为每一项设置预计时间。</p>
             <button class="button button--primary" type="button" @click="openCreate">
-              创建任务
+              创建项目
             </button>
           </div>
 
@@ -59,7 +59,7 @@
               @dragover.prevent
               @drop.prevent="moveToRoot"
             >
-              顶层任务
+              顶层项目
             </div>
 
             <ul class="task-tree">
@@ -68,10 +68,13 @@
                 :key="task.id"
                 :task="task"
                 :editor-task-id="selectedTask?.id ?? null"
+                :creating-child-for-id="creatingChildParentId"
                 :dragging-id="draggingTask?.id ?? null"
                 :saving="tasks.saving"
                 :editor-error="editorError"
                 @edit="openEdit"
+                @add-child="openCreateChild"
+                @create-child="createTask"
                 @remove="removeTask"
                 @update="updateTask"
                 @close-editor="closeEditor"
@@ -102,6 +105,7 @@ import { getApiErrorMessage } from '@/utils/api-error'
 const tasks = useTaskStore()
 const auth = useAuthStore()
 const creating = ref(false)
+const creatingChildParentId = ref<string | null>(null)
 const selectedTask = ref<Task | null>(null)
 const draggingTask = ref<Task | null>(null)
 const loadError = ref('')
@@ -118,6 +122,7 @@ onMounted(async () => {
 
 function openCreate(): void {
   selectedTask.value = null
+  creatingChildParentId.value = null
   creating.value = true
   editorError.value = ''
 }
@@ -128,12 +133,21 @@ function openEdit(task: Task): void {
     return
   }
   creating.value = false
+  creatingChildParentId.value = null
   selectedTask.value = task
+  editorError.value = ''
+}
+
+function openCreateChild(parent: Task): void {
+  creating.value = false
+  selectedTask.value = null
+  creatingChildParentId.value = parent.id
   editorError.value = ''
 }
 
 function closeEditor(): void {
   creating.value = false
+  creatingChildParentId.value = null
   selectedTask.value = null
   editorError.value = ''
 }

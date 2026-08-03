@@ -24,6 +24,7 @@ export interface LocalTimerState {
   owner_id: string
   session_id: string
   snapshot: SessionSnapshot
+  target_seconds: number | null
 }
 
 export interface SessionOutboxItem {

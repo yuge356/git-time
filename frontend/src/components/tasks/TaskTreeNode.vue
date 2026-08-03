@@ -1,14 +1,18 @@
 <template>
   <li class="task-tree-node">
     <article
+      draggable="true"
       :class="[
         'task-row',
         {
-          'task-row--selected': editorTaskId === task.id,
+          'task-row--selected': editorTaskId === task.id || creatingChildForId === task.id,
           'task-row--dragging': draggingId === task.id,
           'task-row--drop-target': dragTarget && draggingId !== task.id,
         },
       ]"
+      :aria-label="`${task.title}，按住卡片可拖动调整层级`"
+      @dragstart.stop="startDrag"
+      @dragend.stop="finishDrag"
       @dragenter.prevent="dragTarget = true"
       @dragover.prevent
       @dragleave="leaveDrag"
@@ -39,18 +43,30 @@
       </button>
 
       <div class="task-row__actions">
-        <span
-          class="task-drag-handle"
-          draggable="true"
-          role="button"
-          tabindex="0"
-          :aria-label="`拖动${task.title}调整层级`"
-          title="拖到另一任务上可调整层级"
-          @dragstart.stop="startDrag"
-          @dragend.stop="finishDrag"
-        >
-          ⋮⋮
-        </span>
+        <div class="task-action-menu" @focusout="closeMenuOnFocusOut" @keydown.esc.stop="actionMenuOpen = false">
+          <button
+            class="icon-button task-action-menu__trigger"
+            type="button"
+            aria-haspopup="menu"
+            :aria-expanded="actionMenuOpen"
+            :aria-controls="actionMenuId"
+            :aria-label="`${task.title}的更多操作`"
+            title="修改、设置或添加子任务"
+            @click.stop="actionMenuOpen = !actionMenuOpen"
+          >
+            ⋮
+          </button>
+          <div v-if="actionMenuOpen" :id="actionMenuId" class="task-action-menu__panel" role="menu">
+            <button type="button" role="menuitem" @click="editTask">
+              <span aria-hidden="true">✎</span>
+              修改 / 设置
+            </button>
+            <button type="button" role="menuitem" @click="addChildTask">
+              <span aria-hidden="true">＋</span>
+              添加子任务
+            </button>
+          </div>
+        </div>
         <button
           class="icon-button icon-button--danger"
           type="button"
@@ -72,16 +88,30 @@
       @update="(taskId, payload) => $emit('update', taskId, payload)"
     />
 
+    <TaskEditor
+      v-if="creatingChildForId === task.id"
+      :task="null"
+      :parent-id="task.id"
+      :parent-title="task.title"
+      :saving="saving"
+      :external-error="editorError"
+      @close="$emit('close-editor')"
+      @create="(payload) => $emit('create-child', payload)"
+    />
+
     <ul v-if="task.children.length" class="task-tree task-tree--nested">
       <TaskTreeNode
         v-for="child in task.children"
         :key="child.id"
         :task="child"
         :editor-task-id="editorTaskId"
+        :creating-child-for-id="creatingChildForId"
         :dragging-id="draggingId"
         :saving="saving"
         :editor-error="editorError"
         @edit="$emit('edit', $event)"
+        @add-child="$emit('add-child', $event)"
+        @create-child="$emit('create-child', $event)"
         @remove="$emit('remove', $event)"
         @update="(taskId, payload) => $emit('update', taskId, payload)"
         @close-editor="$emit('close-editor')"
@@ -96,7 +126,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import type { Task, TaskNode, TaskUpdatePayload } from '@/types/task'
+import type { Task, TaskCreatePayload, TaskNode, TaskUpdatePayload } from '@/types/task'
 import BudgetIndicator from './BudgetIndicator.vue'
 import TaskEditor from './TaskEditor.vue'
 import TaskStatusBadge from './TaskStatusBadge.vue'
@@ -104,6 +134,7 @@ import TaskStatusBadge from './TaskStatusBadge.vue'
 const props = defineProps<{
   task: TaskNode
   editorTaskId: string | null
+  creatingChildForId: string | null
   draggingId: string | null
   saving: boolean
   editorError: string
@@ -111,6 +142,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   edit: [task: Task]
+  'add-child': [task: Task]
+  'create-child': [payload: TaskCreatePayload]
   remove: [task: Task]
   update: [taskId: string, payload: TaskUpdatePayload]
   'close-editor': []
@@ -120,6 +153,8 @@ const emit = defineEmits<{
 }>()
 
 const dragTarget = ref(false)
+const actionMenuOpen = ref(false)
+const actionMenuId = computed(() => `task-actions-${props.task.id}`)
 const repeatLabels = {
   DAILY: '每天重复',
   WEEKDAYS: '工作日重复',
@@ -131,11 +166,28 @@ const repeatLabel = computed(() =>
 )
 
 function startDrag(event: DragEvent): void {
+  actionMenuOpen.value = false
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', props.task.id)
   }
   emit('drag-start', props.task)
+}
+
+function closeMenuOnFocusOut(event: FocusEvent): void {
+  const menu = event.currentTarget as HTMLElement
+  const nextTarget = event.relatedTarget as Node | null
+  if (!nextTarget || !menu.contains(nextTarget)) actionMenuOpen.value = false
+}
+
+function editTask(): void {
+  actionMenuOpen.value = false
+  emit('edit', props.task)
+}
+
+function addChildTask(): void {
+  actionMenuOpen.value = false
+  emit('add-child', props.task)
 }
 
 function finishDrag(): void {

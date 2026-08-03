@@ -20,13 +20,13 @@ from app.schemas.daily_plan import (
     DailyPlanResponse,
 )
 from app.services.daily_plans import (
+    auto_populate_recurring_items,
     build_check_in,
     build_daily_plan_response,
     get_owned_daily_item,
     get_owned_daily_plan,
     get_owned_daily_plan_by_date,
     mark_item_status,
-    auto_populate_recurring_items,
 )
 from app.services.notifications import create_notification, notification_manager
 from app.services.tasks import get_owned_task
@@ -84,9 +84,14 @@ async def auto_populate_recurring(
     db: DatabaseSession,
     current_user: CurrentUser,
 ) -> DailyPlanResponse:
-    """Auto-populate the daily plan with eligible recurring leaf tasks."""
+    """Auto-populate the daily plan with recurring tasks due on its date."""
     
-    response = await auto_populate_recurring_items(db, current_user.id, plan_id)
+    response = await auto_populate_recurring_items(
+        db,
+        current_user.id,
+        plan_id,
+        current_user.profile.timezone,
+    )
     await db.commit()
     return response
 

@@ -12,19 +12,19 @@
           </svg>
           <span>今日任务</span>
         </RouterLink>
-        <RouterLink to="/tasks" title="学习任务">
+        <RouterLink to="/tasks" title="项目">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Zm0 15A2.5 2.5 0 0 1 6.5 18H20M8 7h8m-8 4h5"
             />
           </svg>
-          <span>学习任务</span>
+          <span>项目</span>
         </RouterLink>
-        <RouterLink to="/analytics" title="学习统计">
+        <RouterLink to="/analytics" title="时间统计">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 20V10m5.33 10V4M14.67 20v-8M20 20v-13" />
           </svg>
-          <span>学习统计</span>
+          <span>时间统计</span>
         </RouterLink>
         <RouterLink to="/partners" title="伙伴协作">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -64,6 +64,7 @@
     </aside>
 
     <div class="app-content">
+      <ActiveTimerBar v-if="route.name !== 'today'" />
       <slot />
     </div>
   </div>
@@ -71,14 +72,16 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
+import ActiveTimerBar from './ActiveTimerBar.vue'
 import AppLogo from './AppLogo.vue'
 
 const auth = useAuthStore()
 const notifications = useNotificationStore()
+const route = useRoute()
 const router = useRouter()
 
 onMounted(() => {

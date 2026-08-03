@@ -46,7 +46,7 @@
               <input v-model="shareDuration" type="checkbox" />
               <span>
                 <strong>同时公开时长</strong>
-                <small>伙伴将看到每项的计划用时和实际学习时长。</small>
+                <small>伙伴将看到每项的计划用时和实际投入时长。</small>
               </span>
             </label>
             <button

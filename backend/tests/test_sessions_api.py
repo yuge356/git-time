@@ -125,6 +125,20 @@ async def test_start_pause_resume_and_finish_session(client: AsyncClient) -> Non
     assert history.json()[0]["id"] == session_id
 
 
+async def test_session_put_is_allowed_by_cors(client: AsyncClient) -> None:
+    response = await client.options(
+        f"/api/v1/sessions/{uuid4()}",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "PUT" in response.headers["access-control-allow-methods"]
+
+
 async def test_stale_offline_snapshot_is_idempotently_ignored(client: AsyncClient) -> None:
     token, _ = await register_user(client)
     task_id = await create_task(client, token, "离线任务")

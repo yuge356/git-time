@@ -1,9 +1,9 @@
 <template>
-  <section class="task-editor task-editor--inline" aria-labelledby="task-editor-title">
+  <section class="task-editor task-editor--inline" :aria-labelledby="editorTitleId">
     <header class="task-editor__header">
       <div>
-        <p class="eyebrow">{{ task ? '编辑任务' : '新建任务' }}</p>
-        <h2 id="task-editor-title">{{ task ? task.title : '规划学习投入' }}</h2>
+        <p class="eyebrow">{{ editorEyebrow }}</p>
+        <h2 :id="editorTitleId">{{ editorTitle }}</h2>
       </div>
       <button class="icon-button" type="button" aria-label="关闭编辑面板" @click="$emit('close')">
         ×
@@ -12,18 +12,18 @@
 
     <form class="form-stack" @submit.prevent="submit">
       <label class="field">
-        <span>任务标题</span>
+        <span>{{ titleFieldLabel }}</span>
         <input
           v-model.trim="form.title"
           type="text"
           maxlength="200"
           required
-          placeholder="例如：Python 第一章"
+          :placeholder="titlePlaceholder"
         />
       </label>
 
       <fieldset class="budget-fieldset">
-        <legend>预计学习时间</legend>
+        <legend>预计投入时间</legend>
         <div v-if="!isParentTask" class="duration-grid">
           <label class="field">
             <span>小时</span>
@@ -86,7 +86,7 @@
           取消
         </button>
         <button class="button button--primary" type="submit" :disabled="saving">
-          {{ saving ? '保存中…' : task ? '保存修改' : '创建任务' }}
+          {{ saving ? '保存中…' : task ? '保存修改' : parentId ? '创建子任务' : '创建项目' }}
         </button>
       </div>
     </form>
@@ -111,9 +111,27 @@ const props = defineProps<{
   task: Task | null
   saving: boolean
   externalError?: string
+  parentId?: string | null
+  parentTitle?: string
 }>()
 
 const isParentTask = computed(() => props.task && !props.task.is_leaf)
+const editorEyebrow = computed(() => {
+  if (props.task) return props.task.parent_id ? '编辑任务' : '编辑项目'
+  return props.parentId ? '添加子任务' : '新建项目'
+})
+const editorTitle = computed(() => {
+  if (props.task) return props.task.title
+  return props.parentId ? `添加到“${props.parentTitle ?? '父任务'}”` : '规划项目投入'
+})
+const isProjectEditor = computed(() => !props.parentId && !props.task?.parent_id)
+const titleFieldLabel = computed(() => (isProjectEditor.value ? '项目名称' : '任务标题'))
+const titlePlaceholder = computed(() =>
+  isProjectEditor.value ? '例如：网站改版项目' : '例如：完成首页原型',
+)
+const editorTitleId = computed(() =>
+  `task-editor-title-${props.task?.id ?? props.parentId ?? 'root'}`,
+)
 
 const emit = defineEmits<{
   close: []
@@ -158,7 +176,7 @@ function resetForm(): void {
 }
 
 watch(
-  () => props.task?.id,
+  () => [props.task?.id, props.parentId],
   resetForm,
   { immediate: true },
 )
@@ -194,7 +212,7 @@ function submit(): void {
     } else {
       emit('create', {
         title: form.title,
-        parent_id: null,
+        parent_id: props.parentId ?? null,
         estimated_seconds: estimatedSeconds,
         repeat_rule: form.repeat_rule,
         repeat_end_date: form.repeat_end_date || null,

@@ -26,14 +26,86 @@
         </span>
       </div>
 
+      <section
+        :class="[
+          'focus-timer',
+          { 'focus-timer--active': timer.active, 'focus-timer--paused': timer.active?.snapshot.status === 'PAUSED' },
+        ]"
+        aria-labelledby="focus-timer-title"
+      >
+        <header class="focus-timer__header">
+          <div>
+            <p class="eyebrow">专注计时</p>
+            <h2 id="focus-timer-title">{{ timerTargetTitle }}</h2>
+          </div>
+          <span
+            :class="[
+              'timer-state',
+              { 'timer-state--paused': timer.active?.snapshot.status === 'PAUSED' },
+            ]"
+          >
+            {{ timerStateLabel }}
+          </span>
+        </header>
+
+        <div class="focus-timer__body">
+          <time class="focus-timer__display" aria-live="polite">
+            {{ timer.active ? formatTimer(timer.displaySeconds) : '00:00:00' }}
+          </time>
+          <p v-if="timerTargetItem">
+            已投入 {{ formatDuration(displayActual(timerTargetItem)) }}
+            <template v-if="timerTargetItem.estimated_seconds > 0">
+              · 计划 {{ formatDuration(timerTargetItem.estimated_seconds) }}
+              · 剩余 {{ formatDuration(timerRemainingSeconds) }}
+            </template>
+          </p>
+          <p v-else>从下方今日任务中选择一项，然后开始计时。</p>
+        </div>
+
+        <div class="focus-timer__actions">
+          <template v-if="timer.active">
+            <button
+              v-if="timer.active.snapshot.status === 'RUNNING'"
+              class="button button--quiet"
+              type="button"
+              :disabled="timer.busy"
+              @click="pause"
+            >
+              暂停
+            </button>
+            <button
+              v-else
+              class="button button--primary"
+              type="button"
+              :disabled="timer.busy"
+              @click="resume"
+            >
+              继续
+            </button>
+            <button class="button button--finish" type="button" :disabled="timer.busy" @click="finish">
+              结束计时
+            </button>
+          </template>
+          <button
+            v-else
+            class="button button--primary"
+            type="button"
+            :disabled="!selectedTimerItem || timer.busy"
+            @click="startSelectedItem"
+          >
+            {{ selectedTimerItem ? '开始计时' : '请先选择任务' }}
+          </button>
+        </div>
+      </section>
+
       <section class="today-checklist">
         <header class="today-checklist__header">
           <div>
             <h2>今日任务</h2>
             <p>点击任务即可选中；色块表示已使用的计划时间。</p>
           </div>
-          <div class="today-summary" aria-label="今日学习概览">
-            <span><strong>{{ formatDuration(displayLearningSeconds) }}</strong> 已学习</span>
+          <div class="today-summary" aria-label="今日投入概览">
+            <span><strong>{{ formatDuration(displayLearningSeconds) }}</strong> 已投入</span>
             <span><strong>{{ daily.checkIn?.completed_items ?? 0 }}/{{ daily.checkIn?.total_items ?? 0 }}</strong> 已完成</span>
             <span><strong>{{ daily.checkIn?.streak_days ?? 0 }} 天</strong> 连续打卡</span>
           </div>
@@ -42,7 +114,7 @@
         <p v-if="daily.loading" class="empty-state">正在读取计划…</p>
         <div v-else-if="daily.plan?.items.length === 0" class="today-empty">
           <strong>今天还没有任务</strong>
-          <span>从学习任务中挑一项，或添加一个临时事项。</span>
+          <span>从项目中挑一项任务，或添加一个临时事项。</span>
         </div>
 
         <ol v-else class="daily-item-list">
@@ -141,12 +213,12 @@
           <summary>+ 添加今日任务</summary>
           <div class="quick-add__body">
             <div class="quick-add__tabs" role="group" aria-label="任务类型">
-              <button type="button" :class="{ active: itemKind === 'task' }" @click="itemKind = 'task'">学习任务</button>
+              <button type="button" :class="{ active: itemKind === 'task' }" @click="itemKind = 'task'">项目任务</button>
               <button type="button" :class="{ active: itemKind === 'adhoc' }" @click="itemKind = 'adhoc'">临时事项</button>
             </div>
             <form class="quick-add__form" @submit.prevent="addItem">
-              <select v-if="itemKind === 'task'" v-model="planTaskId" class="quick-add__select" required aria-label="选择学习任务">
-                <option value="">选择学习任务…</option>
+              <select v-if="itemKind === 'task'" v-model="planTaskId" class="quick-add__select" required aria-label="选择项目任务">
+                <option value="">选择项目任务…</option>
                 <option v-for="task in availableTasks" :key="task.id" :value="task.id">{{ task.title }}</option>
               </select>
               <input v-else v-model.trim="adHocTitle" class="quick-add__input" maxlength="200" placeholder="输入临时事项…" required aria-label="临时事项名称" />
@@ -183,13 +255,15 @@ const auth = useAuthStore()
 const daily = useDailyPlanStore()
 const tasks = useTaskStore()
 const timer = useTimerStore()
-const selectedDate = ref(daily.selectedDate)
+const selectedDate = ref(localDateString())
 const itemKind = ref<'task' | 'adhoc'>('task')
 const planTaskId = ref('')
 const adHocTitle = ref('')
 const estimatedMinutes = ref(30)
 const selectedItemId = ref('')
 const errorMessage = ref('')
+const autoFinishing = ref(false)
+const autoFinishEnabled = ref(false)
 let dayRolloverTimer: number | null = null
 let lastRealDate = ''
 
@@ -225,7 +299,7 @@ const plannedTaskIds = computed(
   () => new Set(daily.plan?.items.flatMap((item) => (item.task_id ? [item.task_id] : []))),
 )
 const availableTasks = computed(() =>
-  tasks.items.filter((task) => task.is_leaf && !plannedTaskIds.value.has(task.id)),
+  tasks.items.filter((task) => !plannedTaskIds.value.has(task.id)),
 )
 const canAdd = computed(() =>
   itemKind.value === 'task' ? Boolean(planTaskId.value) : Boolean(adHocTitle.value),
@@ -244,6 +318,33 @@ const liveTimerExtra = computed(() => {
 const displayLearningSeconds = computed(
   () => (daily.checkIn?.learning_seconds ?? 0) + liveTimerExtra.value,
 )
+const selectedTimerItem = computed(() =>
+  daily.plan?.items.find((item) => item.id === selectedItemId.value && item.status !== 'DONE'),
+)
+const activeTimerItem = computed(() =>
+  daily.plan?.items.find((item) => item.id === timer.active?.snapshot.daily_plan_item_id),
+)
+const timerTargetItem = computed(() =>
+  timer.active ? activeTimerItem.value : selectedTimerItem.value,
+)
+const timerTargetTitle = computed(() => {
+  if (timerTargetItem.value) return timerTargetItem.value.title
+  const activeTaskId = timer.active?.snapshot.task_id
+  if (activeTaskId) {
+    return tasks.items.find((task) => task.id === activeTaskId)?.title ?? '进行中的任务'
+  }
+  if (timer.active) return '进行中的临时事项'
+  return '选择一个今日任务'
+})
+const timerStateLabel = computed(() => {
+  if (!timer.active) return '等待开始'
+  return timer.active.snapshot.status === 'RUNNING' ? '计时中' : '已暂停'
+})
+const timerRemainingSeconds = computed(() => {
+  const item = timerTargetItem.value
+  if (!item || item.estimated_seconds <= 0) return 0
+  return Math.max(0, item.estimated_seconds - displayActual(item))
+})
 
 // Selecting a task pre-fills the planned duration with the task's own
 // estimated study time; the user can still adjust it afterwards.
@@ -255,19 +356,45 @@ watch(planTaskId, (taskId) => {
 })
 
 watch(
-  () => daily.plan?.items,
-  (items) => {
+  [
+    () => daily.plan?.items,
+    () => timer.active?.snapshot.daily_plan_item_id,
+  ],
+  ([items, activeId]) => {
     if (!items?.length) {
       selectedItemId.value = ''
       return
     }
-    const activeId = timer.active?.snapshot.daily_plan_item_id
     if (activeId && items.some((item) => item.id === activeId)) {
       selectedItemId.value = activeId
       return
     }
     if (!items.some((item) => item.id === selectedItemId.value && item.status !== 'DONE')) {
       selectedItemId.value = items.find((item) => item.status !== 'DONE')?.id ?? items[0]!.id
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  [
+    () => timer.displaySeconds,
+    () => timer.active?.snapshot.status,
+    () => timer.targetSeconds,
+  ],
+  () => {
+    if (
+      timer.active?.snapshot.status === 'RUNNING' &&
+      timer.targetSeconds !== null &&
+      timer.displaySeconds >= timer.targetSeconds &&
+      autoFinishEnabled.value &&
+      !timer.busy &&
+      !autoFinishing.value
+    ) {
+      autoFinishing.value = true
+      void finish().finally(() => {
+        autoFinishing.value = false
+      })
     }
   },
   { immediate: true },
@@ -285,11 +412,14 @@ onMounted(async () => {
   const ownerId = auth.user?.profile.id
   if (!ownerId) return
   await runAction(async () => {
+    await timer.initialize(ownerId)
+    const activeItemId = timer.active?.snapshot.daily_plan_item_id ?? null
     await Promise.all([
       tasks.initialize(ownerId),
-      daily.initialize(ownerId),
-      timer.initialize(ownerId),
+      daily.initialize(ownerId, selectedDate.value, activeItemId),
     ])
+    await restoreMissingActiveItem()
+    autoFinishEnabled.value = true
   })
 })
 
@@ -307,6 +437,25 @@ function liveExtra(item: DailyPlanItem): number {
 
 function displayActual(item: DailyPlanItem): number {
   return item.actual_seconds + liveExtra(item)
+}
+
+async function restoreMissingActiveItem(): Promise<void> {
+  const snapshot = timer.active?.snapshot
+  if (
+    !snapshot?.daily_plan_item_id ||
+    daily.plan?.items.some((item) => item.id === snapshot.daily_plan_item_id)
+  ) {
+    return
+  }
+  const task = snapshot.task_id
+    ? tasks.items.find((candidate) => candidate.id === snapshot.task_id)
+    : null
+  await daily.addItem({
+    id: snapshot.daily_plan_item_id,
+    task_id: snapshot.task_id,
+    title: task?.title ?? '进行中的临时事项',
+    estimated_seconds: task?.estimated_seconds ?? timer.targetSeconds ?? 0,
+  })
 }
 
 function isTiming(item: DailyPlanItem): boolean {
@@ -357,6 +506,7 @@ async function runAction(action: () => Promise<void>): Promise<void> {
 async function runTimerAction(action: () => Promise<void>): Promise<void> {
   await runAction(async () => {
     await action()
+    daily.setActiveItem(timer.active?.snapshot.daily_plan_item_id ?? null)
     await Promise.all([tasks.load(), daily.refresh()])
   })
 }
@@ -393,11 +543,20 @@ async function toggleDone(item: DailyPlanItem): Promise<void> {
 async function startItem(item: DailyPlanItem): Promise<void> {
   selectedItemId.value = item.id
   await runTimerAction(async () => {
-    await timer.start(item.task_id, item.id)
+    const remainingSeconds =
+      item.estimated_seconds > 0
+        ? Math.max(1, item.estimated_seconds - item.actual_seconds)
+        : null
+    await timer.start(item.task_id, item.id, remainingSeconds)
     if (item.status !== 'IN_PROGRESS') {
       await daily.updateItem(item.id, { status: 'IN_PROGRESS' })
     }
   })
+}
+
+async function startSelectedItem(): Promise<void> {
+  if (!selectedTimerItem.value) return
+  await startItem(selectedTimerItem.value)
 }
 
 async function pause(): Promise<void> {
@@ -409,7 +568,13 @@ async function resume(): Promise<void> {
 }
 
 async function finish(): Promise<void> {
-  await runTimerAction(() => timer.finish())
+  const item = activeTimerItem.value
+  const actualSeconds = item ? displayActual(item) : 0
+  await runAction(async () => {
+    await timer.finish()
+    daily.setActiveItem(null)
+    if (item) await daily.applyFinishedTimer(item.id, actualSeconds)
+  })
 }
 
 async function removeItem(item: DailyPlanItem): Promise<void> {
