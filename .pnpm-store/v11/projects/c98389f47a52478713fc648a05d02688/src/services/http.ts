@@ -3,7 +3,7 @@ import axios from 'axios'
 const TOKEN_STORAGE_KEY = 'time-budget-access-token'
 
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
   timeout: 15_000,
   headers: {
     'Content-Type': 'application/json',
@@ -19,4 +19,3 @@ http.interceptors.request.use((config) => {
 })
 
 export { TOKEN_STORAGE_KEY }
-

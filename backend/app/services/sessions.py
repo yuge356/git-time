@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.daily_plan import DailyPlanItem, DailyPlanItemStatus
 from app.models.session import Session, SessionStatus
-from app.models.task import TaskNodeType
 from app.schemas.session import SessionStateUpsert
 from app.services.daily_plans import get_owned_daily_item, mark_item_status
 from app.services.tasks import get_owned_executable_task, get_owned_task, normalize_utc
@@ -104,19 +103,25 @@ async def apply_session_snapshot(
                 owner_id,
                 payload.daily_plan_item_id,
             )
-        resolved_task_id = payload.task_id
+        resolved_task_id = (
+            daily_item.task_id
+            if payload.task_id is None and daily_item is not None
+            else payload.task_id
+        )
         if daily_item is not None and daily_item.task_id is not None:
-            linked_task = await get_owned_task(db, owner_id, daily_item.task_id)
-            if linked_task.node_type != TaskNodeType.TASK:
-                # Compatibility for daily snapshots created before explicit
-                # project/module roles existed. They remain timeable as ad-hoc
-                # daily items, but containers themselves are never timed.
-                legacy_task_id = daily_item.task_id
-                daily_item.task_id = None
-                if resolved_task_id == legacy_task_id:
-                    resolved_task_id = None
-        if resolved_task_id is not None:
-            await get_owned_executable_task(db, owner_id, resolved_task_id)
+            # Daily items are durable snapshots. The linked node was verified
+            # as a leaf when the item was added, so it remains timeable even if
+            # the user later adds children beneath that project.
+            await get_owned_task(db, owner_id, daily_item.task_id)
+        if resolved_task_id is not None and (
+            daily_item is None or daily_item.task_id != resolved_task_id
+        ):
+            if payload.status == SessionStatus.COMPLETED:
+                # A task can gain children while an offline completed session
+                # is waiting to sync. Historical time must remain importable.
+                await get_owned_task(db, owner_id, resolved_task_id)
+            else:
+                await get_owned_executable_task(db, owner_id, resolved_task_id)
         if daily_item is not None and daily_item.task_id != resolved_task_id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -145,7 +150,13 @@ async def apply_session_snapshot(
 
     if normalize_utc(payload.client_updated_at) <= normalize_utc(existing.client_updated_at):
         return existing
-    if existing.task_id != payload.task_id:
+    resolved_task_id = (
+        existing.task_id
+        if payload.task_id is None
+        and payload.daily_plan_item_id == existing.daily_plan_item_id
+        else payload.task_id
+    )
+    if existing.task_id != resolved_task_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A session cannot be moved to another task",

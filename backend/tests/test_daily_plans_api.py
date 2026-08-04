@@ -40,6 +40,56 @@ async def add_item(
     return response.json()
 
 
+async def test_empty_project_can_be_planned_timed_and_reported(client: AsyncClient) -> None:
+    """A newly created project is actionable until child tasks are added."""
+
+    token, _ = await register_user(client, "empty_project_today")
+    project = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={"title": "直接执行的项目", "node_type": "PROJECT"},
+    )
+    assert project.status_code == 201
+    assert project.json()["is_leaf"] is True
+
+    plan = await create_plan(client, token, date.today())
+    item = await add_item(
+        client,
+        token,
+        plan["id"],
+        task_id=project.json()["id"],
+    )
+    assert item["title"] == "直接执行的项目"
+    assert item["task_id"] == project.json()["id"]
+
+    started = datetime.now(UTC)
+    ended = started + timedelta(minutes=5)
+    timed = await client.put(
+        f"/api/v1/sessions/{uuid4()}",
+        headers=auth_header(token),
+        json={
+            "task_id": project.json()["id"],
+            "daily_plan_item_id": item["id"],
+            "client_id": str(uuid4()),
+            "status": "COMPLETED",
+            "started_at": started.isoformat(),
+            "ended_at": ended.isoformat(),
+            "duration_seconds": 300,
+            "last_resumed_at": None,
+            "client_updated_at": ended.isoformat(),
+        },
+    )
+    assert timed.status_code == 200
+
+    refreshed = await client.get(
+        f"/api/v1/tasks/{project.json()['id']}",
+        headers=auth_header(token),
+    )
+    assert refreshed.status_code == 200
+    assert refreshed.json()["direct_actual_seconds"] == 300
+    assert refreshed.json()["actual_seconds"] == 300
+
+
 async def test_daily_plan_items_progress_time_and_streak(client: AsyncClient) -> None:
     token, _ = await register_user(client)
     today = date.today()

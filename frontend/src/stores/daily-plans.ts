@@ -81,12 +81,23 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       this.ownerId = ownerId
       this.activeItemId = activeItemId
       if (!this.listenerBound) {
+        const retryPending = (): void => {
+          if (navigator.onLine && this.ownerId) {
+            void this.load(this.selectedDate, { silent: true }).catch(() => {
+              // load() already records the visible error/offline state.
+            })
+          }
+        }
         window.addEventListener('online', () => {
           this.online = true
-          void this.load(this.selectedDate)
+          retryPending()
         })
         window.addEventListener('offline', () => {
           this.online = false
+        })
+        window.addEventListener('focus', retryPending)
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') retryPending()
         })
         this.listenerBound = true
       }

@@ -1,16 +1,36 @@
 """Environment-based application configuration."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = BACKEND_DIR / ".env"
+
+
+def resolve_database_url(value: str) -> str:
+    """Anchor relative SQLite files to ``backend/`` instead of the shell cwd."""
+
+    for prefix in ("sqlite+aiosqlite:///", "sqlite:///"):
+        if not value.startswith(prefix):
+            continue
+        raw_path = value.removeprefix(prefix)
+        if raw_path == ":memory:":
+            return value
+        database_path = Path(raw_path)
+        if database_path.is_absolute():
+            return value
+        return f"{prefix}{(BACKEND_DIR / database_path).resolve().as_posix()}"
+    return value
 
 
 class Settings(BaseSettings):
     """Validated settings loaded from environment variables or ``.env``."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         env_prefix="APP_",
         case_sensitive=False,
         extra="ignore",
@@ -26,7 +46,14 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://time_budget_app:time_budget_dev_password"
         "@localhost:5432/time_budget_tracker"
     )
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: list[str] = ["http://localhost:5174"]
+
+    @field_validator("database_url")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        """Prevent different launch directories from creating different databases."""
+
+        return resolve_database_url(value)
 
     @field_validator("secret_key")
     @classmethod
@@ -46,4 +73,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

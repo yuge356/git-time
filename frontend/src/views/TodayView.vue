@@ -297,9 +297,12 @@ const displayDate = computed(() =>
 const plannedTaskIds = computed(
   () => new Set(daily.plan?.items.flatMap((item) => (item.task_id ? [item.task_id] : []))),
 )
+const parentTaskIds = computed(
+  () => new Set(tasks.items.flatMap((task) => (task.parent_id ? [task.parent_id] : []))),
+)
 const availableTasks = computed(() =>
   tasks.items.filter(
-    (task) => task.node_type === 'TASK' && !plannedTaskIds.value.has(task.id),
+    (task) => !parentTaskIds.value.has(task.id) && !plannedTaskIds.value.has(task.id),
   ),
 )
 const canAdd = computed(() =>
@@ -365,11 +368,18 @@ const timerRemainingSeconds = computed(() => {
 })
 
 // Selecting a task pre-fills the planned duration with the task's own
-// estimated study time; the user can still adjust it afterwards.
+// configured initial duration; the user can still adjust it afterwards.
+// Empty projects are directly actionable, so their per-task default is the
+// closest equivalent to an executable task's estimated duration. A fixed
+// project budget is only used when no per-task default was configured.
 watch(planTaskId, (taskId) => {
   const task = tasks.items.find((item) => item.id === taskId)
-  if (task && task.estimated_seconds > 0) {
-    estimatedMinutes.value = Math.max(1, Math.round(task.estimated_seconds / 60))
+  if (!task) return
+  const initialSeconds = task.estimated_seconds > 0
+    ? task.estimated_seconds
+    : (task.default_estimated_seconds ?? task.fixed_budget_seconds ?? 0)
+  if (initialSeconds > 0) {
+    estimatedMinutes.value = Math.max(1, Math.round(initialSeconds / 60))
   }
 })
 
@@ -563,9 +573,7 @@ async function startItem(item: DailyPlanItem): Promise<void> {
     const remainingSeconds = item.estimated_seconds > 0 && remaining > 0
       ? remaining
       : null
-    const executableTaskId = tasks.items.some(
-      (task) => task.id === item.task_id && task.node_type === 'TASK',
-    )
+    const executableTaskId = tasks.items.some((task) => task.id === item.task_id)
       ? item.task_id
       : null
     await timer.start(executableTaskId, item.id, remainingSeconds)

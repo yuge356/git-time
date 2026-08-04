@@ -107,6 +107,7 @@ async def test_create_and_list_task_tree(client: AsyncClient) -> None:
     assert root_body["budget_level"] == "NOT_SET"
     assert root_body["direct_actual_seconds"] == 0
     assert root_body["actual_seconds"] == 0
+    assert root_body["is_leaf"] is True
 
     module = await client.post(
         "/api/v1/tasks",
@@ -136,7 +137,10 @@ async def test_create_and_list_task_tree(client: AsyncClient) -> None:
     assert set(by_title) == {"Python 课程", "第一章", "练习 1"}
     assert by_title["Python 课程"]["task_count"] == 1
     assert by_title["Python 课程"]["planned_seconds"] == 7_200
+    assert by_title["Python 课程"]["is_leaf"] is False
     assert by_title["第一章"]["parent_id"] == root_body["id"]
+    assert by_title["第一章"]["is_leaf"] is False
+    assert by_title["练习 1"]["is_leaf"] is True
 
 
 async def test_task_status_controls_completed_timestamp(client: AsyncClient) -> None:

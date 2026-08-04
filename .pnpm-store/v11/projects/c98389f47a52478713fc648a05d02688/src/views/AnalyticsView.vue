@@ -22,7 +22,15 @@
         </form>
       </section>
 
-      <FormMessage :message="errorMessage" />
+      <FormMessage :message="errorMessage || timer.syncError" />
+
+      <div v-if="timer.pendingCount > 0" class="sync-banner">
+        <strong>统计等待同步</strong>
+        <span>
+          {{ timer.pendingCount }} 条本地计时尚未写入服务器；服务恢复后会自动重试，
+          当前统计暂不包含这些记录。
+        </span>
+      </div>
 
       <section class="analytics-metrics">
         <article>
@@ -131,6 +139,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
 import { analyticsService } from '@/services/analytics'
+import { useAuthStore } from '@/stores/auth'
 import { useTimerStore } from '@/stores/timer'
 import type { AnalyticsSummary } from '@/types/analytics'
 import { getApiErrorMessage } from '@/utils/api-error'
@@ -148,6 +157,7 @@ weekStart.setDate(today.getDate() - 6)
 const dateFrom = ref(localDateString(weekStart))
 const dateTo = ref(localDateString(today))
 const summary = ref<AnalyticsSummary | null>(null)
+const auth = useAuthStore()
 const timer = useTimerStore()
 const loading = ref(false)
 const errorMessage = ref('')
@@ -169,6 +179,14 @@ async function load(): Promise<void> {
   errorMessage.value = ''
   loading.value = true
   try {
+    const ownerId = auth.user?.profile.id
+    if (ownerId) {
+      if (!timer.initialized || timer.ownerId !== ownerId) {
+        await timer.initialize(ownerId)
+      } else {
+        await timer.syncPending()
+      }
+    }
     summary.value = await analyticsService.summary(dateFrom.value, dateTo.value)
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)

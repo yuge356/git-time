@@ -148,6 +148,11 @@ def _migrate_existing_tree() -> None:
 def upgrade() -> None:
     """Add role/default columns, normalize legacy rows and enforce the hierarchy."""
 
+    # ``repeat_end_date`` is consumed by both the ORM and the normalization
+    # below, but legacy databases created through revision 0007 do not have it.
+    # Add it here before touching existing rows so upgrades from 0007 do not
+    # fail halfway through and leave the task table on the old schema.
+    op.add_column("tasks", sa.Column("repeat_end_date", sa.Date(), nullable=True))
     op.add_column(
         "tasks",
         sa.Column("node_type", sa.String(length=16), nullable=False, server_default="PROJECT"),
@@ -244,3 +249,4 @@ def downgrade() -> None:
         batch_op.drop_column("fixed_budget_seconds")
         batch_op.drop_column("budget_mode")
         batch_op.drop_column("node_type")
+        batch_op.drop_column("repeat_end_date")

@@ -149,7 +149,7 @@ async def test_session_put_is_allowed_by_cors(client: AsyncClient) -> None:
     response = await client.options(
         f"/api/v1/sessions/{uuid4()}",
         headers={
-            "Origin": "http://localhost:5173",
+            "Origin": "http://localhost:5174",
             "Access-Control-Request-Method": "PUT",
             "Access-Control-Request-Headers": "authorization,content-type",
         },
@@ -441,3 +441,76 @@ async def test_session_rejects_project_and_module_containers(client: AsyncClient
     )
     assert response.status_code == 409
     assert "Only executable tasks" in response.json()["detail"]
+
+
+async def test_legacy_daily_item_snapshot_recovers_missing_task_id(
+    client: AsyncClient,
+) -> None:
+    token, _ = await register_user(client, "legacy_daily_timer")
+    task_id = await create_task(client, token, "旧版今日任务")
+    plan = await client.post(
+        "/api/v1/daily-plans",
+        headers=auth_header(token),
+        json={"plan_date": date.today().isoformat()},
+    )
+    item = await client.post(
+        f"/api/v1/daily-plans/{plan.json()['id']}/items",
+        headers=auth_header(token),
+        json={"task_id": task_id, "estimated_seconds": 600},
+    )
+    session_id = str(uuid4())
+    started = datetime.now(UTC)
+    ended = started + timedelta(minutes=5)
+    payload = snapshot(
+        task_id,
+        str(uuid4()),
+        "COMPLETED",
+        started,
+        ended,
+        300,
+        ended_at=ended,
+    )
+    payload["task_id"] = None
+    payload["daily_plan_item_id"] = item.json()["id"]
+
+    created = await client.put(
+        f"/api/v1/sessions/{session_id}",
+        headers=auth_header(token),
+        json=payload,
+    )
+    replay = await client.put(
+        f"/api/v1/sessions/{session_id}",
+        headers=auth_header(token),
+        json=payload,
+    )
+
+    assert created.status_code == 200
+    assert created.json()["task_id"] == task_id
+    assert replay.status_code == 200
+    assert replay.json()["task_id"] == task_id
+
+
+async def test_completed_project_session_survives_later_children(
+    client: AsyncClient,
+) -> None:
+    token, _ = await register_user(client, "history_project")
+    project, _, _ = await create_structured_task(client, token, "已有子任务")
+    started = datetime.now(UTC)
+    ended = started + timedelta(minutes=7)
+
+    response = await client.put(
+        f"/api/v1/sessions/{uuid4()}",
+        headers=auth_header(token),
+        json=snapshot(
+            project["id"],
+            str(uuid4()),
+            "COMPLETED",
+            started,
+            ended,
+            420,
+            ended_at=ended,
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task_id"] == project["id"]

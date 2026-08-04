@@ -42,12 +42,14 @@
       </button>
     </div>
 
-    <span v-if="errorMessage" class="active-timer-bar__error">{{ errorMessage }}</span>
+    <span v-if="errorMessage || timer.syncError" class="active-timer-bar__error">
+      {{ errorMessage || timer.syncError }}
+    </span>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
@@ -62,7 +64,6 @@ const daily = useDailyPlanStore()
 const tasks = useTaskStore()
 const timer = useTimerStore()
 const errorMessage = ref('')
-const autoFinishing = ref(false)
 
 const activePlanItem = computed(() =>
   daily.plan?.items.find((item) => item.id === timer.active?.snapshot.daily_plan_item_id),
@@ -75,30 +76,6 @@ const activeTitle = computed(() => {
   if (planItem) return planItem.title
   return tasks.items.find((task) => task.id === snapshot.task_id)?.title ?? '进行中的任务'
 })
-
-watch(
-  [
-    () => timer.displaySeconds,
-    () => timer.active?.snapshot.status,
-    () => timer.targetSeconds,
-  ],
-  () => {
-    if (
-      timer.active?.snapshot.status === 'RUNNING' &&
-      timer.targetSeconds !== null &&
-      timer.displaySeconds >= timer.targetSeconds &&
-      (!timer.active.snapshot.daily_plan_item_id || activePlanItem.value !== undefined) &&
-      !timer.busy &&
-      !autoFinishing.value
-    ) {
-      autoFinishing.value = true
-      void finishTimer().finally(() => {
-        autoFinishing.value = false
-      })
-    }
-  },
-  { immediate: true },
-)
 
 onMounted(async () => {
   const ownerId = auth.user?.profile.id

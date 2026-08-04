@@ -10,6 +10,7 @@ export interface SessionSnapshot {
   duration_seconds: number
   last_resumed_at: string | null
   client_updated_at: string
+  complete_daily_item?: boolean
 }
 
 export interface StudySession extends SessionSnapshot {

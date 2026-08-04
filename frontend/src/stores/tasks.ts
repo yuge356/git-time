@@ -129,12 +129,23 @@ export const useTaskStore = defineStore('tasks', {
     async initialize(ownerId: string): Promise<void> {
       this.ownerId = ownerId
       if (!this.listenerBound) {
+        const retryPending = (): void => {
+          if (navigator.onLine && this.ownerId) {
+            void this.load().catch(() => {
+              // load() already records the visible error/offline state.
+            })
+          }
+        }
         window.addEventListener('online', () => {
           this.online = true
-          void this.load()
+          retryPending()
         })
         window.addEventListener('offline', () => {
           this.online = false
+        })
+        window.addEventListener('focus', retryPending)
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') retryPending()
         })
         this.listenerBound = true
       }

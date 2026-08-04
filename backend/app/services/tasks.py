@@ -36,6 +36,7 @@ def to_task_response(
     children_estimated_seconds: int = 0,
     task_count: int = 0,
     completed_task_count: int = 0,
+    is_leaf: bool | None = None,
 ) -> TaskResponse:
     """Build a response from server-owned hierarchy and budget summaries."""
 
@@ -64,7 +65,7 @@ def to_task_response(
         actual_seconds=actual_seconds,
         planned_seconds=planned_seconds,
         children_estimated_seconds=children_estimated_seconds,
-        is_leaf=task.node_type == TaskNodeType.TASK,
+        is_leaf=task.node_type == TaskNodeType.TASK if is_leaf is None else is_leaf,
         task_count=task_count,
         completed_task_count=completed_task_count,
         progress_ratio=(completed_task_count / task_count if task_count else None),
@@ -214,6 +215,7 @@ async def build_owned_task_responses(
         )
     )
     sessions = session_result.all()
+    parent_ids = {task.parent_id for task in tasks if task.parent_id is not None}
     direct, totals = calculate_task_time_totals(tasks, sessions)
     children_estimated, planned, task_counts, completed_counts = calculate_task_summaries(tasks)
     return [
@@ -225,6 +227,7 @@ async def build_owned_task_responses(
             children_estimated_seconds=children_estimated.get(task.id, 0),
             task_count=task_counts.get(task.id, 0),
             completed_task_count=completed_counts.get(task.id, 0),
+            is_leaf=task.id not in parent_ids,
         )
         for task in tasks
     ]
@@ -254,10 +257,25 @@ async def get_owned_executable_task(
     owner_id: UUID,
     task_id: UUID,
 ) -> Task:
-    """Return an owned executable task and reject project/module containers."""
+    """Return an owned leaf node and reject containers that still have children.
+
+    Explicit ``TASK`` nodes are always leaves in the structured hierarchy. An
+    empty project or module is also directly actionable: this keeps the simple
+    "create a project, add it to today" workflow useful without weakening the
+    roll-up behavior once child tasks are added.
+    """
 
     task = await get_owned_task(db, owner_id, task_id)
-    if task.node_type != TaskNodeType.TASK:
+    child_id = await db.scalar(
+        select(Task.id)
+        .where(
+            Task.owner_id == owner_id,
+            Task.parent_id == task.id,
+            Task.deleted_at.is_(None),
+        )
+        .limit(1)
+    )
+    if child_id is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only executable tasks can be timed or added to a daily plan",

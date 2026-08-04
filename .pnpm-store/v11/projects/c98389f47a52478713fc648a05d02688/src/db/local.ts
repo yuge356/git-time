@@ -39,6 +39,10 @@ class TrackerDatabase extends Dexie {
 
 export const localDb = new TrackerDatabase()
 
+function cloneForStorage<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 export async function getClientId(): Promise<string> {
   const stored = await localDb.metadata.get('client_id')
   if (stored) return stored.value
@@ -60,11 +64,12 @@ export async function saveActiveTimer(
   snapshot: SessionSnapshot,
   targetSeconds: number | null = null,
 ): Promise<void> {
+  const storedSnapshot = cloneForStorage(snapshot)
   await localDb.timerStates.put({
     id: ownerId,
     owner_id: ownerId,
     session_id: sessionId,
-    snapshot,
+    snapshot: storedSnapshot,
     target_seconds: targetSeconds,
   })
 }
@@ -82,7 +87,7 @@ export async function enqueueSessionSnapshot(
   await localDb.sessionOutbox.put({
     session_id: sessionId,
     owner_id: ownerId,
-    snapshot,
+    snapshot: cloneForStorage(snapshot),
     retry_count: existing?.retry_count ?? 0,
     last_error: null,
   })
@@ -109,11 +114,15 @@ export async function enqueueSyncOperation(
     entity_type: entityType,
     entity_id: entityId,
     action,
-    payload,
+    payload: cloneForStorage(payload),
     created_at: nextOperationTimestamp(),
     retry_count: 0,
     last_error: null,
   })
+}
+
+export async function saveCachedDailyPlan(plan: DailyPlan): Promise<void> {
+  await localDb.cachedDailyPlans.put(cloneForStorage(plan))
 }
 
 export async function pendingSyncCount(ownerId: string): Promise<number> {

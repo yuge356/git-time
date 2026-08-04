@@ -7,7 +7,9 @@ import type { SyncOperation } from '@/types/offline'
 import type { Task } from '@/types/task'
 
 export function isNetworkError(error: unknown): boolean {
-  return axios.isAxiosError(error) && !error.response
+  if (!axios.isAxiosError(error)) return false
+  if (!error.response) return true
+  return [408, 425, 429, 500, 502, 503, 504].includes(error.response.status)
 }
 
 function isNonExecutableTaskConflict(error: unknown): boolean {
@@ -176,7 +178,10 @@ async function runPendingSync(ownerId: string): Promise<number> {
       await replayOperation(current)
       await localDb.syncOperations.delete(current.id)
     } catch (error) {
-      if (isNetworkError(error)) break
+      // A gateway/server outage means the request never reached stable
+      // application logic. Keep the operation untouched and let callers mark
+      // the app offline so focus/visibility retries can replay it later.
+      if (isNetworkError(error)) throw error
       await localDb.syncOperations.update(operation.id, {
         retry_count: operation.retry_count + 1,
         last_error: axios.isAxiosError<{ detail?: string }>(error)

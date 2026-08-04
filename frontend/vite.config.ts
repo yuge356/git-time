@@ -11,9 +11,17 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    // Keep one stable browser origin so auth and IndexedDB outboxes are not
+    // silently split between 5173/5174 when an old dev server is still alive.
+    host: '127.0.0.1',
+    port: 5174,
+    strictPort: true,
     proxy: {
       '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/health': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },

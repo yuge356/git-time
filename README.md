@@ -54,7 +54,21 @@ Copy-Item .env.example .env
 pnpm dev
 ```
 
-打开 `http://localhost:5173`。
+打开 `http://localhost:5174`。开发服务器启用了固定端口；如果端口已被占用，
+请先关闭旧进程，不要改用其他端口，以免浏览器本地同步队列被拆分。
+
+也可以在仓库根目录使用固定配置启动前后端；脚本会先执行数据库迁移，
+并确认数据库健康后再报告启动成功：
+
+```powershell
+.\scripts\start-local.cmd
+```
+
+停止这组本地服务：
+
+```powershell
+.\scripts\stop-local.cmd
+```
 
 ## 验证
 

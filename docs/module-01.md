@@ -48,7 +48,7 @@ copy .env.example .env
 npm run dev
 ```
 
-前端地址：`http://localhost:5173`
+前端地址：`http://localhost:5174`
 
 ## 验证命令
 
@@ -67,4 +67,3 @@ cd frontend
 npm run type-check
 npm run build
 ```
-

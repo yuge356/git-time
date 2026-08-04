@@ -10,7 +10,7 @@ import {
   saveActiveTimer,
 } from '@/db/local'
 import { sessionService } from '@/services/sessions'
-import { syncPendingChanges } from '@/services/offline-sync'
+import { isNetworkError, syncPendingChanges } from '@/services/offline-sync'
 import type {
   LocalTimerState,
   SessionSnapshot,
@@ -32,6 +32,7 @@ interface TimerState {
   syncError: string
   completedRevision: number
   tickerId: number | null
+  retryTimerId: number | null
   onlineListenerBound: boolean
 }
 
@@ -40,15 +41,62 @@ function nextTimestamp(previous: string | null = null): string {
   return new Date(Math.max(Date.now(), previousTime + 1)).toISOString()
 }
 
-function isNetworkError(error: unknown): boolean {
-  return axios.isAxiosError(error) && !error.response
+function isMissingDailyPlanItemError(error: unknown): boolean {
+  return (
+    axios.isAxiosError<{ detail?: string }>(error) &&
+    error.response?.status === 404 &&
+    error.response.data?.detail === 'Daily plan item not found'
+  )
 }
 
-async function normalizeLegacySnapshot(snapshot: SessionSnapshot): Promise<SessionSnapshot> {
-  if (snapshot.task_id === null || snapshot.daily_plan_item_id === null) return snapshot
-  const task = await localDb.cachedTasks.get(snapshot.task_id)
-  if (!task || task.node_type === 'TASK') return snapshot
-  return { ...snapshot, task_id: null }
+async function upsertSessionWithReferenceRecovery(
+  sessionId: string,
+  snapshot: SessionSnapshot,
+): Promise<SessionSnapshot> {
+  try {
+    await sessionService.upsert(sessionId, snapshot)
+    return snapshot
+  } catch (error) {
+    if (
+      !isMissingDailyPlanItemError(error) ||
+      snapshot.task_id === null ||
+      snapshot.daily_plan_item_id === null
+    ) {
+      throw error
+    }
+
+    // Daily items may disappear during an old offline queue replay. Preserve
+    // the completed time against the still-owned task instead of losing it.
+    const recovered = {
+      ...snapshot,
+      daily_plan_item_id: null,
+      complete_daily_item: false,
+    }
+    await sessionService.upsert(sessionId, recovered)
+    return recovered
+  }
+}
+
+function finalizeOrphanedActiveSnapshot(
+  sessionId: string,
+  currentSessionId: string | null,
+  snapshot: SessionSnapshot,
+): SessionSnapshot {
+  if (sessionId === currentSessionId || snapshot.status === 'COMPLETED') {
+    return snapshot
+  }
+
+  // Only timerStates can represent the resumable timer. Older outbox entries
+  // left RUNNING/PAUSED by previous navigation bugs would otherwise violate
+  // the server's one-active-session invariant forever. Preserve their known
+  // duration as closed history without completing today's item.
+  return {
+    ...snapshot,
+    status: 'COMPLETED',
+    ended_at: snapshot.client_updated_at,
+    last_resumed_at: null,
+    complete_daily_item: false,
+  }
 }
 
 export const useTimerStore = defineStore('timer', {
@@ -66,6 +114,7 @@ export const useTimerStore = defineStore('timer', {
     syncError: '',
     completedRevision: 0,
     tickerId: null,
+    retryTimerId: null,
     onlineListenerBound: false,
   }),
 
@@ -92,17 +141,30 @@ export const useTimerStore = defineStore('timer', {
       this.startTicker()
 
       if (!this.onlineListenerBound) {
-        window.addEventListener('online', () => {
+        const retryPending = (): void => {
+          if (!navigator.onLine) return
           this.online = true
           void this.syncPending()
             .then(() => this.refreshHistory())
             .catch(() => {
               // syncPending already stores a user-visible conflict message.
             })
+        }
+        window.addEventListener('online', () => {
+          retryPending()
         })
         window.addEventListener('offline', () => {
           this.online = false
         })
+        window.addEventListener('focus', retryPending)
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') retryPending()
+        })
+        this.retryTimerId = window.setInterval(() => {
+          if (this.pendingCount > 0 && document.visibilityState === 'visible') {
+            retryPending()
+          }
+        }, 15_000)
         this.onlineListenerBound = true
       }
 
@@ -139,7 +201,9 @@ export const useTimerStore = defineStore('timer', {
         }
         await this.refreshHistory()
       } catch (error) {
-        if (!isNetworkError(error)) {
+        if (isNetworkError(error)) {
+          this.online = false
+        } else {
           this.syncError = '本地计时记录暂时无法与服务器同步。'
         }
       } finally {
@@ -154,9 +218,14 @@ export const useTimerStore = defineStore('timer', {
     },
 
     async syncPending(): Promise<void> {
-      if (!this.online || this.syncing || !this.ownerId) return
+      if (!navigator.onLine || this.syncing || !this.ownerId) {
+        if (!navigator.onLine) this.online = false
+        return
+      }
       this.syncing = true
       this.syncError = ''
+      this.online = true
+      let connectionFailed = false
       try {
         // Offline-created tasks and plan items must reach the server before
         // their Session snapshots replay foreign-key references.
@@ -170,24 +239,32 @@ export const useTimerStore = defineStore('timer', {
         )
         for (const item of pending) {
           try {
-            const snapshot = await normalizeLegacySnapshot(item.snapshot)
-            if (snapshot !== item.snapshot) {
-              await localDb.sessionOutbox.update(item.session_id, { snapshot })
-              if (this.active?.session_id === item.session_id) {
-                this.active = { ...this.active, snapshot }
-                await saveActiveTimer(
-                  this.ownerId,
-                  item.session_id,
-                  snapshot,
-                  this.targetSeconds,
-                )
-              }
+            const recoverableSnapshot = finalizeOrphanedActiveSnapshot(
+              item.session_id,
+              this.active?.session_id ?? null,
+              item.snapshot,
+            )
+            const syncedSnapshot = await upsertSessionWithReferenceRecovery(
+              item.session_id,
+              recoverableSnapshot,
+            )
+            if (
+              this.active?.session_id === item.session_id &&
+              syncedSnapshot.daily_plan_item_id !== item.snapshot.daily_plan_item_id
+            ) {
+              this.active = { ...this.active, snapshot: syncedSnapshot }
+              await saveActiveTimer(
+                this.ownerId,
+                item.session_id,
+                syncedSnapshot,
+                this.targetSeconds,
+              )
             }
-            await sessionService.upsert(item.session_id, snapshot)
             await localDb.sessionOutbox.delete(item.session_id)
           } catch (error) {
             if (isNetworkError(error)) {
               this.online = false
+              connectionFailed = true
               break
             }
             await localDb.sessionOutbox.update(item.session_id, {
@@ -199,6 +276,14 @@ export const useTimerStore = defineStore('timer', {
             continue
           }
         }
+        if (!connectionFailed) this.online = true
+      } catch (error) {
+        if (isNetworkError(error)) {
+          this.online = false
+          this.syncError = '计时已保存在本机，服务恢复后将自动同步。'
+          return
+        }
+        throw error
       } finally {
         this.pendingCount = await localDb.sessionOutbox
           .where('owner_id')
@@ -242,25 +327,31 @@ export const useTimerStore = defineStore('timer', {
     },
 
     async syncLatestOrKeepOffline(sessionId: string): Promise<void> {
-      if (!this.online || !this.ownerId) return
+      if (!navigator.onLine || !this.ownerId) {
+        if (!navigator.onLine) this.online = false
+        return
+      }
       const queued = await localDb.sessionOutbox.get(sessionId)
       if (!queued) return
       try {
-        const snapshot = await normalizeLegacySnapshot(queued.snapshot)
-        if (snapshot !== queued.snapshot) {
-          await localDb.sessionOutbox.update(sessionId, { snapshot })
-          if (this.active?.session_id === sessionId) {
-            this.active = { ...this.active, snapshot }
-            await saveActiveTimer(
-              this.ownerId,
-              sessionId,
-              snapshot,
-              this.targetSeconds,
-            )
-          }
+        const syncedSnapshot = await upsertSessionWithReferenceRecovery(
+          sessionId,
+          queued.snapshot,
+        )
+        if (
+          this.active?.session_id === sessionId &&
+          syncedSnapshot.daily_plan_item_id !== queued.snapshot.daily_plan_item_id
+        ) {
+          this.active = { ...this.active, snapshot: syncedSnapshot }
+          await saveActiveTimer(
+            this.ownerId,
+            sessionId,
+            syncedSnapshot,
+            this.targetSeconds,
+          )
         }
-        await sessionService.upsert(sessionId, snapshot)
         await localDb.sessionOutbox.delete(sessionId)
+        this.online = true
         this.pendingCount = await localDb.sessionOutbox
           .where('owner_id')
           .equals(this.ownerId)

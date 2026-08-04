@@ -156,7 +156,8 @@ Copy-Item .env.example .env
 pnpm dev
 ```
 
-打开 `http://localhost:5173`。
+打开 `http://localhost:5174`。本地开发端口是固定的；若端口被占用，请先关闭旧进程，
+不要让 Vite 自动切换端口，否则登录信息与 IndexedDB 待同步队列会被浏览器按来源隔离。
 
 ### 5. 运行测试
 
