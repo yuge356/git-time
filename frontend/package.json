@@ -5,7 +5,9 @@
   "type": "module",
   "packageManager": "pnpm@11.9.0",
   "scripts": {
-    "dev": "vite",
+    "dev": "..\\scripts\\start-local.cmd -Watch",
+    "dev:once": "..\\scripts\\start-local.cmd",
+    "dev:web": "vite",
     "build": "pnpm run type-check && vite build",
     "preview": "vite preview",
     "type-check": "vue-tsc --build --force"

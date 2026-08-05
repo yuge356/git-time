@@ -21,5 +21,8 @@ export function getApiErrorMessage(error: unknown): string {
   if (!error.response) {
     return '无法连接服务器，请检查网络或后端服务。'
   }
+  if ([502, 503, 504].includes(error.response.status)) {
+    return '后端服务未启动或正在重启，请启动本地服务后再试。'
+  }
   return '请求失败，请稍后重试。'
 }

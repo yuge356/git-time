@@ -19,9 +19,12 @@ if (-not (Test-Path -LiteralPath $stateFile)) {
 $state = Get-Content -Raw -Encoding UTF8 -LiteralPath $stateFile | ConvertFrom-Json
 foreach ($service in @($state.frontend, $state.backend)) {
     $listenerPid = Get-ListenerPid ([int]$service.port)
-    if ($listenerPid -and $listenerPid -eq [int]$service.pid) {
+    $managed = $null -eq $service.managed -or [bool]$service.managed
+    if ($managed -and $listenerPid -and $listenerPid -eq [int]$service.pid) {
         Stop-Process -Id $listenerPid -Force
         Write-Output "Stopped process $listenerPid on port $($service.port)."
+    } elseif (-not $managed -and $listenerPid -eq [int]$service.pid) {
+        Write-Output "Left reused process $listenerPid on port $($service.port) running."
     }
 }
 

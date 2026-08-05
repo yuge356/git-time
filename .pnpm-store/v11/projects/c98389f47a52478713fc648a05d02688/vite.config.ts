@@ -3,8 +3,12 @@ import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite'
 
+import { localBackendPlugin } from './vite.local-backend'
+
 export default defineConfig({
-  plugins: [vue()],
+  // The dev server owns the local API lifecycle so the login page cannot be
+  // left running without its backend.
+  plugins: [vue(), localBackendPlugin()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
