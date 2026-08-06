@@ -1,7 +1,7 @@
 <template>
   <AppShell>
     <main class="profile-page">
-      <section class="page-heading">
+      <section v-if="auth.showPageIntros" class="page-heading">
         <p class="eyebrow">账户设置</p>
         <h1>个人资料</h1>
         <p>这些信息用于标识你的账户；是否允许伙伴搜索由你控制。</p>

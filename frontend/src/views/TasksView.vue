@@ -1,7 +1,7 @@
 <template>
   <AppShell>
     <main class="tasks-page">
-      <section class="page-heading tasks-page__heading">
+      <section v-if="auth.showPageIntros" class="page-heading tasks-page__heading">
         <p class="eyebrow">项目</p>
         <h1>项目与时间预算</h1>
         <p>按“项目 → 模块 → 任务”组织学习内容；容器负责管理，任务负责执行。</p>

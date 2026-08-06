@@ -1,8 +1,10 @@
 <template>
   <AppShell>
     <main class="sharing-page">
-      <section class="page-heading sharing-heading">
-        <div>
+      <section
+        :class="['page-heading', 'sharing-heading', { 'is-intro-hidden': !auth.showPageIntros }]"
+      >
+        <div v-if="auth.showPageIntros">
           <p class="eyebrow">计划分享</p>
           <h1>让伙伴看见你的进度</h1>
           <p>仅已建立关系的伙伴可查看；是否公开时间数据由你单独选择。</p>
@@ -137,6 +139,7 @@ import FormMessage from '@/components/FormMessage.vue'
 import { dailyPlanService } from '@/services/daily-plans'
 import { partnershipService } from '@/services/partnerships'
 import { sharingService } from '@/services/sharing'
+import { useAuthStore } from '@/stores/auth'
 import type { DailyPlan } from '@/types/daily-plan'
 import type { Partnership } from '@/types/partnership'
 import type {
@@ -145,6 +148,8 @@ import type {
   SentPlanShare,
 } from '@/types/sharing'
 import { getApiErrorMessage } from '@/utils/api-error'
+
+const auth = useAuthStore()
 
 function localDateString(date = new Date()): string {
   const year = date.getFullYear()

@@ -14,6 +14,7 @@ from app.schemas.analytics import (
     AnalyticsSummary,
     BudgetComparison,
     DailyTrendPoint,
+    ProjectTimeHistory,
     TaskTimeSlice,
 )
 from app.services.tasks import (
@@ -49,16 +50,16 @@ async def build_analytics_summary(
         tzinfo=timezone,
     ).astimezone(UTC)
 
-    tasks = list(
+    all_tasks = list(
         (
             await db.scalars(
                 select(Task).where(
                     Task.owner_id == owner_id,
-                    Task.deleted_at.is_(None),
                 )
             )
         ).all()
     )
+    tasks = [task for task in all_tasks if task.deleted_at is None]
     executable_tasks = [task for task in tasks if task.node_type == TaskNodeType.TASK]
     sessions = list(
         (
@@ -104,7 +105,7 @@ async def build_analytics_summary(
         session.id: effective_session_duration(session) for session in sessions
     }
     total_seconds = sum(session_durations.values())
-    task_titles = {task.id: task.title for task in tasks}
+    task_titles = {task.id: task.title for task in all_tasks}
     direct_distribution: dict[UUID | None, int] = {}
     for session in sessions:
         direct_distribution[session.task_id] = (
@@ -145,6 +146,49 @@ async def build_analytics_summary(
     ]
     budget_comparison.sort(key=lambda item: item.actual_seconds, reverse=True)
 
+    task_by_id = {task.id: task for task in all_tasks}
+    project_seconds: dict[UUID, int] = {}
+    project_session_counts: dict[UUID, int] = {}
+    project_task_ids: dict[UUID, set[UUID]] = {}
+    project_last_tracked: dict[UUID, datetime] = {}
+
+    def resolve_project(task_id: UUID | None) -> Task | None:
+        current = task_by_id.get(task_id) if task_id is not None else None
+        visited: set[UUID] = set()
+        while current is not None and current.id not in visited:
+            visited.add(current.id)
+            if current.node_type == TaskNodeType.PROJECT:
+                return current
+            current = task_by_id.get(current.parent_id) if current.parent_id is not None else None
+        return None
+
+    for session in sessions:
+        seconds = session_durations[session.id]
+        project = resolve_project(session.task_id)
+        if project is None or seconds <= 0:
+            continue
+        project_seconds[project.id] = project_seconds.get(project.id, 0) + seconds
+        project_session_counts[project.id] = project_session_counts.get(project.id, 0) + 1
+        if session.task_id is not None:
+            project_task_ids.setdefault(project.id, set()).add(session.task_id)
+        started_at = normalize_utc(session.started_at)
+        previous = project_last_tracked.get(project.id)
+        if previous is None or started_at > previous:
+            project_last_tracked[project.id] = started_at
+
+    project_history = [
+        ProjectTimeHistory(
+            project_id=project_id,
+            title=task_by_id[project_id].title,
+            seconds=seconds,
+            session_count=project_session_counts[project_id],
+            task_count=len(project_task_ids.get(project_id, set())),
+            last_tracked_at=project_last_tracked[project_id],
+        )
+        for project_id, seconds in project_seconds.items()
+    ]
+    project_history.sort(key=lambda item: item.last_tracked_at, reverse=True)
+
     daily_seconds: dict[date, int] = {}
     for session in sessions:
         local_date = normalize_utc(session.started_at).astimezone(timezone).date()
@@ -170,10 +214,15 @@ async def build_analytics_summary(
         )
         cursor += timedelta(days=1)
 
+    # The Today page completes a durable DailyPlanItem snapshot, not the
+    # source project Task. Counting Task.completed_at here made a successfully
+    # completed Today item invisible in analytics (and would also break
+    # recurring tasks, whose project definition must stay open for the next
+    # occurrence). Use the same date-bounded daily items as the Today page so
+    # every checked/finished item is reflected exactly once.
     completed_tasks = sum(
-        task.completed_at is not None
-        and start_at <= normalize_utc(task.completed_at) < end_at
-        for task in executable_tasks
+        item.status == DailyPlanItemStatus.DONE
+        for item in items
     )
     return AnalyticsSummary(
         date_from=date_from,
@@ -183,8 +232,9 @@ async def build_analytics_summary(
             session.status == SessionStatus.COMPLETED for session in sessions
         ),
         completed_task_count=completed_tasks,
-        total_task_count=len(executable_tasks),
+        total_task_count=len(items),
         task_distribution=distribution,
         daily_trend=daily_trend,
         budget_comparison=budget_comparison,
+        project_history=project_history,
     )

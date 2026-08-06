@@ -20,6 +20,15 @@ export interface BudgetComparison {
   usage_ratio: number | null
 }
 
+export interface ProjectTimeHistory {
+  project_id: string
+  title: string
+  seconds: number
+  session_count: number
+  task_count: number
+  last_tracked_at: string
+}
+
 export interface AnalyticsSummary {
   date_from: string
   date_to: string
@@ -30,4 +39,5 @@ export interface AnalyticsSummary {
   task_distribution: TaskTimeSlice[]
   daily_trend: DailyTrendPoint[]
   budget_comparison: BudgetComparison[]
+  project_history: ProjectTimeHistory[]
 }

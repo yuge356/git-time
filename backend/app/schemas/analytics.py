@@ -1,6 +1,6 @@
 """Read-only learning analytics response schemas."""
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -34,8 +34,23 @@ class BudgetComparison(BaseModel):
     usage_ratio: float | None
 
 
+class ProjectTimeHistory(BaseModel):
+    """Time recorded under one project in the selected date range."""
+
+    project_id: UUID
+    title: str
+    seconds: int
+    session_count: int
+    task_count: int
+    last_tracked_at: datetime
+
+
 class AnalyticsSummary(BaseModel):
-    """All charts and headline figures for a selected date range."""
+    """All charts and headline figures for a selected date range.
+
+    Task completion counts refer to daily-plan item snapshots in the range,
+    matching the completion controls on the Today page.
+    """
 
     date_from: date
     date_to: date
@@ -46,3 +61,4 @@ class AnalyticsSummary(BaseModel):
     task_distribution: list[TaskTimeSlice]
     daily_trend: list[DailyTrendPoint]
     budget_comparison: list[BudgetComparison]
+    project_history: list[ProjectTimeHistory]

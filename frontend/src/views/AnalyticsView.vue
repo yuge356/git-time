@@ -1,40 +1,12 @@
 <template>
   <AppShell>
     <main class="analytics-page">
-      <section class="analytics-hero">
+      <section v-if="auth.showPageIntros" class="analytics-hero">
         <div class="analytics-hero__copy">
           <p class="eyebrow">时间统计</p>
           <h1>让每一段投入都有回响</h1>
-          <p>从周趋势、任务分布和预算偏差中，看见时间真正流向哪里。</p>
+          <p>从日、周、月、年趋势、任务分布和预算偏差中，看见时间真正流向哪里。</p>
         </div>
-
-        <form class="analytics-filter" @submit.prevent="load">
-          <div class="analytics-presets" aria-label="快捷统计周期">
-            <button
-              v-for="preset in rangePresets"
-              :key="preset.days"
-              type="button"
-              :class="{ 'is-active': selectedPreset === preset.days }"
-              @click="applyPreset(preset.days)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-          <div class="analytics-filter__dates">
-            <label>
-              <span>开始</span>
-              <input v-model="dateFrom" type="date" required @change="selectedPreset = null" />
-            </label>
-            <span class="analytics-filter__arrow" aria-hidden="true">→</span>
-            <label>
-              <span>结束</span>
-              <input v-model="dateTo" type="date" required @change="selectedPreset = null" />
-            </label>
-            <button class="button button--primary" type="submit" :disabled="loading">
-              {{ loading ? '统计中…' : '更新统计' }}
-            </button>
-          </div>
-        </form>
       </section>
 
       <FormMessage :message="errorMessage || timer.syncError" />
@@ -91,7 +63,7 @@
           <strong>
             {{ summary?.completed_task_count ?? 0 }}/{{ summary?.total_task_count ?? 0 }}
           </strong>
-          <p>完成项目任务</p>
+          <p>完成今日任务</p>
         </article>
       </section>
 
@@ -102,23 +74,61 @@
               <p class="eyebrow">任务分布</p>
               <h2>时间投入占比</h2>
             </div>
-            <span class="analytics-card__hint">TOP {{ distributionItems.length }}</span>
+            <span class="analytics-card__hint">{{ distributionItems.length }} 个圆环</span>
           </header>
 
           <p v-if="distributionItems.length === 0" class="empty-state">
             暂无可分配的投入时长。
           </p>
           <div v-else class="distribution-overview">
-            <div
-              class="distribution-donut"
-              :style="{ background: distributionGradient }"
-              role="img"
-              aria-label="任务投入时间占比环形图"
-            >
-              <div class="distribution-donut__center">
-                <strong>{{ compactDuration(summary?.total_learning_seconds ?? 0) }}</strong>
-                <span>总投入</span>
-              </div>
+            <div class="distribution-rings">
+              <svg
+                viewBox="0 0 260 260"
+                role="img"
+                aria-labelledby="distribution-rings-title distribution-rings-description"
+              >
+                <title id="distribution-rings-title">任务投入进度圆环图</title>
+                <desc id="distribution-rings-description">
+                  每个任务对应一个圆环，彩色部分表示该任务在所选时间范围内的投入占比。
+                </desc>
+                <g
+                  v-for="(item, index) in distributionItems"
+                  :key="item.key"
+                  class="distribution-ring"
+                >
+                  <circle
+                    class="distribution-ring__track"
+                    cx="130"
+                    cy="130"
+                    :r="ringRadius(index)"
+                    :stroke-width="ringStrokeWidth()"
+                    pathLength="100"
+                  />
+                  <circle
+                    class="distribution-ring__progress"
+                    cx="130"
+                    cy="130"
+                    :r="ringRadius(index)"
+                    :stroke-width="ringStrokeWidth()"
+                    pathLength="100"
+                    :style="{
+                      stroke: item.color,
+                      strokeDasharray: `${ringArcLength(item.percentage)} 100`,
+                    }"
+                  >
+                    <title>
+                      {{ item.title }}：{{ readableDuration(item.seconds) }}，占比
+                      {{ Math.round(item.percentage * 100) }}%
+                    </title>
+                  </circle>
+                </g>
+                <text x="130" y="124" text-anchor="middle" class="distribution-rings__total">
+                  {{ compactDuration(summary?.total_learning_seconds ?? 0) }}
+                </text>
+                <text x="130" y="145" text-anchor="middle" class="distribution-rings__label">
+                  总投入
+                </text>
+              </svg>
             </div>
             <ol class="distribution-legend">
               <li v-for="item in distributionItems" :key="item.key">
@@ -136,105 +146,232 @@
         <article class="analytics-card analytics-card--weekly">
           <header class="analytics-card__heading analytics-card__heading--split">
             <div>
-              <p class="eyebrow">周度趋势</p>
-              <h2>每周总投入时间</h2>
+              <p class="eyebrow">时间趋势</p>
+              <h2>{{ trendCopy.title }}</h2>
             </div>
-            <div class="chart-summary">
-              <span>周均投入</span>
-              <strong>{{ readableDuration(averageWeeklySeconds) }}</strong>
+            <div class="trend-controls">
+              <div class="trend-granularity" role="group" aria-label="统计时间粒度">
+                <button
+                  v-for="option in trendOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ 'is-active': selectedGranularity === option.value }"
+                  @click="selectedGranularity = option.value"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <div class="trend-calendar">
+                <button
+                  class="trend-calendar__trigger"
+                  type="button"
+                  aria-label="选择统计日期"
+                  :aria-expanded="calendarOpen"
+                  :title="`${dateFrom} 至 ${dateTo}`"
+                  @click="calendarOpen = !calendarOpen"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="16" rx="3" />
+                    <path d="M8 3v4m8-4v4M3 10h18" />
+                    <path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01" />
+                  </svg>
+                </button>
+                <form
+                  v-if="calendarOpen"
+                  class="trend-calendar__popover"
+                  @submit.prevent="applyDateRange"
+                  @keydown.esc="calendarOpen = false"
+                >
+                  <strong>统计日期</strong>
+                  <div class="analytics-presets" aria-label="快捷统计周期">
+                    <button
+                      v-for="preset in rangePresets"
+                      :key="preset.days"
+                      type="button"
+                      :class="{ 'is-active': selectedPreset === preset.days }"
+                      @click="applyPreset(preset.days)"
+                    >
+                      {{ preset.label }}
+                    </button>
+                  </div>
+                  <div class="trend-calendar__dates">
+                    <label>
+                      <span>开始日期</span>
+                      <input
+                        v-model="dateFrom"
+                        type="date"
+                        required
+                        @change="selectedPreset = null"
+                      />
+                    </label>
+                    <label>
+                      <span>结束日期</span>
+                      <input
+                        v-model="dateTo"
+                        type="date"
+                        required
+                        @change="selectedPreset = null"
+                      />
+                    </label>
+                  </div>
+                  <button class="button button--primary" type="submit" :disabled="loading">
+                    {{ loading ? '统计中…' : '应用日期' }}
+                  </button>
+                </form>
+              </div>
             </div>
           </header>
 
           <p v-if="!hasDailyActivity" class="empty-state">所选日期内还没有计时记录。</p>
-          <div v-else class="weekly-chart" role="img" aria-label="每周总投入时间柱状图">
-            <div class="weekly-chart__grid" aria-hidden="true">
-              <span v-for="line in 4" :key="line" />
-            </div>
-            <div class="weekly-chart__bars">
-              <div v-for="point in weeklyTrend" :key="point.key" class="weekly-column">
-                <span class="weekly-column__value">{{ compactDuration(point.seconds) }}</span>
-                <div class="weekly-column__track">
-                  <div
-                    class="weekly-column__bar"
-                    :style="{ height: `${weeklyHeight(point.seconds)}%` }"
-                  />
+          <div v-else class="weekly-chart" role="img" :aria-label="`${trendCopy.title}柱状图`">
+            <div
+              class="weekly-chart__body"
+              :style="{ '--weekly-min-width': `${Math.max(trendPoints.length, 5) * 60 + 42}px` }"
+            >
+              <div class="weekly-chart__axis" aria-hidden="true">
+                <span v-for="tick in trendAxisTicks" :key="tick">{{ axisDuration(tick) }}</span>
+              </div>
+              <div class="weekly-chart__plot">
+                <div class="weekly-chart__grid" aria-hidden="true">
+                  <span v-for="tick in trendAxisTicks" :key="tick" />
                 </div>
-                <strong>{{ point.label }}</strong>
-                <small>{{ point.range }}</small>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article class="analytics-card analytics-card--daily">
-          <header class="analytics-card__heading analytics-card__heading--split">
-            <div>
-              <p class="eyebrow">每日节奏</p>
-              <h2>投入时长与完成项</h2>
-            </div>
-            <div class="chart-legend">
-              <span><i class="chart-legend__time" />投入时长</span>
-              <span><i class="chart-legend__done" />完成项</span>
-            </div>
-          </header>
-          <p v-if="!hasDailyActivity" class="empty-state">所选日期内还没有计时记录。</p>
-          <div v-else class="trend-chart" role="img" aria-label="每日投入时长柱状图">
-            <div v-for="point in summary?.daily_trend" :key="point.date" class="trend-column">
-              <span class="trend-value">{{ compactDuration(point.seconds) }}</span>
-              <div class="trend-track">
-                <div class="trend-bar" :style="{ height: `${trendHeight(point.seconds)}%` }" />
-              </div>
-              <strong>{{ shortDate(point.date) }}</strong>
-              <small>{{ point.completed_items }} 项</small>
-            </div>
-          </div>
-        </article>
-
-        <article class="analytics-card analytics-card--budget">
-          <header class="analytics-card__heading analytics-card__heading--split">
-            <div>
-              <p class="eyebrow">预算偏差</p>
-              <h2>计划用时与实际投入</h2>
-            </div>
-            <span class="analytics-card__hint">{{ summary?.budget_comparison.length ?? 0 }} 项任务</span>
-          </header>
-          <p v-if="summary?.budget_comparison.length === 0" class="empty-state">
-            还没有设置任务预算或产生投入时长。
-          </p>
-          <div v-else class="budget-table-wrap">
-            <table class="budget-table">
-              <thead>
-                <tr>
-                  <th>任务</th>
-                  <th>计划用时</th>
-                  <th>实际投入</th>
-                  <th>偏差</th>
-                  <th>预算使用率</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in summary?.budget_comparison" :key="item.task_id">
-                  <td>{{ item.title }}</td>
-                  <td>{{ readableDuration(item.estimated_seconds) }}</td>
-                  <td>{{ readableDuration(item.actual_seconds) }}</td>
-                  <td :class="{ 'is-over-budget': item.deviation_seconds > 0 }">
-                    {{ signedDuration(item.deviation_seconds) }}
-                  </td>
-                  <td>
-                    <div class="budget-usage">
-                      <div class="budget-usage__track">
-                        <span :style="{ width: `${usageWidth(item.usage_ratio)}%` }" />
+                <div
+                  class="weekly-chart__bars"
+                  :class="{ 'is-dense': trendPoints.length > 7 }"
+                >
+                  <div
+                    v-for="point in trendPoints"
+                    :key="point.key"
+                    class="weekly-column"
+                    :style="{ '--weekly-fill': `${trendBarHeight(point.seconds)}%` }"
+                    :aria-label="`${point.label}，投入 ${readableDuration(point.seconds)}，完成 ${point.completedItems} 项`"
+                    tabindex="0"
+                  >
+                    <div class="weekly-column__track">
+                      <div class="weekly-column__bar" />
+                      <span class="weekly-column__value">{{ compactDuration(point.seconds) }}</span>
+                      <div class="weekly-column__tooltip" aria-hidden="true">
+                        <strong>{{ point.label }}</strong>
+                        <span>投入 {{ readableDuration(point.seconds) }}</span>
+                        <span>完成 {{ point.completedItems }} 项</span>
                       </div>
-                      <strong>
-                        {{ item.usage_ratio === null ? '未设置' : `${Math.round(item.usage_ratio * 100)}%` }}
-                      </strong>
                     </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                    <div class="weekly-column__label">
+                      <strong>{{ point.label }}</strong>
+                      <small>{{ point.range }}</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </article>
+
+        <section class="analytics-lower-grid">
+          <article class="analytics-card analytics-card--budget">
+            <header class="analytics-card__heading analytics-card__heading--split">
+              <div>
+                <p class="eyebrow">预算偏差</p>
+                <h2>计划用时与实际投入</h2>
+              </div>
+              <span class="analytics-card__hint">
+                {{ summary?.budget_comparison.length ?? 0 }} 项任务
+              </span>
+            </header>
+            <p v-if="(summary?.budget_comparison.length ?? 0) === 0" class="empty-state">
+              还没有设置任务预算或产生投入时长。
+            </p>
+            <div v-else class="budget-table-wrap">
+              <table class="budget-table">
+                <thead>
+                  <tr>
+                    <th>任务</th>
+                    <th>计划用时</th>
+                    <th>实际投入</th>
+                    <th>偏差</th>
+                    <th>预算使用率</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in summary?.budget_comparison" :key="item.task_id">
+                    <td>{{ item.title }}</td>
+                    <td>{{ readableDuration(item.estimated_seconds) }}</td>
+                    <td>{{ readableDuration(item.actual_seconds) }}</td>
+                    <td :class="{ 'is-over-budget': item.deviation_seconds > 0 }">
+                      {{ signedDuration(item.deviation_seconds) }}
+                    </td>
+                    <td>
+                      <div class="budget-usage">
+                        <div class="budget-usage__track">
+                          <span :style="{ width: `${usageWidth(item.usage_ratio)}%` }" />
+                        </div>
+                        <strong>
+                          {{ item.usage_ratio === null ? '未设置' : `${Math.round(item.usage_ratio * 100)}%` }}
+                        </strong>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="analytics-card analytics-card--history">
+            <header class="analytics-card__heading analytics-card__heading--split">
+              <div>
+                <p class="eyebrow">项目历史</p>
+                <h2>投入时间查询</h2>
+              </div>
+              <span class="analytics-card__hint">
+                {{ summary?.project_history?.length ?? 0 }} 个项目
+              </span>
+            </header>
+
+            <label class="project-history-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="m16 16 4 4" />
+              </svg>
+              <input
+                v-model.trim="historyQuery"
+                type="search"
+                aria-label="搜索项目历史记录"
+                placeholder="搜索项目名称…"
+              />
+            </label>
+
+            <p v-if="(summary?.project_history?.length ?? 0) === 0" class="empty-state">
+              所选日期范围内还没有项目投入记录。
+            </p>
+            <p v-else-if="filteredProjectHistory.length === 0" class="empty-state">
+              没有找到“{{ historyQuery }}”相关项目。
+            </p>
+            <ol v-else class="project-history-list" aria-live="polite">
+              <li v-for="item in filteredProjectHistory" :key="item.project_id">
+                <div class="project-history-item__main">
+                  <span class="project-history-item__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M4 19V8.5A2.5 2.5 0 0 1 6.5 6H10l2 2h5.5A2.5 2.5 0 0 1 20 10.5V19" />
+                      <path d="M3 19h18" />
+                    </svg>
+                  </span>
+                  <div>
+                    <strong>{{ item.title }}</strong>
+                    <small>{{ item.session_count }} 次计时 · {{ item.task_count }} 个任务</small>
+                  </div>
+                  <b>{{ readableDuration(item.seconds) }}</b>
+                </div>
+                <div class="project-history-item__meta">
+                  <span>最近投入 {{ formatHistoryDate(item.last_tracked_at) }}</span>
+                  <span>占项目投入 {{ projectHistoryShare(item.seconds) }}%</span>
+                </div>
+                <div class="project-history-item__track" aria-hidden="true">
+                  <span :style="{ width: `${projectHistoryWidth(item.seconds)}%` }" />
+                </div>
+              </li>
+            </ol>
+          </article>
+        </section>
       </section>
     </main>
   </AppShell>
@@ -251,7 +388,9 @@ import { useTimerStore } from '@/stores/timer'
 import type { AnalyticsSummary, DailyTrendPoint } from '@/types/analytics'
 import { getApiErrorMessage } from '@/utils/api-error'
 
-interface WeeklyTrendPoint {
+type TrendGranularity = 'day' | 'week' | 'month' | 'year'
+
+interface TrendPoint {
   key: string
   label: string
   range: string
@@ -271,7 +410,14 @@ const rangePresets = [
   { label: '7 天', days: 7 },
   { label: '4 周', days: 28 },
   { label: '12 周', days: 84 },
+  { label: '1 年', days: 366 },
 ] as const
+const trendOptions: Array<{ label: string; value: TrendGranularity }> = [
+  { label: '日', value: 'day' },
+  { label: '周', value: 'week' },
+  { label: '月', value: 'month' },
+  { label: '年', value: 'year' },
+]
 const chartColors = ['#7559f5', '#ffd45f', '#83d4eb', '#b8a6ff', '#ff9cb7']
 
 function localDateString(date: Date): string {
@@ -298,6 +444,9 @@ defaultStart.setDate(today.getDate() - 27)
 const dateFrom = ref(localDateString(defaultStart))
 const dateTo = ref(localDateString(today))
 const selectedPreset = ref<number | null>(28)
+const selectedGranularity = ref<TrendGranularity>('week')
+const calendarOpen = ref(false)
+const historyQuery = ref('')
 const summary = ref<AnalyticsSummary | null>(null)
 const auth = useAuthStore()
 const timer = useTimerStore()
@@ -308,9 +457,6 @@ const selectedDayCount = computed(() => {
   const difference = parseLocalDate(dateTo.value).getTime() - parseLocalDate(dateFrom.value).getTime()
   return Math.max(1, Math.floor(difference / 86_400_000) + 1)
 })
-const maxDailySeconds = computed(() =>
-  Math.max(1, ...(summary.value?.daily_trend.map((point) => point.seconds) ?? [1])),
-)
 const hasDailyActivity = computed(() =>
   Boolean(summary.value?.daily_trend.some((point) => point.seconds > 0)),
 )
@@ -324,49 +470,67 @@ const taskCompletionRate = computed(() => {
   const total = summary.value?.total_task_count ?? 0
   return total > 0 ? Math.round(((summary.value?.completed_task_count ?? 0) / total) * 100) : 0
 })
-const weeklyTrend = computed<WeeklyTrendPoint[]>(() => aggregateWeeks(summary.value?.daily_trend ?? []))
-const maxWeeklySeconds = computed(() =>
-  Math.max(1, ...weeklyTrend.value.map((point) => point.seconds)),
+const trendPoints = computed<TrendPoint[]>(() =>
+  aggregateTrend(summary.value?.daily_trend ?? [], selectedGranularity.value),
 )
-const averageWeeklySeconds = computed(() => {
-  if (weeklyTrend.value.length === 0) return 0
-  return Math.round(
-    weeklyTrend.value.reduce((total, point) => total + point.seconds, 0) /
-      weeklyTrend.value.length,
-  )
+const maxTrendSeconds = computed(() =>
+  Math.max(1, ...trendPoints.value.map((point) => point.seconds)),
+)
+const trendAxisMaxSeconds = computed(() => {
+  const minutes = Math.ceil(maxTrendSeconds.value / 60)
+  if (minutes <= 15) return 15 * 60
+  if (minutes <= 60) return Math.ceil(minutes / 15) * 15 * 60
+  if (minutes <= 180) return Math.ceil(minutes / 30) * 30 * 60
+  if (minutes <= 720) return Math.ceil(minutes / 60) * 60 * 60
+  return Math.ceil(minutes / 180) * 180 * 60
+})
+const trendAxisTicks = computed(() =>
+  [1, 0.75, 0.5, 0.25, 0].map((ratio) => Math.round(trendAxisMaxSeconds.value * ratio)),
+)
+const trendCopy = computed(() => {
+  const copy: Record<TrendGranularity, { title: string }> = {
+    day: { title: '每日投入时间' },
+    week: { title: '每周总投入时间' },
+    month: { title: '每月总投入时间' },
+    year: { title: '每年总投入时间' },
+  }
+  return copy[selectedGranularity.value]
 })
 const distributionItems = computed<DistributionChartItem[]>(() => {
   const source = summary.value?.task_distribution ?? []
-  const visible = source.slice(0, 4).map((item, index) => ({
+  return source.map((item, index) => ({
     key: item.task_id ?? `temporary-${index}`,
     title: item.title,
     seconds: item.seconds,
     percentage: item.percentage,
-    color: chartColors[index],
+    color: chartColors[index % chartColors.length] ?? '#7559f5',
   }))
-  if (source.length > 4) {
-    const remaining = source.slice(4)
-    visible.push({
-      key: 'other-tasks',
-      title: '其他任务',
-      seconds: remaining.reduce((total, item) => total + item.seconds, 0),
-      percentage: remaining.reduce((total, item) => total + item.percentage, 0),
-      color: chartColors[4],
-    })
-  }
-  return visible
 })
-const distributionGradient = computed(() => {
-  if (distributionItems.value.length === 0) return '#efedf8'
-  let cursor = 0
-  const segments = distributionItems.value.map((item) => {
-    const start = cursor
-    cursor = Math.min(100, cursor + item.percentage * 100)
-    return `${item.color} ${start}% ${cursor}%`
-  })
-  if (cursor < 100) segments.push(`#efedf8 ${cursor}% 100%`)
-  return `conic-gradient(${segments.join(', ')})`
+const filteredProjectHistory = computed(() => {
+  const query = historyQuery.value.toLocaleLowerCase('zh-CN')
+  const history = summary.value?.project_history ?? []
+  if (!query) return history
+  return history.filter((item) => item.title.toLocaleLowerCase('zh-CN').includes(query))
 })
+const projectHistoryTotalSeconds = computed(() =>
+  (summary.value?.project_history ?? []).reduce((total, item) => total + item.seconds, 0),
+)
+
+function ringRadius(index: number): number {
+  const ringCount = distributionItems.value.length
+  const spacing = ringCount > 1 ? Math.min(21, 78 / (ringCount - 1)) : 0
+  return 112 - index * spacing
+}
+
+function ringStrokeWidth(): number {
+  const ringCount = distributionItems.value.length
+  if (ringCount <= 5) return 12
+  return Math.max(2.5, Math.min(12, (78 / Math.max(1, ringCount - 1)) * 0.64))
+}
+
+function ringArcLength(percentage: number): number {
+  return Math.max(0, Math.min(75, percentage * 75))
+}
 
 onMounted(load)
 
@@ -382,7 +546,13 @@ function applyPreset(days: number): void {
   dateFrom.value = localDateString(start)
   dateTo.value = localDateString(end)
   selectedPreset.value = days
+  calendarOpen.value = false
   void load()
+}
+
+async function applyDateRange(): Promise<void> {
+  calendarOpen.value = false
+  await load()
 }
 
 async function load(): Promise<void> {
@@ -405,14 +575,17 @@ async function load(): Promise<void> {
   }
 }
 
-function aggregateWeeks(points: DailyTrendPoint[]): WeeklyTrendPoint[] {
-  const groups = new Map<string, { start: Date; dates: Date[]; seconds: number; completedItems: number }>()
+function aggregateTrend(
+  points: DailyTrendPoint[],
+  granularity: TrendGranularity,
+): TrendPoint[] {
+  const groups = new Map<string, { anchor: Date; dates: Date[]; seconds: number; completedItems: number }>()
   for (const point of points) {
     const date = parseLocalDate(point.date)
-    const weekStart = mondayOf(date)
-    const key = localDateString(weekStart)
+    const anchor = trendAnchor(date, granularity)
+    const key = localDateString(anchor)
     const current = groups.get(key) ?? {
-      start: weekStart,
+      anchor,
       dates: [],
       seconds: 0,
       completedItems: 0,
@@ -425,16 +598,33 @@ function aggregateWeeks(points: DailyTrendPoint[]): WeeklyTrendPoint[] {
   return [...groups.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, group]) => {
-      const first = group.dates[0] ?? group.start
-      const last = group.dates[group.dates.length - 1] ?? group.start
+      const first = group.dates[0] ?? group.anchor
+      const last = group.dates[group.dates.length - 1] ?? group.anchor
       return {
         key,
-        label: `${group.start.getMonth() + 1}/${group.start.getDate()} 周`,
-        range: `${shortDate(localDateString(first))}–${shortDate(localDateString(last))}`,
+        label: trendLabel(group.anchor, granularity),
+        range:
+          granularity === 'day'
+            ? first.toLocaleDateString('zh-CN', { weekday: 'short' })
+            : `${shortDate(localDateString(first))}–${shortDate(localDateString(last))}`,
         seconds: group.seconds,
         completedItems: group.completedItems,
       }
     })
+}
+
+function trendAnchor(date: Date, granularity: TrendGranularity): Date {
+  if (granularity === 'week') return mondayOf(date)
+  if (granularity === 'month') return new Date(date.getFullYear(), date.getMonth(), 1)
+  if (granularity === 'year') return new Date(date.getFullYear(), 0, 1)
+  return new Date(date)
+}
+
+function trendLabel(date: Date, granularity: TrendGranularity): string {
+  if (granularity === 'week') return `${date.getMonth() + 1}/${date.getDate()} 周`
+  if (granularity === 'month') return `${date.getFullYear()}年${date.getMonth() + 1}月`
+  if (granularity === 'year') return `${date.getFullYear()}年`
+  return shortDate(localDateString(date))
 }
 
 function readableDuration(seconds: number): string {
@@ -467,17 +657,40 @@ function signedDuration(seconds: number): string {
   return `${prefix}${readableDuration(Math.abs(seconds))}`
 }
 
-function trendHeight(seconds: number): number {
-  return Math.max(seconds > 0 ? 6 : 0, (seconds / maxDailySeconds.value) * 100)
+function trendBarHeight(seconds: number): number {
+  return Math.max(seconds > 0 ? 4 : 0, (seconds / trendAxisMaxSeconds.value) * 100)
 }
 
-function weeklyHeight(seconds: number): number {
-  return Math.max(seconds > 0 ? 8 : 0, (seconds / maxWeeklySeconds.value) * 100)
+function axisDuration(seconds: number): string {
+  const minutes = Math.round(seconds / 60)
+  if (minutes >= 60) {
+    const hours = minutes / 60
+    return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`
+  }
+  return `${minutes}m`
 }
 
 function usageWidth(ratio: number | null): number {
   if (ratio === null) return 0
   return Math.min(100, Math.max(2, ratio * 100))
+}
+
+function projectHistoryShare(seconds: number): number {
+  const total = projectHistoryTotalSeconds.value
+  if (total <= 0) return 0
+  return Math.round((seconds / total) * 100)
+}
+
+function projectHistoryWidth(seconds: number): number {
+  const share = projectHistoryShare(seconds)
+  return share > 0 ? Math.max(2, share) : 0
+}
+
+function formatHistoryDate(value: string): string {
+  return new Date(value).toLocaleDateString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+  })
 }
 
 function shortDate(value: string): string {

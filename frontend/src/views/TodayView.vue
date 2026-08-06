@@ -1,8 +1,10 @@
 <template>
   <AppShell>
     <main class="today-page">
-      <section class="page-heading today-heading">
-        <div>
+      <section
+        :class="['page-heading', 'today-heading', { 'is-intro-hidden': !auth.showPageIntros }]"
+      >
+        <div v-if="auth.showPageIntros">
           <p class="eyebrow">今天</p>
           <h1>选一项，开始专注</h1>
           <p>{{ displayDate }}</p>

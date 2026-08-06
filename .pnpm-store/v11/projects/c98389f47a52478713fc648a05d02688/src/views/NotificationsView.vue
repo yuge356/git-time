@@ -1,7 +1,7 @@
 <template>
   <AppShell>
     <main class="notifications-page">
-      <section class="page-heading">
+      <section v-if="auth.showPageIntros" class="page-heading">
         <p class="eyebrow">通知中心</p>
         <h1>伙伴与计划动态</h1>
         <p>邀请、分享、鼓励和计划项完成动态都会保存在这里。</p>

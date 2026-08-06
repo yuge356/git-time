@@ -1,8 +1,10 @@
 <template>
   <AppShell>
     <main class="partners-page">
-      <section class="page-heading collaboration-heading">
-        <div>
+      <section
+        :class="['page-heading', 'collaboration-heading', { 'is-intro-hidden': !auth.showPageIntros }]"
+      >
+        <div v-if="auth.showPageIntros">
           <p class="eyebrow">伙伴协作</p>
           <h1>一起推进，彼此看见</h1>
           <p>分享计划、查看伙伴进度和管理关系，现在都在这里。</p>
@@ -240,10 +242,13 @@ import FormMessage from '@/components/FormMessage.vue'
 import { dailyPlanService } from '@/services/daily-plans'
 import { partnershipService } from '@/services/partnerships'
 import { sharingService } from '@/services/sharing'
+import { useAuthStore } from '@/stores/auth'
 import type { DailyPlan } from '@/types/daily-plan'
 import type { Partnership, PublicProfile, UserBlock, UserSearchResult } from '@/types/partnership'
 import type { EncouragementType, ReceivedSharedPlan, SentPlanShare } from '@/types/sharing'
 import { getApiErrorMessage } from '@/utils/api-error'
+
+const auth = useAuthStore()
 
 const ProfileAvatar = defineComponent({
   props: {
