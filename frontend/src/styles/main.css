@@ -547,11 +547,15 @@ a {
 
 .profile-page {
   display: grid;
-  max-width: 1180px;
+  width: min(1180px, calc(100% - 40px));
   margin: 0 auto;
-  padding: 54px 32px 96px;
-  gap: 54px;
-  grid-template-columns: minmax(240px, 0.65fr) minmax(480px, 1.35fr);
+  padding: 48px 0 96px;
+  gap: 28px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.profile-page .profile-card {
+  width: 100%;
 }
 
 .page-heading {

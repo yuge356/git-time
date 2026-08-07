@@ -61,7 +61,7 @@
             <span class="metric-card__tag">{{ taskCompletionRate }}%</span>
           </div>
           <strong>
-            {{ summary?.completed_task_count ?? 0 }}/{{ summary?.total_task_count ?? 0 }}
+            {{ todayCheckIn?.completed_items ?? 0 }}/{{ todayCheckIn?.total_items ?? 0 }}
           </strong>
           <p>完成今日任务</p>
         </article>
@@ -72,13 +72,13 @@
           <header class="analytics-card__heading">
             <div>
               <p class="eyebrow">任务分布</p>
-              <h2>时间投入占比</h2>
+              <h2>今日时间投入占比</h2>
             </div>
             <span class="analytics-card__hint">{{ distributionItems.length }} 个圆环</span>
           </header>
 
           <p v-if="distributionItems.length === 0" class="empty-state">
-            暂无可分配的投入时长。
+            今天还没有计时记录，开始学习后这里会显示今日投入分布。
           </p>
           <div v-else class="distribution-overview">
             <div class="distribution-rings">
@@ -89,7 +89,7 @@
               >
                 <title id="distribution-rings-title">任务投入进度圆环图</title>
                 <desc id="distribution-rings-description">
-                  每个任务对应一个圆环，彩色部分表示该任务在所选时间范围内的投入占比。
+                  每个任务对应一个圆环，彩色部分表示该任务在今日投入中的占比，每天零点自动刷新。
                 </desc>
                 <g
                   v-for="(item, index) in distributionItems"
@@ -123,10 +123,10 @@
                   </circle>
                 </g>
                 <text x="130" y="124" text-anchor="middle" class="distribution-rings__total">
-                  {{ compactDuration(summary?.total_learning_seconds ?? 0) }}
+                  {{ compactDuration(todaySummary?.total_learning_seconds ?? 0) }}
                 </text>
                 <text x="130" y="145" text-anchor="middle" class="distribution-rings__label">
-                  总投入
+                  今日投入
                 </text>
               </svg>
             </div>
@@ -378,14 +378,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
 import { analyticsService } from '@/services/analytics'
+import { dailyPlanService } from '@/services/daily-plans'
 import { useAuthStore } from '@/stores/auth'
 import { useTimerStore } from '@/stores/timer'
 import type { AnalyticsSummary, DailyTrendPoint } from '@/types/analytics'
+import type { CheckIn } from '@/types/daily-plan'
 import { getApiErrorMessage } from '@/utils/api-error'
 
 type TrendGranularity = 'day' | 'week' | 'month' | 'year'
@@ -407,7 +409,7 @@ interface DistributionChartItem {
 }
 
 const rangePresets = [
-  { label: '7 天', days: 7 },
+  { label: '10 天', days: 10 },
   { label: '4 周', days: 28 },
   { label: '12 周', days: 84 },
   { label: '1 年', days: 366 },
@@ -440,18 +442,27 @@ function mondayOf(date: Date): Date {
 
 const today = new Date()
 const defaultStart = new Date(today)
-defaultStart.setDate(today.getDate() - 27)
+// The daily bar chart defaults to the most recent 10 days; users can
+// adjust the window freely through the calendar popover.
+defaultStart.setDate(today.getDate() - 9)
 const dateFrom = ref(localDateString(defaultStart))
 const dateTo = ref(localDateString(today))
-const selectedPreset = ref<number | null>(28)
-const selectedGranularity = ref<TrendGranularity>('week')
+const selectedPreset = ref<number | null>(10)
+// Land on the daily view so 每日投入时间 is the first thing users see.
+const selectedGranularity = ref<TrendGranularity>('day')
 const calendarOpen = ref(false)
 const historyQuery = ref('')
 const summary = ref<AnalyticsSummary | null>(null)
+// Today-scoped data: powers the 完成今日任务 card and the distribution
+// rings, both of which reset every day.
+const todaySummary = ref<AnalyticsSummary | null>(null)
+const todayCheckIn = ref<CheckIn | null>(null)
 const auth = useAuthStore()
 const timer = useTimerStore()
 const loading = ref(false)
 const errorMessage = ref('')
+let rolloverTimer: number | null = null
+let lastRealDate = ''
 
 const selectedDayCount = computed(() => {
   const difference = parseLocalDate(dateTo.value).getTime() - parseLocalDate(dateFrom.value).getTime()
@@ -467,8 +478,10 @@ const averageDailySeconds = computed(() =>
   Math.round((summary.value?.total_learning_seconds ?? 0) / selectedDayCount.value),
 )
 const taskCompletionRate = computed(() => {
-  const total = summary.value?.total_task_count ?? 0
-  return total > 0 ? Math.round(((summary.value?.completed_task_count ?? 0) / total) * 100) : 0
+  const total = todayCheckIn.value?.total_items ?? 0
+  return total > 0
+    ? Math.round(((todayCheckIn.value?.completed_items ?? 0) / total) * 100)
+    : 0
 })
 const trendPoints = computed<TrendPoint[]>(() =>
   aggregateTrend(summary.value?.daily_trend ?? [], selectedGranularity.value),
@@ -497,7 +510,7 @@ const trendCopy = computed(() => {
   return copy[selectedGranularity.value]
 })
 const distributionItems = computed<DistributionChartItem[]>(() => {
-  const source = summary.value?.task_distribution ?? []
+  const source = todaySummary.value?.task_distribution ?? []
   return source.map((item, index) => ({
     key: item.task_id ?? `temporary-${index}`,
     title: item.title,
@@ -532,12 +545,43 @@ function ringArcLength(percentage: number): number {
   return Math.max(0, Math.min(75, percentage * 75))
 }
 
-onMounted(load)
+onMounted(() => {
+  startDayRolloverWatch()
+  void load()
+})
+
+onBeforeUnmount(() => {
+  if (rolloverTimer !== null) {
+    window.clearInterval(rolloverTimer)
+    rolloverTimer = null
+  }
+})
 
 watch(
   () => timer.completedRevision,
   () => void load(),
 )
+
+/**
+ * The 完成今日任务 card and the distribution rings are today-scoped, so at
+ * midnight they must reset to the new day. A sliding preset window
+ * (e.g. the default 10 days) slides along; a hand-picked custom range is
+ * left untouched.
+ */
+function startDayRolloverWatch(): void {
+  if (rolloverTimer !== null) return
+  lastRealDate = localDateString(new Date())
+  rolloverTimer = window.setInterval(() => {
+    const now = localDateString(new Date())
+    if (now === lastRealDate) return
+    lastRealDate = now
+    if (selectedPreset.value !== null) {
+      applyPreset(selectedPreset.value)
+    } else {
+      void load()
+    }
+  }, 30_000)
+}
 
 function applyPreset(days: number): void {
   const end = new Date()
@@ -567,7 +611,15 @@ async function load(): Promise<void> {
         await timer.syncPending()
       }
     }
-    summary.value = await analyticsService.summary(dateFrom.value, dateTo.value)
+    const todayString = localDateString(new Date())
+    const [rangeSummary, daySummary, dayCheckIn] = await Promise.all([
+      analyticsService.summary(dateFrom.value, dateTo.value),
+      analyticsService.summary(todayString, todayString),
+      dailyPlanService.checkIn(todayString),
+    ])
+    summary.value = rangeSummary
+    todaySummary.value = daySummary
+    todayCheckIn.value = dayCheckIn
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)
   } finally {

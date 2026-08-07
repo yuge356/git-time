@@ -126,6 +126,29 @@ async def build_analytics_summary(
         )
         if seconds > 0
     ]
+    # Anything added to a daily plan belongs on the analytics page even
+    # before its first timer start — show planned-but-untimed items with
+    # zero seconds. Removing the item from the plan (soft delete) hides it
+    # again, while its recorded sessions keep counting on their own.
+    distribution_task_ids = {slice.task_id for slice in distribution}
+    distribution_titles = {slice.title for slice in distribution}
+    for item in items:
+        if item.task_id is not None:
+            if item.task_id in distribution_task_ids:
+                continue
+            distribution_task_ids.add(item.task_id)
+        else:
+            if item.title in distribution_titles:
+                continue
+            distribution_titles.add(item.title)
+        distribution.append(
+            TaskTimeSlice(
+                task_id=item.task_id,
+                title=item.title,
+                seconds=0,
+                percentage=0,
+            )
+        )
 
     _, task_totals = calculate_task_time_totals(tasks, sessions)
     budget_comparison = [
