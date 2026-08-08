@@ -321,6 +321,11 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         merged = recalculatePlan({ ...serverPlan, items: [...items, ...retainedLocalItems] })
       }
       await saveCachedDailyPlan(merged)
+      if (cachedPlan && cachedPlan.id !== serverPlan.id) {
+        // Drop the stale local-id record so future reads can only resolve to
+        // the server-authoritative plan for this date.
+        await localDb.cachedDailyPlans.delete(cachedPlan.id)
+      }
       return merged
     },
 
@@ -341,6 +346,22 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         }
       }
       this.failedCount = await getFailedSyncCount(this.ownerId)
+    },
+
+    /**
+     * Queue a create operation for the currently loaded local plan when the
+     * server has not seen it yet. Plan creation is idempotent by date, and
+     * the sync replay remaps queued item operations to the server plan id,
+     * so this is safe even if the date already has a server-side plan.
+     */
+    async ensurePlanCreateQueued(): Promise<void> {
+      if (!this.ownerId || !this.plan) return
+      const planCreates = await getPendingOperations(this.ownerId, 'daily_plan')
+      if (planCreates.some((op) => op.entity_id === this.plan?.id)) return
+      await enqueueSyncOperation(this.ownerId, 'daily_plan', this.plan.id, 'create', {
+        id: this.plan.id,
+        plan_date: this.plan.plan_date,
+      })
     },
 
     async addItem(payload: DailyPlanItemCreate): Promise<void> {
@@ -383,6 +404,14 @@ export const useDailyPlanStore = defineStore('daily-plans', {
           } catch (error) {
             if (isNetworkError(error)) {
               this.online = false
+            } else if (
+              axios.isAxiosError(error) &&
+              [404, 409].includes(error.response?.status ?? 0)
+            ) {
+              // The local plan or the linked task has not reached the server
+              // yet. Keep the item and let the ordered offline queue deliver
+              // it instead of rolling the user's addition back.
+              await this.ensurePlanCreateQueued()
             } else {
               this.plan = recalculatePlan({
                 ...this.plan,

@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import CurrentUser, DatabaseSession
-from app.models.daily_plan import DailyPlan, DailyPlanItem
+from app.models.daily_plan import DailyPlan, DailyPlanItem, DailyPlanItemStatus
 from app.models.session import Session, SessionStatus
 from app.models.sharing import DailyPlanShare, NotificationType
 from app.schemas.daily_plan import (
@@ -122,18 +122,6 @@ async def add_daily_plan_item(
     """Append a linked long-term task or ad-hoc item to a daily plan."""
 
     plan = await get_owned_daily_plan(db, current_user.id, plan_id)
-    if payload.id is not None:
-        existing = await db.scalar(
-            select(DailyPlanItem).where(
-                DailyPlanItem.id == payload.id,
-                DailyPlanItem.daily_plan_id == plan.id,
-                DailyPlanItem.owner_id == current_user.id,
-                DailyPlanItem.deleted_at.is_(None),
-            )
-        )
-        if existing is not None:
-            response = await build_daily_plan_response(db, plan)
-            return next(item for item in response.items if item.id == existing.id)
     linked_task = (
         await get_owned_executable_task(db, current_user.id, payload.task_id)
         if payload.task_id is not None
@@ -145,6 +133,37 @@ async def add_daily_plan_item(
         if payload.estimated_seconds is not None
         else linked_task.estimated_seconds if linked_task is not None else 0
     )
+    if payload.id is not None:
+        # Idempotency must cover every previous state of this client id.
+        # Matching only "active rows in this plan" misses soft-deleted or
+        # differently-parented rows and turns their re-creation into a
+        # primary-key violation (500) instead of a safe retry.
+        existing = await db.scalar(
+            select(DailyPlanItem).where(
+                DailyPlanItem.id == payload.id,
+                DailyPlanItem.owner_id == current_user.id,
+            )
+        )
+        if existing is not None:
+            if existing.deleted_at is not None or existing.daily_plan_id != plan.id:
+                current_max = await db.scalar(
+                    select(func.max(DailyPlanItem.sort_order)).where(
+                        DailyPlanItem.daily_plan_id == plan.id,
+                        DailyPlanItem.deleted_at.is_(None),
+                    )
+                )
+                existing.daily_plan_id = plan.id
+                existing.deleted_at = None
+                existing.task_id = linked_task.id if linked_task is not None else None
+                existing.title = title
+                existing.estimated_seconds = estimated
+                existing.status = DailyPlanItemStatus.TODO
+                existing.completed_at = None
+                existing.sort_order = (current_max if current_max is not None else -1) + 1
+                await db.flush()
+                await db.commit()
+            response = await build_daily_plan_response(db, plan)
+            return next(item for item in response.items if item.id == existing.id)
     current_max = await db.scalar(
         select(func.max(DailyPlanItem.sort_order)).where(
             DailyPlanItem.daily_plan_id == plan.id,
