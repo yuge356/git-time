@@ -1,18 +1,12 @@
 <template>
   <AppShell>
     <main class="today-page">
-      <section
-        :class="['page-heading', 'today-heading', { 'is-intro-hidden': !auth.showPageIntros }]"
-      >
-        <div v-if="auth.showPageIntros">
+      <section v-if="auth.showPageIntros" class="page-heading today-heading">
+        <div>
           <p class="eyebrow">今天</p>
           <h1>选一项，开始专注</h1>
           <p>{{ displayDate }}</p>
         </div>
-        <label class="field today-date">
-          <span>切换日期</span>
-          <input v-model="selectedDate" type="date" @change="loadSelectedDate" />
-        </label>
       </section>
 
       <FormMessage :message="errorMessage || timer.syncError" />
@@ -28,77 +22,149 @@
         </span>
       </div>
 
-      <section
-        :class="[
-          'focus-timer',
-          { 'focus-timer--active': timer.active, 'focus-timer--paused': timer.active?.snapshot.status === 'PAUSED' },
-        ]"
-        aria-labelledby="focus-timer-title"
-      >
-        <header class="focus-timer__header">
-          <div>
-            <p class="eyebrow">专注计时</p>
-            <h2 id="focus-timer-title">{{ timerTargetTitle }}</h2>
-          </div>
-          <span
-            :class="[
-              'timer-state',
-              { 'timer-state--paused': timer.active?.snapshot.status === 'PAUSED' },
-            ]"
-          >
-            {{ timerStateLabel }}
-          </span>
-        </header>
-
-        <div class="focus-timer__body">
-          <time class="focus-timer__display" aria-live="polite">
-            {{ timer.active ? formatTimer(timer.displaySeconds) : '00:00:00' }}
-          </time>
-          <p v-if="timerTargetItem">
-            已投入 {{ formatDuration(displayActual(timerTargetItem)) }}
-            <template v-if="timerTargetItem.estimated_seconds > 0">
-              · 计划 {{ formatDuration(timerTargetItem.estimated_seconds) }}
-              · 剩余 {{ formatDuration(timerRemainingSeconds) }}
-            </template>
-          </p>
-          <p v-else>从下方今日任务中选择一项，然后开始计时。</p>
-        </div>
-
-        <div class="focus-timer__actions">
-          <template v-if="timer.active">
-            <button
-              v-if="timer.active.snapshot.status === 'RUNNING'"
-              class="button button--quiet"
-              type="button"
-              :disabled="timer.busy"
-              @click="pause"
+      <div class="today-focus-grid">
+        <section
+          :class="[
+            'focus-timer',
+            { 'focus-timer--active': timer.active, 'focus-timer--paused': timer.active?.snapshot.status === 'PAUSED' },
+          ]"
+          aria-labelledby="focus-timer-title"
+        >
+          <header class="focus-timer__header">
+            <div>
+              <p class="eyebrow">专注计时</p>
+              <h2 id="focus-timer-title">{{ timerTargetTitle }}</h2>
+            </div>
+            <span
+              :class="[
+                'timer-state',
+                { 'timer-state--paused': timer.active?.snapshot.status === 'PAUSED' },
+              ]"
             >
-              暂停
-            </button>
+              {{ timerStateLabel }}
+            </span>
+          </header>
+
+          <div class="focus-timer__body">
+            <time class="focus-timer__display" aria-live="polite">
+              {{ timer.active ? formatTimer(timer.displaySeconds) : '00:00:00' }}
+            </time>
+            <p v-if="timerTargetItem">
+              已投入 {{ formatDuration(displayActual(timerTargetItem)) }}
+              <template v-if="timerTargetItem.estimated_seconds > 0">
+                · 计划 {{ formatDuration(timerTargetItem.estimated_seconds) }}
+                · 剩余 {{ formatDuration(timerRemainingSeconds) }}
+              </template>
+            </p>
+            <p v-else>从下方今日任务中选择一项，然后开始计时。</p>
+          </div>
+
+          <div class="focus-timer__actions">
+            <template v-if="timer.active">
+              <button
+                v-if="timer.active.snapshot.status === 'RUNNING'"
+                class="button button--quiet"
+                type="button"
+                :disabled="timer.busy"
+                @click="pause"
+              >
+                暂停
+              </button>
+              <button
+                v-else
+                class="button button--primary"
+                type="button"
+                :disabled="timer.busy"
+                @click="resume"
+              >
+                继续
+              </button>
+              <button class="button button--finish" type="button" :disabled="timer.busy" @click="finish">
+                结束计时
+              </button>
+            </template>
             <button
               v-else
               class="button button--primary"
               type="button"
-              :disabled="timer.busy"
-              @click="resume"
+              :disabled="!selectedTimerItem || timer.busy"
+              @click="startSelectedItem"
             >
-              继续
+              {{ selectedTimerItem ? '开始计时' : '请先选择任务' }}
             </button>
-            <button class="button button--finish" type="button" :disabled="timer.busy" @click="finish">
-              结束计时
-            </button>
-          </template>
-          <button
-            v-else
-            class="button button--primary"
-            type="button"
-            :disabled="!selectedTimerItem || timer.busy"
-            @click="startSelectedItem"
+          </div>
+        </section>
+
+        <section class="activity-calendar" aria-labelledby="activity-calendar-title">
+          <header class="activity-calendar__header">
+            <div>
+              <p class="eyebrow">月度节奏</p>
+              <h2 id="activity-calendar-title">计时日历</h2>
+            </div>
+            <div class="activity-calendar__month-control">
+              <button type="button" aria-label="上一个月" @click="shiftCalendarMonth(-1)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5" /></svg>
+              </button>
+              <label>
+                <span class="sr-only">选择年月</span>
+                <input
+                  v-model="calendarMonth"
+                  type="month"
+                  required
+                  aria-label="选择计时日历年月"
+                  @change="ensureCalendarMonth"
+                />
+              </label>
+              <button type="button" aria-label="下一个月" @click="shiftCalendarMonth(1)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5" /></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="activity-calendar__summary">
+            <strong>{{ formatCalendarDuration(calendarTotalSeconds) }}</strong>
+            <span>{{ calendarActiveDays }} 个计时日</span>
+          </div>
+
+          <div class="activity-calendar__weekdays" aria-hidden="true">
+            <span v-for="weekday in calendarWeekdays" :key="weekday">{{ weekday }}</span>
+          </div>
+          <div
+            class="activity-calendar__grid"
+            :class="{ 'is-loading': calendarLoading }"
+            role="grid"
+            :aria-label="`${calendarMonthLabel}每日计时日历`"
           >
-            {{ selectedTimerItem ? '开始计时' : '请先选择任务' }}
-          </button>
-        </div>
-      </section>
+            <span
+              v-for="blank in calendarLeadingBlanks"
+              :key="`blank-${blank}`"
+              class="activity-calendar__blank"
+              aria-hidden="true"
+            />
+            <div
+              v-for="day in calendarDays"
+              :key="day.date"
+              class="activity-calendar__day"
+              :class="[`heat-${day.level}`, { 'is-today': day.isToday }]"
+              role="gridcell"
+              :aria-label="day.label"
+              :title="day.label"
+            >
+              <span>{{ day.day }}</span>
+            </div>
+          </div>
+
+          <footer class="activity-calendar__footer">
+            <span v-if="calendarError" class="activity-calendar__error">{{ calendarError }}</span>
+            <span v-else>{{ calendarMonthLabel }}</span>
+            <div class="activity-calendar__legend" aria-label="颜色越深表示计时越长">
+              <span>少</span>
+              <i v-for="level in 5" :key="level" :class="`heat-${level}`" />
+              <span>多</span>
+            </div>
+          </footer>
+        </section>
+      </div>
 
       <section class="today-checklist">
         <header class="today-checklist__header">
@@ -222,7 +288,9 @@
             <form class="quick-add__form" @submit.prevent="addItem">
               <select v-if="itemKind === 'task'" v-model="planTaskId" class="quick-add__select" required aria-label="选择项目任务">
                 <option value="">选择项目任务…</option>
-                <option v-for="task in availableTasks" :key="task.id" :value="task.id">{{ task.title }}</option>
+                <option v-for="task in availableTasks" :key="task.id" :value="task.id">
+                  {{ projectPrefixedTaskTitle(task, tasks.items) }}
+                </option>
               </select>
               <input v-else v-model.trim="adHocTitle" class="quick-add__input" maxlength="200" placeholder="输入临时事项…" required aria-label="临时事项名称" />
               <label class="quick-add__duration">
@@ -245,12 +313,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
+import { analyticsService } from '@/services/analytics'
 import { useAuthStore } from '@/stores/auth'
 import { useDailyPlanStore } from '@/stores/daily-plans'
 import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
+import type { DailyTrendPoint } from '@/types/analytics'
 import type { DailyPlanItem } from '@/types/daily-plan'
 import { getApiErrorMessage } from '@/utils/api-error'
+import { projectPrefixedTaskTitle } from '@/utils/task-title'
 import { formatDuration } from '@/utils/time'
 import { formatTimer } from '@/utils/timer'
 
@@ -258,7 +329,11 @@ const auth = useAuthStore()
 const daily = useDailyPlanStore()
 const tasks = useTaskStore()
 const timer = useTimerStore()
-const selectedDate = ref(localDateString())
+const todayDate = ref(localDateString())
+const calendarMonth = ref(todayDate.value.slice(0, 7))
+const calendarTrend = ref<DailyTrendPoint[]>([])
+const calendarLoading = ref(false)
+const calendarError = ref('')
 const itemKind = ref<'task' | 'adhoc'>('task')
 const planTaskId = ref('')
 const adHocTitle = ref('')
@@ -267,11 +342,11 @@ const selectedItemId = ref('')
 const errorMessage = ref('')
 let dayRolloverTimer: number | null = null
 let lastRealDate = ''
+let calendarRequestId = 0
 
 /**
- * The daily list resets every 24 hours: while the user is viewing "today",
- * crossing midnight automatically loads the new day's fresh plan. Users
- * browsing a historical date are left untouched.
+ * The Today page always follows the real local date. Crossing midnight loads
+ * the new day's plan without exposing a second historical-date selector.
  */
 function startDayRolloverWatch(): void {
   if (dayRolloverTimer !== null) return
@@ -279,22 +354,83 @@ function startDayRolloverWatch(): void {
   dayRolloverTimer = window.setInterval(() => {
     const today = localDateString()
     if (today === lastRealDate) return
-    const wasViewingToday = selectedDate.value === lastRealDate
     lastRealDate = today
-    if (wasViewingToday) {
-      selectedDate.value = today
-      void runAction(() => daily.load(today))
+    todayDate.value = today
+    void runAction(() => daily.load(today))
+    if (calendarMonth.value === today.slice(0, 7)) {
+      void loadCalendarMonth()
     }
   }, 30_000)
 }
 
 const displayDate = computed(() =>
-  new Date(`${selectedDate.value}T00:00:00`).toLocaleDateString('zh-CN', {
+  new Date(`${todayDate.value}T00:00:00`).toLocaleDateString('zh-CN', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
     weekday: 'long',
   }),
+)
+const calendarWeekdays = ['一', '二', '三', '四', '五', '六', '日']
+const calendarMonthParts = computed(() => {
+  const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(calendarMonth.value)
+    ? calendarMonth.value
+    : todayDate.value.slice(0, 7)
+  const [yearText, monthText] = validMonth.split('-')
+  return {
+    year: Number(yearText),
+    month: Number(monthText),
+  }
+})
+const calendarMonthLabel = computed(() =>
+  new Date(
+    calendarMonthParts.value.year,
+    calendarMonthParts.value.month - 1,
+    1,
+  ).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }),
+)
+const calendarLeadingBlanks = computed(() => {
+  const weekday = new Date(
+    calendarMonthParts.value.year,
+    calendarMonthParts.value.month - 1,
+    1,
+  ).getDay()
+  return (weekday + 6) % 7
+})
+const calendarSecondsByDate = computed(() => {
+  const secondsByDate = new Map(
+    calendarTrend.value.map((point) => [point.date, point.seconds]),
+  )
+  if (calendarMonth.value === todayDate.value.slice(0, 7)) {
+    secondsByDate.set(
+      todayDate.value,
+      Math.max(secondsByDate.get(todayDate.value) ?? 0, displayLearningSeconds.value),
+    )
+  }
+  return secondsByDate
+})
+const calendarDays = computed(() => {
+  const { year, month } = calendarMonthParts.value
+  const dayCount = new Date(year, month, 0).getDate()
+  return Array.from({ length: dayCount }, (_, index) => {
+    const day = index + 1
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    const seconds = calendarSecondsByDate.value.get(date) ?? 0
+    return {
+      date,
+      day,
+      seconds,
+      level: calendarHeatLevel(seconds),
+      isToday: date === todayDate.value,
+      label: `${date}，${seconds > 0 ? `计时 ${formatDuration(seconds)}` : '无计时记录'}`,
+    }
+  })
+})
+const calendarTotalSeconds = computed(() =>
+  calendarDays.value.reduce((total, day) => total + day.seconds, 0),
+)
+const calendarActiveDays = computed(() =>
+  calendarDays.value.filter((day) => day.seconds > 0).length,
 )
 const plannedTaskIds = computed(
   () => new Set(daily.plan?.items.flatMap((item) => (item.task_id ? [item.task_id] : []))),
@@ -385,6 +521,10 @@ watch(planTaskId, (taskId) => {
   }
 })
 
+watch(calendarMonth, () => {
+  void loadCalendarMonth()
+})
+
 watch(
   [
     () => daily.plan?.items,
@@ -413,6 +553,59 @@ function localDateString(date = new Date()): string {
   return `${year}-${month}-${day}`
 }
 
+function calendarHeatLevel(seconds: number): number {
+  if (seconds <= 0) return 0
+  if (seconds <= 15 * 60) return 1
+  if (seconds <= 30 * 60) return 2
+  if (seconds <= 60 * 60) return 3
+  if (seconds <= 2 * 60 * 60) return 4
+  return 5
+}
+
+function formatCalendarDuration(seconds: number): string {
+  return seconds > 0 ? formatDuration(seconds) : '0 分钟'
+}
+
+function ensureCalendarMonth(): void {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(calendarMonth.value)) {
+    calendarMonth.value = todayDate.value.slice(0, 7)
+  }
+}
+
+function shiftCalendarMonth(offset: number): void {
+  const { year, month } = calendarMonthParts.value
+  const shifted = new Date(year, month - 1 + offset, 1)
+  calendarMonth.value = `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}`
+}
+
+async function loadCalendarMonth(): Promise<void> {
+  const { year, month } = calendarMonthParts.value
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return
+  }
+  const requestId = ++calendarRequestId
+  const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const dateTo = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+  calendarLoading.value = true
+  calendarError.value = ''
+  calendarTrend.value = []
+  try {
+    const summary = await analyticsService.summary(dateFrom, dateTo)
+    if (requestId === calendarRequestId) {
+      calendarTrend.value = summary.daily_trend
+    }
+  } catch (error) {
+    if (requestId === calendarRequestId) {
+      calendarError.value = getApiErrorMessage(error)
+    }
+  } finally {
+    if (requestId === calendarRequestId) {
+      calendarLoading.value = false
+    }
+  }
+}
+
 onMounted(async () => {
   startDayRolloverWatch()
   const ownerId = auth.user?.profile.id
@@ -422,7 +615,8 @@ onMounted(async () => {
     const activeItemId = timer.active?.snapshot.daily_plan_item_id ?? null
     await Promise.all([
       tasks.initialize(ownerId),
-      daily.initialize(ownerId, selectedDate.value, activeItemId),
+      daily.initialize(ownerId, todayDate.value, activeItemId),
+      loadCalendarMonth(),
     ])
     await restoreMissingActiveItem()
   })
@@ -458,7 +652,7 @@ async function restoreMissingActiveItem(): Promise<void> {
   await daily.addItem({
     id: snapshot.daily_plan_item_id,
     task_id: snapshot.task_id,
-    title: task?.title ?? '进行中的临时事项',
+    title: task ? projectPrefixedTaskTitle(task, tasks.items) : '进行中的临时事项',
     estimated_seconds: task?.estimated_seconds ?? timer.targetSeconds ?? 0,
   })
 }
@@ -537,10 +731,6 @@ async function runTimerAction(action: () => Promise<void>): Promise<void> {
   })
 }
 
-async function loadSelectedDate(): Promise<void> {
-  await runAction(() => daily.load(selectedDate.value))
-}
-
 async function addItem(): Promise<void> {
   await runAction(async () => {
     const selectedTask = tasks.items.find((task) => task.id === planTaskId.value)
@@ -549,7 +739,7 @@ async function addItem(): Promise<void> {
       ...(itemKind.value === 'adhoc'
         ? { title: adHocTitle.value }
         : selectedTask
-          ? { title: selectedTask.title }
+          ? { title: projectPrefixedTaskTitle(selectedTask, tasks.items) }
           : {}),
       estimated_seconds: Math.round(estimatedMinutes.value * 60),
     })
@@ -600,6 +790,9 @@ async function pause(): Promise<void> {
     await timer.pause()
     if (item) await daily.applyStoppedTimer(item.id, actualSeconds)
   })
+  if (calendarMonth.value === todayDate.value.slice(0, 7)) {
+    await loadCalendarMonth()
+  }
 }
 
 async function resume(): Promise<void> {
@@ -614,6 +807,9 @@ async function finish(): Promise<void> {
     daily.setActiveItem(null)
     if (item) await daily.applyFinishedTimer(item.id, actualSeconds)
   })
+  if (calendarMonth.value === todayDate.value.slice(0, 7)) {
+    await loadCalendarMonth()
+  }
 }
 
 async function removeItem(item: DailyPlanItem): Promise<void> {

@@ -57,6 +57,7 @@ import { useDailyPlanStore } from '@/stores/daily-plans'
 import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
 import { getApiErrorMessage } from '@/utils/api-error'
+import { projectPrefixedTaskTitle } from '@/utils/task-title'
 import { formatTimer } from '@/utils/timer'
 
 const auth = useAuthStore()
@@ -74,7 +75,8 @@ const activeTitle = computed(() => {
   if (!snapshot) return '进行中的任务'
   const planItem = activePlanItem.value
   if (planItem) return planItem.title
-  return tasks.items.find((task) => task.id === snapshot.task_id)?.title ?? '进行中的任务'
+  const task = tasks.items.find((candidate) => candidate.id === snapshot.task_id)
+  return task ? projectPrefixedTaskTitle(task, tasks.items) : '进行中的任务'
 })
 
 onMounted(async () => {

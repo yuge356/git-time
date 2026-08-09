@@ -64,6 +64,17 @@ a {
   text-underline-offset: 3px;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  white-space: nowrap;
+}
+
 /* ---------- 品牌 ---------- */
 
 .brand {
@@ -518,6 +529,11 @@ a {
 .app-logout:hover {
   background: var(--pink-soft);
   color: var(--danger);
+}
+
+.app-logout:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .app-content {
@@ -1424,7 +1440,6 @@ a {
   margin-bottom: 24px;
 }
 
-.today-heading.is-intro-hidden,
 .analytics-hero.is-intro-hidden,
 .collaboration-heading.is-intro-hidden,
 .sharing-heading.is-intro-hidden {
@@ -1442,24 +1457,22 @@ a {
   font-size: 14px;
 }
 
-.today-date {
-  min-width: 172px;
-}
-
-.today-date > span {
-  font-size: 12px;
-}
-
-.today-date input {
-  min-height: 42px;
+.today-focus-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
+  margin-bottom: 18px;
 }
 
 .focus-timer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 20px 28px;
-  margin-bottom: 18px;
-  padding: 24px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  min-width: 0;
+  min-height: 350px;
+  padding: 22px;
   border: 1px solid rgb(124 92 252 / 22%);
   border-radius: 22px;
   background:
@@ -1479,25 +1492,29 @@ a {
 
 .focus-timer__header {
   display: flex;
-  grid-column: 1 / -1;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 
 .focus-timer__header h2 {
+  overflow: hidden;
+  max-width: 280px;
   margin: 4px 0 0;
-  font-size: 22px;
+  font-size: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .focus-timer__body {
+  align-self: center;
   min-width: 0;
 }
 
 .focus-timer__display {
   display: block;
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: clamp(42px, 7vw, 68px);
+  font-size: clamp(38px, 4.6vw, 54px);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.055em;
@@ -1512,13 +1529,225 @@ a {
 
 .focus-timer__actions {
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: flex-start;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .focus-timer__actions .button--finish {
   margin-left: 0;
+}
+
+.activity-calendar {
+  min-width: 0;
+  min-height: 350px;
+  padding: 22px;
+  border: 1px solid rgb(124 92 252 / 16%);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 94% 4%, rgb(224 216 255 / 48%), transparent 31%),
+    #fff;
+  box-shadow: var(--shadow-card);
+}
+
+.activity-calendar__header,
+.activity-calendar__footer,
+.activity-calendar__summary,
+.activity-calendar__month-control {
+  display: flex;
+  align-items: center;
+}
+
+.activity-calendar__header {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.activity-calendar__header h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.activity-calendar__month-control {
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #e5e0fa;
+  border-radius: 12px;
+  background: rgb(250 249 255 / 88%);
+}
+
+.activity-calendar__month-control button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--primary-dark);
+  cursor: pointer;
+}
+
+.activity-calendar__month-control button:hover {
+  background: var(--primary-soft);
+}
+
+.activity-calendar__month-control svg {
+  width: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.activity-calendar__month-control input {
+  width: 112px;
+  min-height: 30px;
+  padding: 0 4px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.activity-calendar__summary {
+  justify-content: space-between;
+  margin: 15px 0 12px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: #faf9ff;
+}
+
+.activity-calendar__summary strong {
+  font-size: 13px;
+}
+
+.activity-calendar__summary span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.activity-calendar__weekdays,
+.activity-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.activity-calendar__weekdays {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.activity-calendar__grid {
+  min-height: 180px;
+  align-content: start;
+  transition: opacity 160ms ease;
+}
+
+.activity-calendar__grid.is-loading {
+  opacity: 0.45;
+}
+
+.activity-calendar__blank,
+.activity-calendar__day {
+  height: 28px;
+  border-radius: 8px;
+}
+
+.activity-calendar__day {
+  display: grid;
+  position: relative;
+  place-items: center;
+  border: 1px solid transparent;
+  color: #746f8f;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.activity-calendar__day:hover {
+  z-index: 1;
+  transform: translateY(-2px);
+}
+
+.activity-calendar__day.heat-0 {
+  border-color: #efecfa;
+  background: #faf9ff;
+}
+
+.activity-calendar__day.heat-1,
+.activity-calendar__legend .heat-1 {
+  background: #eeeaff;
+}
+
+.activity-calendar__day.heat-2,
+.activity-calendar__legend .heat-2 {
+  background: #d9d0ff;
+}
+
+.activity-calendar__day.heat-3,
+.activity-calendar__legend .heat-3 {
+  background: #b9a7ff;
+  color: #38256f;
+}
+
+.activity-calendar__day.heat-4,
+.activity-calendar__legend .heat-4 {
+  background: #8969f2;
+  color: #fff;
+}
+
+.activity-calendar__day.heat-5,
+.activity-calendar__legend .heat-5 {
+  background: #5d35cf;
+  color: #fff;
+}
+
+.activity-calendar__day.is-today {
+  border-color: #39207c;
+  box-shadow: 0 0 0 2px rgb(124 92 252 / 18%);
+}
+
+.activity-calendar__footer {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.activity-calendar__error {
+  overflow: hidden;
+  color: var(--danger);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-calendar__legend {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.activity-calendar__legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
 }
 
 .today-checklist {
@@ -3740,6 +3969,10 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .today-focus-grid {
+    grid-template-columns: 1fr;
+  }
+
   .today-add-card {
     position: static;
   }
@@ -3882,12 +4115,9 @@ a {
     flex-direction: column;
   }
 
-  .today-date {
-    min-width: 0;
-  }
-
   .focus-timer {
     grid-template-columns: 1fr;
+    min-height: 320px;
     padding: 20px;
   }
 
@@ -3898,6 +4128,11 @@ a {
 
   .focus-timer__actions .button {
     flex: 1;
+  }
+
+  .activity-calendar {
+    min-height: 0;
+    padding: 20px;
   }
 
   .today-checklist {
@@ -4066,6 +4301,15 @@ a {
   .daily-item-list li {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 10px 12px;
+  }
+
+  .activity-calendar__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .activity-calendar__month-control {
+    align-self: flex-start;
   }
 
   .daily-item-usage,

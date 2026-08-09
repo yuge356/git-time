@@ -109,7 +109,7 @@ async def test_daily_plan_items_progress_time_and_streak(client: AsyncClient) ->
     plan = await create_plan(client, token, today)
     linked = await add_item(client, token, plan["id"], task_id=task_id)
     ad_hoc = await add_item(client, token, plan["id"], title="Read notes")
-    assert linked["title"] == "Long-term task"
+    assert linked["title"] == "Long-term task project/Long-term task"
     assert linked["task_id"] == task_id
     assert ad_hoc["task_id"] is None
 
@@ -296,7 +296,9 @@ async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) ->
 
     assert first.status_code == 200
     assert replay.status_code == 200
-    assert {item["title"] for item in first.json()["items"]} == {"每日子任务"}
+    assert {item["title"] for item in first.json()["items"]} == {
+        "占位 project/每日子任务"
+    }
     assert {item["id"] for item in replay.json()["items"]} == {
         item["id"] for item in first.json()["items"]
     }
@@ -337,4 +339,6 @@ async def test_completed_project_keeps_existing_today_item(client: AsyncClient) 
     )
     assert reopened.status_code == 200
     assert [item["id"] for item in reopened.json()["items"]] == [item_id]
-    assert reopened.json()["items"][0]["title"] == "今天已安排的项目任务"
+    assert reopened.json()["items"][0]["title"] == (
+        "今天已安排的项目任务 project/今天已安排的项目任务"
+    )

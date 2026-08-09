@@ -36,6 +36,51 @@ interface TimerState {
   onlineListenerBound: boolean
 }
 
+interface PendingExitPause {
+  owner_id: string
+  session_id: string
+  target_seconds: number | null
+  snapshot: SessionSnapshot
+}
+
+function exitPauseStorageKey(ownerId: string): string {
+  return `time-budget:pending-exit-pause:${ownerId}`
+}
+
+function readPendingExitPause(ownerId: string): PendingExitPause | null {
+  const key = exitPauseStorageKey(ownerId)
+  const value = localStorage.getItem(key)
+  if (!value) return null
+  try {
+    const pending = JSON.parse(value) as PendingExitPause
+    if (
+      pending.owner_id !== ownerId ||
+      typeof pending.session_id !== 'string' ||
+      pending.snapshot?.status !== 'PAUSED'
+    ) {
+      localStorage.removeItem(key)
+      return null
+    }
+    return pending
+  } catch {
+    localStorage.removeItem(key)
+    return null
+  }
+}
+
+async function restorePendingExitPause(ownerId: string): Promise<void> {
+  const pending = readPendingExitPause(ownerId)
+  if (!pending) return
+  await saveActiveTimer(
+    ownerId,
+    pending.session_id,
+    pending.snapshot,
+    pending.target_seconds,
+  )
+  await enqueueSessionSnapshot(ownerId, pending.session_id, pending.snapshot)
+  localStorage.removeItem(exitPauseStorageKey(ownerId))
+}
+
 function nextTimestamp(previous: string | null = null): string {
   const previousTime = previous ? Date.parse(previous) : 0
   return new Date(Math.max(Date.now(), previousTime + 1)).toISOString()
@@ -132,6 +177,7 @@ export const useTimerStore = defineStore('timer', {
       if (this.initialized && this.ownerId === ownerId) return
       this.ownerId = ownerId
       this.initialized = false
+      await restorePendingExitPause(ownerId)
       this.active = (await loadActiveTimer(ownerId)) ?? null
       this.targetSeconds = this.active?.target_seconds ?? null
       this.history = []
@@ -159,6 +205,12 @@ export const useTimerStore = defineStore('timer', {
         window.addEventListener('focus', retryPending)
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible') retryPending()
+        })
+        window.addEventListener('pagehide', () => {
+          this.pauseForPageExit()
+        })
+        window.addEventListener('beforeunload', () => {
+          this.pauseForPageExit()
         })
         this.retryTimerId = window.setInterval(() => {
           if (this.pendingCount > 0 && document.visibilityState === 'visible') {
@@ -435,6 +487,47 @@ export const useTimerStore = defineStore('timer', {
       } finally {
         this.busy = false
       }
+    },
+
+    pauseForPageExit(): void {
+      if (
+        !this.ownerId ||
+        !this.active ||
+        this.active.snapshot.status !== 'RUNNING'
+      ) {
+        return
+      }
+      const ownerId = this.ownerId
+      const sessionId = this.active.session_id
+      const now = nextTimestamp(this.active.snapshot.client_updated_at)
+      const snapshot: SessionSnapshot = {
+        ...this.active.snapshot,
+        status: 'PAUSED',
+        duration_seconds: snapshotDuration(this.active.snapshot, new Date(now)),
+        last_resumed_at: null,
+        client_updated_at: now,
+      }
+      const pending: PendingExitPause = {
+        owner_id: ownerId,
+        session_id: sessionId,
+        target_seconds: this.targetSeconds,
+        snapshot,
+      }
+
+      // localStorage is synchronous, so this recovery marker survives even
+      // when the browser stops asynchronous IndexedDB work during unload.
+      localStorage.setItem(exitPauseStorageKey(ownerId), JSON.stringify(pending))
+      this.active = { ...this.active, snapshot }
+      this.displaySeconds = snapshot.duration_seconds
+
+      void this.persistSnapshot(sessionId, snapshot, true)
+        .then(() => {
+          localStorage.removeItem(exitPauseStorageKey(ownerId))
+        })
+        .catch(() => {
+          // The recovery marker remains for initialize() on the next visit.
+        })
+      sessionService.pauseOnPageExit(sessionId, snapshot)
     },
 
     async resume(): Promise<void> {

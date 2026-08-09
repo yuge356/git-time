@@ -20,6 +20,44 @@ from app.services.analytics import resolve_timezone
 from app.services.tasks import effective_session_duration, normalize_utc
 
 
+def project_prefixed_task_title(task: Task, tasks_by_id: dict[UUID, Task]) -> str:
+    """Return a durable ``project/task`` label for a daily-plan snapshot."""
+
+    if task.node_type == TaskNodeType.PROJECT:
+        return task.title
+    current = task
+    visited: set[UUID] = set()
+    while current.parent_id is not None and current.id not in visited:
+        visited.add(current.id)
+        parent = tasks_by_id.get(current.parent_id)
+        if parent is None:
+            break
+        if parent.node_type == TaskNodeType.PROJECT:
+            return f"{parent.title}/{task.title}"[:200]
+        current = parent
+    return task.title
+
+
+async def resolve_project_prefixed_task_title(
+    db: AsyncSession,
+    owner_id: UUID,
+    task: Task,
+) -> str:
+    """Resolve the top-level project for one manually added daily task."""
+
+    nodes = list(
+        (
+            await db.scalars(
+                select(Task).where(
+                    Task.owner_id == owner_id,
+                    Task.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    )
+    return project_prefixed_task_title(task, {node.id: node for node in nodes})
+
+
 async def get_owned_daily_plan(
     db: AsyncSession,
     owner_id: UUID,
@@ -293,12 +331,13 @@ async def auto_populate_recurring_items(
         select(Task)
         .where(
             Task.owner_id == owner_id,
-            Task.node_type == TaskNodeType.TASK,
             Task.deleted_at.is_(None),
         )
         .order_by(Task.sort_order, Task.created_at, Task.id)
     )
-    tasks = task_result.all()
+    task_nodes = list(task_result.all())
+    tasks_by_id = {task.id: task for task in task_nodes}
+    tasks = [task for task in task_nodes if task.node_type == TaskNodeType.TASK]
 
     existing_items_result = await db.scalars(
         select(DailyPlanItem).where(
@@ -336,7 +375,7 @@ async def auto_populate_recurring_items(
             daily_plan_id=plan.id,
             owner_id=owner_id,
             task_id=task.id,
-            title=task.title,
+            title=project_prefixed_task_title(task, tasks_by_id),
             estimated_seconds=task.estimated_seconds,
             sort_order=sort_order,
         )

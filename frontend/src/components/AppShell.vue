@@ -55,11 +55,18 @@
         </RouterLink>
       </nav>
 
-      <button class="app-logout" type="button" title="退出登录" @click="logout">
+      <button
+        class="app-logout"
+        type="button"
+        :title="logoutError || '退出登录'"
+        :disabled="loggingOut || timer.busy"
+        :aria-busy="loggingOut"
+        @click="logout"
+      >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5m5 5H3" />
         </svg>
-        <span>退出登录</span>
+        <span>{{ logoutError || (loggingOut ? '正在暂停计时…' : '退出登录') }}</span>
       </button>
     </aside>
 
@@ -71,18 +78,22 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
+import { useTimerStore } from '@/stores/timer'
 import ActiveTimerBar from './ActiveTimerBar.vue'
 import AppLogo from './AppLogo.vue'
 
 const auth = useAuthStore()
 const notifications = useNotificationStore()
+const timer = useTimerStore()
 const route = useRoute()
 const router = useRouter()
+const loggingOut = ref(false)
+const logoutError = ref('')
 
 onMounted(() => {
   const ownerId = auth.user?.profile.id
@@ -94,8 +105,33 @@ onMounted(() => {
 })
 
 async function logout(): Promise<void> {
-  notifications.disconnect()
-  auth.logout()
-  await router.replace('/login')
+  if (loggingOut.value) return
+  loggingOut.value = true
+  logoutError.value = ''
+  try {
+    const ownerId = auth.user?.profile.id
+    if (ownerId && (!timer.initialized || timer.ownerId !== ownerId)) {
+      await timer.initialize(ownerId)
+    }
+    if (timer.active?.snapshot.status === 'RUNNING') {
+      try {
+        // Persist the elapsed time and leave the same session resumable. Time
+        // spent while signed out must never be included in the task total.
+        await timer.pause()
+      } catch (error) {
+        // pause() writes the PAUSED snapshot locally before server sync. A
+        // queued local pause is sufficient for logout; only block when the
+        // timer is still actually running.
+        if (timer.active?.snapshot.status === 'RUNNING') throw error
+      }
+    }
+    notifications.disconnect()
+    auth.logout()
+    await router.replace('/login')
+  } catch {
+    logoutError.value = '计时暂停失败，请重试'
+  } finally {
+    loggingOut.value = false
+  }
 }
 </script>

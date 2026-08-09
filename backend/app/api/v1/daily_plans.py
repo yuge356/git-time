@@ -27,6 +27,7 @@ from app.services.daily_plans import (
     get_owned_daily_plan,
     get_owned_daily_plan_by_date,
     mark_item_status,
+    resolve_project_prefixed_task_title,
 )
 from app.services.notifications import create_notification, notification_manager
 from app.services.tasks import get_owned_executable_task
@@ -127,7 +128,11 @@ async def add_daily_plan_item(
         if payload.task_id is not None
         else None
     )
-    title = linked_task.title if linked_task is not None else payload.title
+    title = (
+        await resolve_project_prefixed_task_title(db, current_user.id, linked_task)
+        if linked_task is not None
+        else payload.title
+    )
     estimated = (
         payload.estimated_seconds
         if payload.estimated_seconds is not None
