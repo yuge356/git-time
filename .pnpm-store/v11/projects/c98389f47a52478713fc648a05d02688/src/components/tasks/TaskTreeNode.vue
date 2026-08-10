@@ -1,21 +1,27 @@
 <template>
   <li class="task-tree-node">
-    <article
+    <div
       :class="[
-        'task-row',
-        `task-row--${task.node_type.toLowerCase()}`,
-        {
-          'task-row--selected': editorTaskId === task.id || creatingChildForId === task.id,
-          'task-row--dragging': draggingTask?.id === task.id,
-          'task-row--drop-target': dragTarget && canAcceptDrop,
-        },
+        'task-mind-branch',
+        { 'task-mind-branch--expanded': isContainer && expanded && task.children.length },
       ]"
-      :aria-label="rowAriaLabel"
-      @dragenter.prevent="enterDrag"
-      @dragover.prevent="overDrag"
-      @dragleave="leaveDrag"
-      @drop.stop.prevent="dropOnTask"
     >
+      <article
+        :class="[
+          'task-row',
+          `task-row--${task.node_type.toLowerCase()}`,
+          {
+            'task-row--selected': editorTaskId === task.id || creatingChildForId === task.id,
+            'task-row--dragging': draggingTask?.id === task.id,
+            'task-row--drop-target': dragTarget && canAcceptDrop,
+          },
+        ]"
+        :aria-label="rowAriaLabel"
+        @dragenter.prevent="enterDrag"
+        @dragover.prevent="overDrag"
+        @dragleave="leaveDrag"
+        @drop.stop.prevent="dropOnTask"
+      >
       <button
         class="task-drag-handle"
         type="button"
@@ -29,13 +35,27 @@
         ⠿
       </button>
 
-      <button class="task-row__main" type="button" @click="openOrToggle">
+      <div class="task-row__main">
         <span class="task-row__title-line">
           <span class="task-row__title">
-            <span v-if="isContainer" class="task-disclosure" aria-hidden="true">
+            <button
+              v-if="isContainer"
+              class="task-disclosure"
+              type="button"
+              :aria-label="`${expanded ? '收起' : '展开'}${task.title}`"
+              :aria-expanded="expanded"
+              @click.stop="toggleExpanded"
+            >
               {{ expanded ? '⌄' : '›' }}
-            </span>
-            <strong>{{ task.title }}</strong>
+            </button>
+            <button
+              class="task-row__name"
+              type="button"
+              :title="`查看${task.title}的具体设置`"
+              @click.stop="editTask"
+            >
+              <strong>{{ task.title }}</strong>
+            </button>
             <span v-if="isContainer" class="node-type-badge">{{ nodeTypeLabel }}</span>
           </span>
           <TaskStatusBadge v-if="task.node_type === 'TASK'" :status="task.status" />
@@ -67,7 +87,7 @@
           :actual-seconds="task.actual_seconds"
           :level="task.budget_level"
         />
-      </button>
+      </div>
 
       <div class="task-row__actions">
         <button
@@ -127,113 +147,64 @@
           </div>
         </div>
       </div>
-    </article>
+      </article>
 
-    <TaskEditor
-      v-if="editorTaskId === task.id"
-      :task="task"
-      :saving="saving"
-      :external-error="editorError"
-      @close="$emit('close-editor')"
-      @update="(taskId, payload) => $emit('update', taskId, payload)"
-    />
-
-    <TaskEditor
-      v-if="creatingChildForId === task.id"
-      :task="null"
-      :node-type="creatingChildNodeType ?? childNodeType"
-      :parent-id="task.id"
-      :parent-title="task.title"
-      :parent-task="task"
-      :inherited-default-estimated-seconds="effectiveDefaultEstimatedSeconds"
-      :inherited-default-repeat-rule="effectiveDefaultRepeatRule"
-      :inherited-default-reminder-time="effectiveDefaultReminderTime"
-      :saving="saving"
-      :external-error="editorError"
-      @close="$emit('close-editor')"
-      @create="(payload) => $emit('create-child', payload)"
-    />
-
-    <ul v-if="isContainer && expanded && task.children.length" class="task-tree task-tree--nested">
-      <TaskTreeNode
-        v-for="child in task.children"
-        :key="child.id"
-        :task="child"
-        :editor-task-id="editorTaskId"
-        :creating-child-for-id="creatingChildForId"
-        :creating-child-node-type="creatingChildNodeType"
-        :dragging-task="draggingTask"
-        :saving="saving"
-        :editor-error="editorError"
-        :active-task-id="activeTaskId"
-        :has-active-timer="hasActiveTimer"
-        :active-timer-paused="activeTimerPaused"
-        :timer-busy="timerBusy"
-        :inherited-default-estimated-seconds="effectiveDefaultEstimatedSeconds"
-        :inherited-default-repeat-rule="effectiveDefaultRepeatRule"
-        :inherited-default-reminder-time="effectiveDefaultReminderTime"
-        @edit="$emit('edit', $event)"
-        @add-child="(parent, nodeType) => $emit('add-child', parent, nodeType)"
-        @create-child="$emit('create-child', $event)"
-        @apply-defaults="$emit('apply-defaults', $event)"
-        @start-task="$emit('start-task', $event)"
-        @remove="$emit('remove', $event)"
-        @update="(taskId, payload) => $emit('update', taskId, payload)"
-        @close-editor="$emit('close-editor')"
-        @drag-start="$emit('drag-start', $event)"
-        @drag-end="$emit('drag-end')"
-        @drop-on="$emit('drop-on', $event)"
-      />
-    </ul>
+      <ul v-if="isContainer && expanded && task.children.length" class="task-tree task-tree--nested">
+        <TaskTreeNode
+          v-for="child in task.children"
+          :key="child.id"
+          :task="child"
+          :editor-task-id="editorTaskId"
+          :creating-child-for-id="creatingChildForId"
+          :dragging-task="draggingTask"
+          :active-task-id="activeTaskId"
+          :has-active-timer="hasActiveTimer"
+          :active-timer-paused="activeTimerPaused"
+          :timer-busy="timerBusy"
+          @edit="$emit('edit', $event)"
+          @add-child="(parent, nodeType) => $emit('add-child', parent, nodeType)"
+          @apply-defaults="$emit('apply-defaults', $event)"
+          @start-task="$emit('start-task', $event)"
+          @remove="$emit('remove', $event)"
+          @drag-start="$emit('drag-start', $event)"
+          @drag-end="$emit('drag-end')"
+          @drop-on="$emit('drop-on', $event)"
+        />
+      </ul>
+    </div>
   </li>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import type {
-  Task,
-  TaskCreatePayload,
-  TaskNode,
-  TaskNodeType,
-  TaskUpdatePayload,
-} from '@/types/task'
+import type { Task, TaskNode, TaskNodeType } from '@/types/task'
 import BudgetIndicator from './BudgetIndicator.vue'
-import TaskEditor from './TaskEditor.vue'
 import TaskStatusBadge from './TaskStatusBadge.vue'
 
 const props = defineProps<{
   task: TaskNode
   editorTaskId: string | null
   creatingChildForId: string | null
-  creatingChildNodeType: TaskNodeType | null
   draggingTask: Task | null
-  saving: boolean
-  editorError: string
   activeTaskId: string | null
   hasActiveTimer: boolean
   activeTimerPaused: boolean
   timerBusy: boolean
-  inheritedDefaultEstimatedSeconds?: number | null
-  inheritedDefaultRepeatRule?: Task['default_repeat_rule']
-  inheritedDefaultReminderTime?: string | null
 }>()
 
 const emit = defineEmits<{
   edit: [task: Task]
   'add-child': [task: Task, nodeType: TaskNodeType]
-  'create-child': [payload: TaskCreatePayload]
   'apply-defaults': [task: Task]
   'start-task': [task: Task]
   remove: [task: Task]
-  update: [taskId: string, payload: TaskUpdatePayload]
-  'close-editor': []
   'drag-start': [task: Task]
   'drag-end': []
   'drop-on': [task: Task]
 }>()
 
-const expanded = ref(false)
+const expanded = ref(props.task.node_type !== 'TASK')
 const dragTarget = ref(false)
 const actionMenuOpen = ref(false)
 const actionMenuId = computed(() => `task-actions-${props.task.id}`)
@@ -248,15 +219,6 @@ const typeLabels: Record<TaskNodeType, string> = {
 }
 const nodeTypeLabel = computed(() => typeLabels[props.task.node_type])
 const childTypeLabel = computed(() => typeLabels[childNodeType.value])
-const effectiveDefaultEstimatedSeconds = computed(() =>
-  props.task.default_estimated_seconds ?? props.inheritedDefaultEstimatedSeconds ?? null,
-)
-const effectiveDefaultRepeatRule = computed(() =>
-  props.task.default_repeat_rule ?? props.inheritedDefaultRepeatRule ?? null,
-)
-const effectiveDefaultReminderTime = computed(() =>
-  props.task.default_daily_reminder_time ?? props.inheritedDefaultReminderTime ?? null,
-)
 const progressPercent = computed(() => Math.round((props.task.progress_ratio ?? 0) * 100))
 const progressLabel = computed(() =>
   props.task.task_count > 0
@@ -264,9 +226,7 @@ const progressLabel = computed(() =>
     : '尚无任务',
 )
 const rowAriaLabel = computed(() =>
-  isContainer.value
-    ? `${props.task.title}，${progressLabel.value}，点击${expanded.value ? '折叠' : '展开'}`
-    : `${props.task.title}，点击编辑任务`,
+  `${props.task.title}，点击名称查看具体设置`,
 )
 const canAcceptDrop = computed(() => {
   const moving = props.draggingTask
@@ -314,9 +274,8 @@ watch(
   },
 )
 
-function openOrToggle(): void {
-  if (isContainer.value) expanded.value = !expanded.value
-  else emit('edit', props.task)
+function toggleExpanded(): void {
+  expanded.value = !expanded.value
 }
 
 function startDrag(event: DragEvent): void {

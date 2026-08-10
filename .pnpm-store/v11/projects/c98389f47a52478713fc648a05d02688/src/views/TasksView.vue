@@ -25,7 +25,7 @@
           </header>
 
           <p class="task-drag-help">
-            点击项目或模块展开内容；使用左侧拖动手柄可把模块移动到项目、把任务移动到模块。
+            每个项目只保留一个主节点，右侧用连线展开模块与任务。点击名称查看具体设置，点击箭头展开分支。
           </p>
 
           <FormMessage :message="loadError || timer.syncError" />
@@ -53,34 +53,106 @@
           </div>
 
           <template v-else-if="tasks.tree.length">
-            <ul class="task-tree">
-              <TaskTreeNode
-                v-for="task in tasks.tree"
-                :key="task.id"
-                :task="task"
-                :editor-task-id="selectedTask?.id ?? null"
-                :creating-child-for-id="creatingChildParentId"
-                :creating-child-node-type="creatingChildNodeType"
-                :dragging-task="draggingTask"
-                :saving="tasks.saving"
-                :editor-error="editorError"
-                :active-task-id="timer.active?.snapshot.task_id ?? null"
-                :has-active-timer="Boolean(timer.active)"
-                :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
-                :timer-busy="timer.busy"
-                @edit="openEdit"
-                @add-child="openCreateChild"
-                @create-child="createTask"
-                @apply-defaults="applyDefaults"
-                @start-task="startTask"
-                @remove="removeTask"
-                @update="updateTask"
-                @close-editor="closeEditor"
-                @drag-start="startDrag"
-                @drag-end="finishDrag"
-                @drop-on="moveUnderTask"
-              />
-            </ul>
+            <div class="task-mindmap" aria-label="项目与任务导图">
+              <ul class="task-tree task-tree--mindmap">
+                <template v-for="task in tasks.tree" :key="task.id">
+                  <TaskTreeNode
+                    :task="task"
+                    :editor-task-id="selectedTask?.id ?? null"
+                    :creating-child-for-id="creatingChildParentId"
+                    :dragging-task="draggingTask"
+                    :active-task-id="timer.active?.snapshot.task_id ?? null"
+                    :has-active-timer="Boolean(timer.active)"
+                    :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
+                    :timer-busy="timer.busy"
+                    @edit="openEdit"
+                    @add-child="openCreateChild"
+                    @apply-defaults="applyDefaults"
+                    @start-task="startTask"
+                    @remove="removeTask"
+                    @drag-start="startDrag"
+                    @drag-end="finishDrag"
+                    @drop-on="moveUnderTask"
+                  />
+
+                  <li v-if="activeProjectId === task.id" class="task-project-settings">
+                    <div v-if="selectedTask" class="task-node-toolbar">
+                      <div>
+                        <span>已选择{{ selectedTaskTypeLabel }}</span>
+                        <strong>{{ selectedTask.title }}</strong>
+                      </div>
+                      <div class="task-node-toolbar__actions">
+                        <button
+                          v-if="selectedTask.node_type === 'PROJECT'"
+                          class="button button--quiet button--small"
+                          type="button"
+                          @click="openCreateChild(selectedTask, 'MODULE')"
+                        >
+                          新建模块
+                        </button>
+                        <button
+                          v-if="selectedTask.node_type !== 'TASK'"
+                          class="button button--quiet button--small"
+                          type="button"
+                          @click="openCreateChild(selectedTask, 'TASK')"
+                        >
+                          新建任务
+                        </button>
+                        <button
+                          v-if="selectedTask.node_type !== 'TASK'"
+                          class="button button--quiet button--small"
+                          type="button"
+                          @click="applyDefaults(selectedTask)"
+                        >
+                          应用默认值
+                        </button>
+                        <button
+                          v-if="selectedTask.node_type === 'TASK'"
+                          class="button button--primary button--small"
+                          type="button"
+                          :disabled="timer.busy || Boolean(timer.active && timer.active.snapshot.status !== 'PAUSED')"
+                          @click="startTask(selectedTask)"
+                        >
+                          开始计时
+                        </button>
+                        <button
+                          class="button button--finish button--small"
+                          type="button"
+                          @click="removeTask(selectedTask)"
+                        >
+                          删除{{ selectedTaskTypeLabel }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <TaskEditor
+                      v-if="selectedTask"
+                      :task="selectedTask"
+                      :saving="tasks.saving"
+                      :external-error="editorError"
+                      @close="closeEditor"
+                      @update="updateTask"
+                    />
+
+                    <TaskEditor
+                      v-else-if="creatingChildParent"
+                      :task="null"
+                      :node-type="pendingChildNodeType"
+                      :parent-id="creatingChildParent.id"
+                      :parent-title="creatingChildParent.title"
+                      :parent-task="creatingChildParent"
+                      :inherited-default-estimated-seconds="inheritedDefaultEstimatedSeconds"
+                      :inherited-default-repeat-rule="inheritedDefaultRepeatRule"
+                      :inherited-default-reminder-time="inheritedDefaultReminderTime"
+                      :saving="tasks.saving"
+                      :external-error="editorError"
+                      @close="closeEditor"
+                      @create="createTask"
+                    />
+                  </li>
+                </template>
+              </ul>
+            </div>
           </template>
         </div>
       </section>
@@ -98,7 +170,13 @@ import TaskTreeNode from '@/components/tasks/TaskTreeNode.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
-import type { Task, TaskCreatePayload, TaskNodeType, TaskUpdatePayload } from '@/types/task'
+import type {
+  Task,
+  TaskCreatePayload,
+  TaskNodeType,
+  TaskRepeatRule,
+  TaskUpdatePayload,
+} from '@/types/task'
 import { getApiErrorMessage } from '@/utils/api-error'
 
 const tasks = useTaskStore()
@@ -114,6 +192,62 @@ const editorError = ref('')
 const actionMessage = ref('')
 const projectCount = computed(() => tasks.items.filter((task) => task.node_type === 'PROJECT').length)
 const executableTaskCount = computed(() => tasks.items.filter((task) => task.node_type === 'TASK').length)
+const selectedTaskTypeLabel = computed(() => {
+  if (selectedTask.value?.node_type === 'PROJECT') return '项目'
+  if (selectedTask.value?.node_type === 'MODULE') return '模块'
+  return '任务'
+})
+const creatingChildParent = computed<Task | null>(() =>
+  tasks.items.find((task) => task.id === creatingChildParentId.value) ?? null,
+)
+const activeProjectId = computed<string | null>(() =>
+  resolveProjectId(selectedTask.value ?? creatingChildParent.value),
+)
+const pendingChildNodeType = computed<TaskNodeType>(() =>
+  creatingChildNodeType.value
+    ?? (creatingChildParent.value?.node_type === 'PROJECT' ? 'MODULE' : 'TASK'),
+)
+const inheritedDefaultEstimatedSeconds = computed<number | null>(() =>
+  resolveInheritedDefault('default_estimated_seconds'),
+)
+const inheritedDefaultRepeatRule = computed<TaskRepeatRule | null>(() =>
+  resolveInheritedDefault('default_repeat_rule'),
+)
+const inheritedDefaultReminderTime = computed<string | null>(() =>
+  resolveInheritedDefault('default_daily_reminder_time'),
+)
+
+type ContainerDefaultKey =
+  | 'default_estimated_seconds'
+  | 'default_repeat_rule'
+  | 'default_daily_reminder_time'
+
+function resolveProjectId(task: Task | null): string | null {
+  let current = task
+  const visited = new Set<string>()
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    if (current.node_type === 'PROJECT') return current.id
+    current = current.parent_id
+      ? tasks.items.find((item) => item.id === current?.parent_id) ?? null
+      : null
+  }
+  return null
+}
+
+function resolveInheritedDefault<K extends ContainerDefaultKey>(key: K): Task[K] | null {
+  let current = creatingChildParent.value
+  const visited = new Set<string>()
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    const value = current[key]
+    if (value !== null) return value
+    current = current.parent_id
+      ? tasks.items.find((task) => task.id === current?.parent_id) ?? null
+      : null
+  }
+  return null
+}
 
 onMounted(async () => {
   try {
