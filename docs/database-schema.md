@@ -6,7 +6,7 @@
 
 | 枚举 | 值 |
 |---|---|
-| `task_status` | `TODO`、`IN_PROGRESS`、`PAUSED`、`DONE` |
+| `task_status` | `TODO`、`IN_PROGRESS`、`PAUSED`、`BLOCKED`、`DONE` |
 | `session_status` | `RUNNING`、`PAUSED`、`COMPLETED` |
 | `daily_plan_item_status` | `TODO`、`IN_PROGRESS`、`PAUSED`、`DONE` |
 | `partnership_status` | `PENDING`、`ACCEPTED`、`DECLINED` |
@@ -47,6 +47,8 @@
 | `parent_id` | UUID | 可空；与 `owner_id` 组成同所有者自引用 FK |
 | `node_type` | VARCHAR(16) | `PROJECT`、`MODULE` 或 `TASK` |
 | `title` | VARCHAR(200) | 任务标题 |
+| `priority` | VARCHAR(16) | `LOW`、`MEDIUM`、`HIGH` 或 `URGENT` |
+| `due_date` | DATE | 可空；截止日期 |
 | `status` | `task_status` | 默认 `TODO` |
 | `estimated_seconds` | INTEGER | ≥ 0；仅 `TASK` 使用 |
 | `budget_mode` | VARCHAR(16) | `ROLLUP` 或 `FIXED_CAP` |
@@ -66,6 +68,17 @@
 层级固定为 `PROJECT → MODULE → TASK`。项目必须位于顶层，模块只能属于项目，任务只能属于模块；
 只有 `TASK` 可以完成、重复、提醒、计时或加入今日计划。触发器同时阻止层级循环和非法父子类型，
 `(id, owner_id)` 唯一约束保证父子节点属于同一用户。
+
+## `task_dependencies`
+
+| 字段 | 类型 | 约束/说明 |
+|---|---|---|
+| `task_id` | UUID | 复合 PK；FK → `tasks.id` |
+| `depends_on_task_id` | UUID | 复合 PK；前置任务 FK → `tasks.id` |
+| `owner_id` | UUID | 与两端任务组成同所有者复合 FK |
+
+依赖是从前置任务指向后续任务的有向关系。检查约束禁止自身依赖，服务层禁止循环和跨所有者依赖；
+任一端任务删除时对应依赖边级联删除。
 
 ## `sessions`
 
@@ -187,7 +200,7 @@
 
 ```text
 users 1─1 profiles
-users 1─N tasks ── self parent
+users 1─N tasks ── self parent / task_dependencies
 users 1─N sessions ── tasks / daily_plan_items
 users 1─N daily_plans 1─N daily_plan_items ── tasks
 users N─N users via partnerships

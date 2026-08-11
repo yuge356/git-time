@@ -5,7 +5,7 @@
         <p class="eyebrow">{{ editorEyebrow }}</p>
         <h2 :id="editorTitleId">{{ editorTitle }}</h2>
       </div>
-      <button class="icon-button" type="button" aria-label="关闭编辑面板" @click="$emit('close')">
+      <button class="icon-button" type="button" aria-label="关闭编辑窗口" @click="$emit('close')">
         ×
       </button>
     </header>
@@ -18,6 +18,7 @@
           type="text"
           maxlength="200"
           required
+          autofocus
           :placeholder="titlePlaceholder"
         />
       </label>

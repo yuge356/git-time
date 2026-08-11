@@ -19,31 +19,43 @@
               <h2>我的项目</h2>
               <p>{{ projectCount }} 个项目 · {{ executableTaskCount }} 个可执行任务</p>
             </div>
-            <button class="button button--primary" type="button" @click="openCreate">
-              新建项目
-            </button>
+            <div class="panel-header__actions">
+              <div class="task-view-switch" role="group" aria-label="项目呈现方式">
+                <button
+                  type="button"
+                  :class="{ 'task-view-switch__button--active': taskViewMode === 'MINDMAP' }"
+                  :aria-pressed="taskViewMode === 'MINDMAP'"
+                  @click="setTaskViewMode('MINDMAP')"
+                >
+                  <span aria-hidden="true">⌘</span>
+                  思维导图
+                </button>
+                <button
+                  type="button"
+                  :class="{ 'task-view-switch__button--active': taskViewMode === 'CARDS' }"
+                  :aria-pressed="taskViewMode === 'CARDS'"
+                  @click="setTaskViewMode('CARDS')"
+                >
+                  <span aria-hidden="true">▤</span>
+                  标签
+                </button>
+              </div>
+              <button class="button button--primary" type="button" @click="openCreate">
+                新建项目
+              </button>
+            </div>
           </header>
 
           <p class="task-drag-help">
-            每个项目只保留一个主节点，右侧用连线展开模块与任务。点击名称查看具体设置，点击折叠按钮展开或收起分支。
+            {{ taskViewHelpText }}
           </p>
 
           <FormMessage :message="loadError || timer.syncError" />
           <p v-if="actionMessage" class="task-action-feedback">{{ actionMessage }}</p>
 
-          <TaskEditor
-            v-if="creating"
-            :task="null"
-            node-type="PROJECT"
-            :saving="tasks.saving"
-            :external-error="editorError"
-            @close="closeEditor"
-            @create="createTask"
-          />
-
           <p v-if="tasks.loading" class="loading-state">正在加载任务…</p>
 
-          <div v-else-if="tasks.tree.length === 0 && !creating" class="empty-state">
+          <div v-else-if="tasks.tree.length === 0" class="empty-state">
             <span aria-hidden="true">01</span>
             <h3>从第一个项目开始</h3>
             <p>创建项目，再添加模块和具体任务。只有具体任务可以计时和完成。</p>
@@ -52,19 +64,20 @@
             </button>
           </div>
 
-          <section v-else-if="tasks.tree.length" class="task-mindmap-shell">
-            <header class="task-mindmap-toolbar">
-              <div>
-                <strong>任务结构</strong>
-                <span>拖动空白区域平移，点击节点查看详情</span>
-              </div>
-              <div class="task-mindmap-toolbar__controls" aria-label="导图缩放控制">
-                <button class="icon-button" type="button" aria-label="缩小导图" @click="changeMapZoom(-0.1)">−</button>
-                <output aria-live="polite">{{ mapZoomPercent }}%</output>
-                <button class="icon-button" type="button" aria-label="放大导图" @click="changeMapZoom(0.1)">＋</button>
-                <button class="button button--quiet button--small" type="button" @click="fitMap">适应画布</button>
-              </div>
-            </header>
+          <template v-else-if="tasks.tree.length">
+            <section v-if="taskViewMode === 'MINDMAP'" class="task-mindmap-shell">
+              <header class="task-mindmap-toolbar">
+                <div>
+                  <strong>任务结构</strong>
+                  <span>拖动空白区域平移，点击节点查看详情</span>
+                </div>
+                <div class="task-mindmap-toolbar__controls" aria-label="导图缩放控制">
+                  <button class="icon-button" type="button" aria-label="缩小导图" @click="changeMapZoom(-0.1)">−</button>
+                  <output aria-live="polite">{{ mapZoomPercent }}%</output>
+                  <button class="icon-button" type="button" aria-label="放大导图" @click="changeMapZoom(0.1)">＋</button>
+                  <button class="button button--quiet button--small" type="button" @click="fitMap">适应画布</button>
+                </div>
+              </header>
 
             <div
               ref="mapViewport"
@@ -129,17 +142,63 @@
               </div>
             </div>
 
-            <p class="task-mindmap-hint">
-              实线表示上下级关系，带箭头的虚线表示前置依赖；按住 Ctrl 滚动鼠标滚轮也可缩放。
-            </p>
+              <p class="task-mindmap-hint">
+                实线表示上下级关系，带箭头的虚线表示前置依赖；按住 Ctrl 滚动鼠标滚轮也可缩放。
+              </p>
+            </section>
 
-            <div v-if="activeProjectId" class="task-project-settings">
-              <div v-if="selectedTask" class="task-node-toolbar">
+            <section v-else class="task-card-view" aria-label="项目与任务标签视图">
+              <header class="task-card-view__header">
                 <div>
-                  <span>已选择{{ selectedTaskTypeLabel }}</span>
-                  <strong>{{ selectedTask.title }}</strong>
+                  <strong>项目标签</strong>
+                  <span>按层级纵向浏览，点击名称查看详情，使用左侧手柄调整层级</span>
                 </div>
-                <div class="task-node-toolbar__actions">
+              </header>
+              <ul class="task-tree task-tree--cards">
+                <TaskTreeNode
+                  v-for="task in tasks.tree"
+                  :key="task.id"
+                  :task="task"
+                  :editor-task-id="selectedTask?.id ?? null"
+                  :creating-child-for-id="creatingChildParentId"
+                  :dragging-task="draggingTask"
+                  :active-task-id="timer.active?.snapshot.task_id ?? null"
+                  :has-active-timer="Boolean(timer.active)"
+                  :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
+                  :timer-busy="timer.busy"
+                  @edit="openEdit"
+                  @add-child="openCreateChild"
+                  @apply-defaults="applyDefaults"
+                  @start-task="startTask"
+                  @remove="removeTask"
+                  @drag-start="startDrag"
+                  @drag-end="finishDrag"
+                  @drop-on="moveUnderTask"
+                />
+              </ul>
+            </section>
+          </template>
+
+          <Teleport to="body">
+            <div
+              v-if="editorDialogOpen"
+              class="task-editor-modal__backdrop"
+              @mousedown.self="closeEditor"
+              @keydown.esc="closeEditor"
+            >
+              <section
+                class="task-editor-modal"
+                role="dialog"
+                aria-modal="true"
+                :aria-label="editorDialogLabel"
+              >
+                <div class="task-project-settings">
+                  <div v-if="selectedTask" class="task-node-toolbar">
+                    <div>
+                      <span>已选择{{ selectedTaskTypeLabel }}</span>
+                      <strong>{{ selectedTask.title }}</strong>
+                    </div>
+                    <div class="task-node-toolbar__actions">
                   <button
                     v-if="selectedTask.node_type === 'PROJECT'"
                     class="button button--quiet button--small"
@@ -180,8 +239,8 @@
                   >
                     删除{{ selectedTaskTypeLabel }}
                   </button>
-                </div>
-              </div>
+                    </div>
+                  </div>
 
               <section v-if="selectedTask?.node_type === 'TASK'" class="task-dependency-editor">
                 <div class="task-dependency-editor__heading">
@@ -219,32 +278,44 @@
                 </div>
               </section>
 
-              <TaskEditor
-                v-if="selectedTask"
-                :task="selectedTask"
-                :saving="tasks.saving"
-                :external-error="editorError"
-                @close="closeEditor"
-                @update="updateTask"
-              />
+                  <TaskEditor
+                    v-if="selectedTask"
+                    :task="selectedTask"
+                    :saving="tasks.saving"
+                    :external-error="editorError"
+                    @close="closeEditor"
+                    @update="updateTask"
+                  />
 
-              <TaskEditor
-                v-else-if="creatingChildParent"
-                :task="null"
-                :node-type="pendingChildNodeType"
-                :parent-id="creatingChildParent.id"
-                :parent-title="creatingChildParent.title"
-                :parent-task="creatingChildParent"
-                :inherited-default-estimated-seconds="inheritedDefaultEstimatedSeconds"
-                :inherited-default-repeat-rule="inheritedDefaultRepeatRule"
-                :inherited-default-reminder-time="inheritedDefaultReminderTime"
-                :saving="tasks.saving"
-                :external-error="editorError"
-                @close="closeEditor"
-                @create="createTask"
-              />
+                  <TaskEditor
+                    v-else-if="creatingChildParent"
+                    :task="null"
+                    :node-type="pendingChildNodeType"
+                    :parent-id="creatingChildParent.id"
+                    :parent-title="creatingChildParent.title"
+                    :parent-task="creatingChildParent"
+                    :inherited-default-estimated-seconds="inheritedDefaultEstimatedSeconds"
+                    :inherited-default-repeat-rule="inheritedDefaultRepeatRule"
+                    :inherited-default-reminder-time="inheritedDefaultReminderTime"
+                    :saving="tasks.saving"
+                    :external-error="editorError"
+                    @close="closeEditor"
+                    @create="createTask"
+                  />
+
+                  <TaskEditor
+                    v-else-if="creating"
+                    :task="null"
+                    node-type="PROJECT"
+                    :saving="tasks.saving"
+                    :external-error="editorError"
+                    @close="closeEditor"
+                    @create="createTask"
+                  />
+                </div>
+              </section>
             </div>
-          </section>
+          </Teleport>
         </div>
       </section>
     </main>
@@ -283,6 +354,18 @@ const draggingTask = ref<Task | null>(null)
 const loadError = ref('')
 const editorError = ref('')
 const actionMessage = ref('')
+type TaskViewMode = 'MINDMAP' | 'CARDS'
+const TASK_VIEW_MODE_STORAGE_KEY = 'time-budget:project-view-mode'
+const storedTaskViewMode = (() => {
+  try {
+    return localStorage.getItem(TASK_VIEW_MODE_STORAGE_KEY) === 'CARDS'
+      ? 'CARDS'
+      : 'MINDMAP'
+  } catch {
+    return 'MINDMAP'
+  }
+})()
+const taskViewMode = ref<TaskViewMode>(storedTaskViewMode)
 const mapViewport = ref<HTMLElement | null>(null)
 const mapCanvas = ref<HTMLElement | null>(null)
 const mapTree = ref<HTMLElement | null>(null)
@@ -326,11 +409,14 @@ const selectedTaskTypeLabel = computed(() => {
   if (selectedTask.value?.node_type === 'MODULE') return '模块'
   return '任务'
 })
+const taskViewHelpText = computed(() => taskViewMode.value === 'MINDMAP'
+  ? '每个项目只保留一个主节点，右侧用连线展开模块与任务。点击名称查看设置，点击折叠按钮展开或收起分支。'
+  : '项目、模块与任务按标签分层排列。点击名称查看设置，使用左侧拖动手柄调整任务层级。')
+const editorDialogOpen = computed(() => Boolean(
+  creating.value || selectedTask.value || creatingChildParentId.value,
+))
 const creatingChildParent = computed<Task | null>(() =>
   tasks.items.find((task) => task.id === creatingChildParentId.value) ?? null,
-)
-const activeProjectId = computed<string | null>(() =>
-  resolveProjectId(selectedTask.value ?? creatingChildParent.value),
 )
 const dependencyOptions = computed(() => tasks.items
   .filter((task) => task.node_type === 'TASK' && task.id !== selectedTask.value?.id)
@@ -349,6 +435,18 @@ const pendingChildNodeType = computed<TaskNodeType>(() =>
   creatingChildNodeType.value
     ?? (creatingChildParent.value?.node_type === 'PROJECT' ? 'MODULE' : 'TASK'),
 )
+const pendingChildNodeTypeLabel = computed(() => {
+  if (pendingChildNodeType.value === 'MODULE') return '模块'
+  if (pendingChildNodeType.value === 'PROJECT') return '项目'
+  return '任务'
+})
+const editorDialogLabel = computed(() => {
+  if (selectedTask.value) return `编辑${selectedTaskTypeLabel.value}：${selectedTask.value.title}`
+  if (creatingChildParent.value) {
+    return `新建${pendingChildNodeTypeLabel.value}，上级为${creatingChildParent.value.title}`
+  }
+  return '新建项目'
+})
 const inheritedDefaultEstimatedSeconds = computed<number | null>(() =>
   resolveInheritedDefault('default_estimated_seconds'),
 )
@@ -362,6 +460,12 @@ const inheritedDefaultReminderTime = computed<string | null>(() =>
 watch(
   () => selectedTask.value?.id,
   resetDependencyDraft,
+  { immediate: true },
+)
+
+watch(
+  editorDialogOpen,
+  (open) => document.body.classList.toggle('task-editor-modal-open', open),
   { immediate: true },
 )
 
@@ -383,19 +487,6 @@ type ContainerDefaultKey =
   | 'default_repeat_rule'
   | 'default_daily_reminder_time'
 
-function resolveProjectId(task: Task | null): string | null {
-  let current = task
-  const visited = new Set<string>()
-  while (current && !visited.has(current.id)) {
-    visited.add(current.id)
-    if (current.node_type === 'PROJECT') return current.id
-    current = current.parent_id
-      ? tasks.items.find((item) => item.id === current?.parent_id) ?? null
-      : null
-  }
-  return null
-}
-
 function resolveInheritedDefault<K extends ContainerDefaultKey>(key: K): Task[K] | null {
   let current = creatingChildParent.value
   const visited = new Set<string>()
@@ -408,6 +499,19 @@ function resolveInheritedDefault<K extends ContainerDefaultKey>(key: K): Task[K]
       : null
   }
   return null
+}
+
+function setTaskViewMode(mode: TaskViewMode): void {
+  if (taskViewMode.value === mode) return
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  taskViewMode.value = mode
+  try {
+    localStorage.setItem(TASK_VIEW_MODE_STORAGE_KEY, mode)
+  } catch {
+    // The selected view remains active for this page even if storage is unavailable.
+  }
+  if (mode === 'MINDMAP') scheduleMapLayout()
 }
 
 function resetDependencyDraft(): void {
@@ -603,6 +707,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
+  document.body.classList.remove('task-editor-modal-open')
 })
 
 function openCreate(): void {

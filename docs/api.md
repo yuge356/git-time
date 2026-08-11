@@ -44,5 +44,8 @@
 | 通知 | `PATCH /notifications/{id}/read` | 标记已读 |
 | 实时通知 | `WS /ws/notifications?token=` | WebSocket 推送 |
 
+任务创建和修改载荷可包含 `priority`、`due_date` 与 `dependency_ids`。任务响应始终返回这些字段；
+`dependency_ids` 表示当前任务的前置任务列表，接口拒绝自身依赖、跨用户依赖和循环依赖。
+
 `GET /analytics/summary` 必须提供 `date_from=YYYY-MM-DD` 与 `date_to=YYYY-MM-DD`，范围最多
 366 天。

@@ -763,9 +763,164 @@ a {
   font-size: 13px;
 }
 
+.panel-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-view-switch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid #e5e0f5;
+  border-radius: 12px;
+  background: #f7f5fd;
+}
+
+.task-view-switch button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.task-view-switch button:hover,
+.task-view-switch button:focus-visible {
+  background: #fff;
+  color: var(--primary-dark);
+  outline: none;
+}
+
+.task-view-switch .task-view-switch__button--active {
+  background: #fff;
+  color: var(--primary-dark);
+  box-shadow: 0 4px 12px rgb(89 67 170 / 10%);
+}
+
 .task-mindmap-shell {
   display: grid;
   gap: 14px;
+}
+
+.task-card-view {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #ebe7f7;
+  border-radius: 20px;
+  background: #fbfaff;
+}
+
+.task-card-view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #ebe7f7;
+}
+
+.task-card-view__header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.task-card-view__header strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.task-card-view__header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-tree--cards {
+  gap: 14px;
+}
+
+.task-tree--cards .task-mind-branch {
+  display: block;
+}
+
+.task-tree--cards .task-row {
+  width: 100%;
+  min-height: 112px;
+  flex-basis: auto;
+  border-left: 5px solid #a895ef;
+  background: #fff;
+  box-shadow: 0 8px 22px rgb(71 56 128 / 6%);
+}
+
+.task-tree--cards .task-row--project {
+  border-left-color: var(--primary);
+  background: linear-gradient(135deg, #fff, #faf8ff);
+}
+
+.task-tree--cards .task-row--module {
+  border-left-color: #9f8bea;
+}
+
+.task-tree--cards .task-row--task {
+  min-height: 104px;
+  border-left-color: #c0b4ef;
+}
+
+.task-tree--cards .task-mind-branch--expanded > .task-row::after {
+  display: none;
+}
+
+.task-tree--cards .task-tree--nested {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0 24px;
+  padding: 0 0 0 30px;
+}
+
+.task-tree--cards .task-tree--nested::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8px;
+  width: 1px;
+  background: #ddd7f3;
+  content: "";
+}
+
+.task-tree--cards .task-tree--nested > .task-tree-node {
+  position: relative;
+  padding: 0;
+}
+
+.task-tree--cards .task-tree--nested > .task-tree-node::before {
+  position: absolute;
+  top: 51px;
+  left: -22px;
+  display: block;
+  width: 22px;
+  height: 1px;
+  border: 0;
+  border-radius: 0;
+  background: #ddd7f3;
+  content: "";
+}
+
+.task-tree--cards .task-tree--nested > .task-tree-node::after {
+  display: none;
 }
 
 .task-mindmap-toolbar {
@@ -1863,6 +2018,52 @@ a {
   border-color: #c4b8fa;
   background: #fbfaff;
   box-shadow: none;
+}
+
+body.task-editor-modal-open {
+  overflow: hidden;
+}
+
+.task-editor-modal__backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  overflow: auto;
+  padding: clamp(18px, 4vh, 42px) 18px;
+  place-items: start center;
+  background: rgb(31 25 58 / 38%);
+  backdrop-filter: blur(5px);
+}
+
+.task-editor-modal {
+  width: min(720px, 100%);
+  max-height: calc(100vh - clamp(36px, 8vh, 84px));
+  overflow: auto;
+  border: 1px solid #ddd5f7;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgb(35 27 70 / 24%);
+}
+
+.task-editor-modal .task-project-settings {
+  margin: 0;
+  padding: 18px;
+}
+
+.task-editor-modal .task-node-toolbar {
+  margin: 0 0 14px;
+}
+
+.task-editor-modal .task-editor {
+  margin: 0;
+  border: 0;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.task-editor-modal .task-dependency-editor {
+  margin: 0 0 14px;
 }
 
 .task-node-toolbar {
@@ -4968,6 +5169,55 @@ a {
   .panel-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .panel-header__actions {
+    width: 100%;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .task-view-switch {
+    flex: 1 1 100%;
+  }
+
+  .task-view-switch button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .task-card-view {
+    padding: 12px;
+  }
+
+  .task-card-view__header {
+    align-items: flex-start;
+  }
+
+  .task-tree--cards .task-row,
+  .task-tree--cards .task-row--project,
+  .task-tree--cards .task-row--module,
+  .task-tree--cards .task-row--task {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .task-tree--cards .task-tree--nested {
+    margin-left: 12px;
+    padding-left: 22px;
+  }
+
+  .task-editor-modal__backdrop {
+    padding: 10px;
+  }
+
+  .task-editor-modal {
+    max-height: calc(100vh - 20px);
+    border-radius: 18px;
+  }
+
+  .task-editor-modal .task-project-settings {
+    padding: 10px;
   }
 
   .task-mindmap {
