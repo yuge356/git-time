@@ -164,6 +164,91 @@ async def test_task_status_controls_completed_timestamp(client: AsyncClient) -> 
     assert reopened.status_code == 200
     assert reopened.json()["completed_at"] is None
 
+    blocked = await client.patch(
+        f"/api/v1/tasks/{task_id}",
+        headers=auth_header(token),
+        json={"status": "BLOCKED"},
+    )
+    assert blocked.status_code == 200
+    assert blocked.json()["status"] == "BLOCKED"
+    assert blocked.json()["completed_at"] is None
+
+
+async def test_task_map_metadata_and_dependencies_are_persisted(
+    client: AsyncClient,
+) -> None:
+    token, _ = await register_user(client, "task_map_metadata")
+    _, module, prerequisite = await create_structured_task(client, token, "前置任务")
+    dependent = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "后续任务",
+            "node_type": "TASK",
+            "parent_id": module["id"],
+            "priority": "HIGH",
+            "due_date": "2026-09-30",
+            "dependency_ids": [prerequisite["id"]],
+        },
+    )
+    assert dependent.status_code == 201
+    assert dependent.json()["priority"] == "HIGH"
+    assert dependent.json()["due_date"] == "2026-09-30"
+    assert dependent.json()["dependency_ids"] == [prerequisite["id"]]
+
+    updated = await client.patch(
+        f"/api/v1/tasks/{dependent.json()['id']}",
+        headers=auth_header(token),
+        json={"priority": "URGENT", "due_date": None, "dependency_ids": []},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["priority"] == "URGENT"
+    assert updated.json()["due_date"] is None
+    assert updated.json()["dependency_ids"] == []
+
+
+async def test_task_dependencies_reject_self_cross_user_and_cycles(
+    client: AsyncClient,
+) -> None:
+    token, _ = await register_user(client, "task_dependency_owner")
+    _, module, first = await create_structured_task(client, token, "依赖 A")
+    second = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "依赖 B",
+            "node_type": "TASK",
+            "parent_id": module["id"],
+            "dependency_ids": [first["id"]],
+        },
+    )
+    self_dependency = await client.patch(
+        f"/api/v1/tasks/{first['id']}",
+        headers=auth_header(token),
+        json={"dependency_ids": [first["id"]]},
+    )
+    cycle = await client.patch(
+        f"/api/v1/tasks/{first['id']}",
+        headers=auth_header(token),
+        json={"dependency_ids": [second.json()["id"]]},
+    )
+
+    other_token, _ = await register_user(client, "task_dependency_other")
+    other_project = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(other_token),
+        json={"title": "其他用户项目", "node_type": "PROJECT"},
+    )
+    cross_user = await client.patch(
+        f"/api/v1/tasks/{first['id']}",
+        headers=auth_header(token),
+        json={"dependency_ids": [other_project.json()["id"]]},
+    )
+
+    assert self_dependency.status_code == 400
+    assert cycle.status_code == 409
+    assert cross_user.status_code == 404
+
 
 async def test_task_recurrence_and_daily_reminder_are_persisted(
     client: AsyncClient,

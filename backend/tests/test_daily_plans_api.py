@@ -304,6 +304,49 @@ async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) ->
     }
 
 
+async def test_new_day_keeps_only_due_recurring_tasks(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "daily_refresh")
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    ordinary_task_id = await create_task(client, token, "One day only")
+    recurring_task_id = await create_task(client, token, "Repeat daily")
+    updated = await client.patch(
+        f"/api/v1/tasks/{recurring_task_id}",
+        headers=auth_header(token),
+        json={"repeat_rule": "DAILY"},
+    )
+    assert updated.status_code == 200
+
+    today_plan = await create_plan(client, token, today)
+    ordinary_item = await add_item(
+        client,
+        token,
+        today_plan["id"],
+        task_id=ordinary_task_id,
+    )
+    recurring_item = await add_item(
+        client,
+        token,
+        today_plan["id"],
+        task_id=recurring_task_id,
+    )
+
+    tomorrow_plan = await create_plan(client, token, tomorrow)
+    refreshed = await client.post(
+        f"/api/v1/daily-plans/{tomorrow_plan['id']}/auto-populate",
+        headers=auth_header(token),
+    )
+
+    assert refreshed.status_code == 200
+    assert [item["task_id"] for item in refreshed.json()["items"]] == [
+        recurring_task_id
+    ]
+    assert refreshed.json()["items"][0]["id"] not in {
+        ordinary_item["id"],
+        recurring_item["id"],
+    }
+
+
 async def test_completed_project_keeps_existing_today_item(client: AsyncClient) -> None:
     token, _ = await register_user(client, "keep_done_item")
     today = date.today()

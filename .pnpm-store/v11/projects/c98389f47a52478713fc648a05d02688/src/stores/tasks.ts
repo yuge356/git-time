@@ -46,6 +46,12 @@ function budgetLevel(estimatedSeconds: number, actualSeconds: number): Task['bud
 
 function updateWasApplied(task: Task, payload: TaskUpdatePayload): boolean {
   return Object.entries(payload).every(([key, value]) => {
+    if (key === 'dependency_ids') {
+      const current = [...(task.dependency_ids ?? [])].sort()
+      const expected = [...((value as string[] | undefined) ?? [])].sort()
+      return current.length === expected.length
+        && current.every((item, index) => item === expected[index])
+    }
     if (key === 'daily_reminder_time') {
       const current = task.daily_reminder_time?.slice(0, 5) ?? null
       const expected = typeof value === 'string' ? value.slice(0, 5) : value
@@ -69,7 +75,13 @@ export const useTaskStore = defineStore('tasks', {
   getters: {
     tree(state): TaskNode[] {
       const nodes = new Map<string, TaskNode>()
-      state.items.forEach((task) => nodes.set(task.id, { ...task, children: [] }))
+      state.items.forEach((task) => nodes.set(task.id, {
+        ...task,
+        priority: task.priority ?? 'MEDIUM',
+        due_date: task.due_date ?? null,
+        dependency_ids: task.dependency_ids ?? [],
+        children: [],
+      }))
       const roots: TaskNode[] = []
       nodes.forEach((node) => {
         const parent = node.parent_id ? nodes.get(node.parent_id) : undefined
@@ -269,6 +281,9 @@ export const useTaskStore = defineStore('tasks', {
         parent_id: payload.parent_id,
         node_type: payload.node_type,
         title: payload.title,
+        priority: payload.priority ?? 'MEDIUM',
+        due_date: payload.due_date ?? null,
+        dependency_ids: payload.dependency_ids ?? [],
         status: 'TODO',
         estimated_seconds: payload.node_type === 'TASK' ? payload.estimated_seconds : 0,
         budget_mode: payload.budget_mode ?? 'ROLLUP',
@@ -376,8 +391,16 @@ export const useTaskStore = defineStore('tasks', {
             }
           })
         }
-        this.items = this.items.filter((task) => !deletedIds.has(task.id))
+        this.items = this.items
+          .filter((task) => !deletedIds.has(task.id))
+          .map((task) => ({
+            ...task,
+            dependency_ids: (task.dependency_ids ?? []).filter(
+              (dependencyId) => !deletedIds.has(dependencyId),
+            ),
+          }))
         await localDb.cachedTasks.bulkDelete([...deletedIds])
+        await localDb.cachedTasks.bulkPut(this.items)
         await enqueueSyncOperation(this.ownerId, 'task', taskId, 'delete', {})
         this.pendingCount = await pendingSyncCount(this.ownerId)
         await this.flush()

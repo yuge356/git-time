@@ -1,10 +1,12 @@
-export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'PAUSED' | 'DONE'
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'PAUSED' | 'BLOCKED' | 'DONE'
 
 export type TaskRepeatRule = 'NONE' | 'DAILY' | 'WEEKDAYS' | 'WEEKLY' | 'MONTHLY'
 
 export type TaskNodeType = 'PROJECT' | 'MODULE' | 'TASK'
 
 export type TaskBudgetMode = 'ROLLUP' | 'FIXED_CAP'
+
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
 
 export type BudgetLevel =
   | 'NOT_SET'
@@ -19,6 +21,9 @@ export interface Task {
   parent_id: string | null
   node_type: TaskNodeType
   title: string
+  priority: TaskPriority
+  due_date: string | null
+  dependency_ids: string[]
   status: TaskStatus
   estimated_seconds: number
   budget_mode: TaskBudgetMode
@@ -50,6 +55,9 @@ export interface TaskCreatePayload {
   title: string
   parent_id: string | null
   node_type: TaskNodeType
+  priority?: TaskPriority
+  due_date?: string | null
+  dependency_ids?: string[]
   estimated_seconds: number
   budget_mode?: TaskBudgetMode
   fixed_budget_seconds?: number | null
@@ -64,6 +72,9 @@ export interface TaskCreatePayload {
 export interface TaskUpdatePayload {
   title?: string
   parent_id?: string | null
+  priority?: TaskPriority
+  due_date?: string | null
+  dependency_ids?: string[]
   estimated_seconds?: number
   budget_mode?: TaskBudgetMode
   fixed_budget_seconds?: number | null

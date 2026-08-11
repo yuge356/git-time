@@ -22,6 +22,23 @@
         />
       </label>
 
+      <div class="task-schedule-grid">
+        <label class="field">
+          <span>优先级</span>
+          <select v-model="form.priority">
+            <option value="LOW">低</option>
+            <option value="MEDIUM">普通</option>
+            <option value="HIGH">高</option>
+            <option value="URGENT">紧急</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>截止日期</span>
+          <input v-model="form.due_date" type="date" />
+          <small>留空表示不设置截止日期。</small>
+        </label>
+      </div>
+
       <template v-if="isExecutableTask">
         <fieldset class="budget-fieldset">
           <legend>预计投入时间</legend>
@@ -75,6 +92,7 @@
             <option value="TODO">待开始</option>
             <option value="IN_PROGRESS">进行中</option>
             <option value="PAUSED">已暂停</option>
+            <option value="BLOCKED">阻塞</option>
             <option value="DONE">已完成</option>
           </select>
         </label>
@@ -167,6 +185,7 @@ import type {
   TaskBudgetMode,
   TaskCreatePayload,
   TaskNodeType,
+  TaskPriority,
   TaskRepeatRule,
   TaskStatus,
   TaskUpdatePayload,
@@ -228,6 +247,8 @@ const emit = defineEmits<{
 
 interface EditorForm {
   title: string
+  priority: TaskPriority
+  due_date: string
   hours: number
   minutes: number
   status: TaskStatus
@@ -248,6 +269,8 @@ interface EditorForm {
 const errorMessage = ref('')
 const form = reactive<EditorForm>({
   title: '',
+  priority: 'MEDIUM',
+  due_date: '',
   hours: 0,
   minutes: 0,
   status: 'TODO',
@@ -279,6 +302,8 @@ function resetForm(): void {
   ;[form.fixed_hours, form.fixed_minutes] = splitDuration(source?.fixed_budget_seconds)
   ;[form.default_hours, form.default_minutes] = splitDuration(source?.default_estimated_seconds)
   form.title = source?.title ?? ''
+  form.priority = source?.priority ?? 'MEDIUM'
+  form.due_date = source?.due_date ?? ''
   form.status = source?.status ?? 'TODO'
   form.repeat_rule = source?.repeat_rule
     ?? (resolvedNodeType.value === 'TASK' ? props.inheritedDefaultRepeatRule : null)
@@ -322,7 +347,11 @@ function submit(): void {
 
   try {
     if (props.task) {
-      const payload: TaskUpdatePayload = { title: form.title }
+      const payload: TaskUpdatePayload = {
+        title: form.title,
+        priority: form.priority,
+        due_date: form.due_date || null,
+      }
       if (isExecutableTask.value) {
         Object.assign(payload, {
           estimated_seconds: estimatedSeconds,
@@ -350,6 +379,8 @@ function submit(): void {
       title: form.title,
       parent_id: props.parentId,
       node_type: resolvedNodeType.value,
+      priority: form.priority,
+      due_date: form.due_date || null,
       estimated_seconds: isExecutableTask.value ? estimatedSeconds : 0,
       budget_mode: isExecutableTask.value ? 'ROLLUP' : form.budget_mode,
       fixed_budget_seconds: !isExecutableTask.value && form.budget_mode === 'FIXED_CAP'

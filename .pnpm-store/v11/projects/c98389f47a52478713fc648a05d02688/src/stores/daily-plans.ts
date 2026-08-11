@@ -22,6 +22,8 @@ import type {
   DailyPlanItemCreate,
   DailyPlanItemUpdate,
 } from '@/types/daily-plan'
+import type { Task } from '@/types/task'
+import { projectPrefixedTaskTitle } from '@/utils/task-title'
 
 interface DailyPlanState {
   ownerId: string | null
@@ -55,6 +57,42 @@ function recalculatePlan(plan: DailyPlan): DailyPlan {
     actual_seconds: plan.items.reduce((sum, item) => sum + item.actual_seconds, 0),
     updated_at: new Date().toISOString(),
   }
+}
+
+function parseLocalDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(Date.UTC(year!, month! - 1, day!))
+}
+
+function taskRepeatsOnDate(task: Task, targetDate: string): boolean {
+  if (
+    task.node_type !== 'TASK' ||
+    task.status === 'DONE' ||
+    task.repeat_rule === 'NONE'
+  ) {
+    return false
+  }
+  const startDate = localDateString(new Date(task.created_at))
+  if (targetDate < startDate) return false
+  if (task.repeat_end_date && targetDate > task.repeat_end_date) return false
+
+  const target = parseLocalDate(targetDate)
+  const start = parseLocalDate(startDate)
+  if (task.repeat_rule === 'DAILY') return true
+  if (task.repeat_rule === 'WEEKDAYS') {
+    const weekday = target.getUTCDay()
+    return weekday >= 1 && weekday <= 5
+  }
+  if (task.repeat_rule === 'WEEKLY') {
+    return Math.floor((target.getTime() - start.getTime()) / 86_400_000) % 7 === 0
+  }
+  if (task.repeat_rule === 'MONTHLY') {
+    const lastDay = new Date(
+      Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+    ).getUTCDate()
+    return target.getUTCDate() === Math.min(start.getUTCDate(), lastDay)
+  }
+  return false
 }
 
 export const useDailyPlanStore = defineStore('daily-plans', {
@@ -163,8 +201,18 @@ export const useDailyPlanStore = defineStore('daily-plans', {
     ): Promise<void> {
       if (!this.ownerId) throw new Error('Daily plan store is not initialized')
       const targetDate = planDate ?? this.selectedDate
+      const isDateChange = this.plan?.plan_date !== targetDate
       if (!options.silent) this.loading = true
       this.selectedDate = targetDate
+      if (isDateChange) {
+        // A daily plan is a date-scoped snapshot. Never leave the previous
+        // day's items visible while the new date is being loaded or created.
+        // Recurring project tasks are added again by autoPopulate below with
+        // a new daily-item id; ordinary and ad-hoc items stay on their day.
+        this.plan = null
+        this.checkIn = null
+        this.activeItemId = null
+      }
       this.online = navigator.onLine
       try {
         if (this.online) {
@@ -184,6 +232,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
               this.plan =
                 (await readCachedDailyPlan(this.ownerId, targetDate)) ??
                 (await this.createLocalPlan())
+              await this.autoPopulateLocalRecurringItems()
               await this.buildLocalCheckIn()
               return
             }
@@ -213,6 +262,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
 
         this.plan = (await readCachedDailyPlan(this.ownerId, targetDate)) ?? null
         if (!this.plan) this.plan = await this.createLocalPlan()
+        await this.autoPopulateLocalRecurringItems()
         this.pendingCount = await pendingSyncCount(this.ownerId)
         this.failedCount = await getFailedSyncCount(this.ownerId)
         await this.buildLocalCheckIn()
@@ -286,6 +336,53 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         }
       }
       return recalculatePlan({ ...serverPlan, items: repaired })
+    },
+
+    async autoPopulateLocalRecurringItems(): Promise<void> {
+      if (!this.ownerId || !this.plan) return
+      const taskNodes = await localDb.cachedTasks
+        .where('owner_id')
+        .equals(this.ownerId)
+        .toArray()
+      const existingTaskIds = new Set(
+        this.plan.items.flatMap((item) => (item.task_id ? [item.task_id] : [])),
+      )
+      const dueTasks = taskNodes.filter(
+        (task) =>
+          !existingTaskIds.has(task.id) &&
+          taskRepeatsOnDate(task, this.selectedDate),
+      )
+      if (dueTasks.length === 0) return
+
+      const now = new Date().toISOString()
+      const createdItems: DailyPlanItem[] = dueTasks.map((task, index) => ({
+        id: crypto.randomUUID(),
+        daily_plan_id: this.plan!.id,
+        owner_id: this.ownerId!,
+        task_id: task.id,
+        title: projectPrefixedTaskTitle(task, taskNodes),
+        status: 'TODO',
+        estimated_seconds: task.estimated_seconds,
+        actual_seconds: 0,
+        sort_order: this.plan!.items.length + index,
+        completed_at: null,
+        created_at: now,
+        updated_at: now,
+      }))
+      this.plan = recalculatePlan({
+        ...this.plan,
+        items: [...this.plan.items, ...createdItems],
+      })
+      await saveCachedDailyPlan(this.plan)
+      for (const item of createdItems) {
+        await enqueueSyncOperation(this.ownerId, 'daily_plan_item', item.id, 'create', {
+          id: item.id,
+          daily_plan_id: item.daily_plan_id,
+          task_id: item.task_id,
+          title: item.title,
+          estimated_seconds: item.estimated_seconds,
+        })
+      }
     },
 
     /**

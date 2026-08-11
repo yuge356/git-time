@@ -356,7 +356,22 @@ function startDayRolloverWatch(): void {
     if (today === lastRealDate) return
     lastRealDate = today
     todayDate.value = today
-    void runAction(() => daily.load(today))
+    void runAction(async () => {
+      // A running segment belongs to the day on which it was started. Pause
+      // it before switching plans so yesterday's item cannot be restored or
+      // silently carried into the new day's list.
+      if (timer.active?.snapshot.status === 'RUNNING') {
+        const previousItem = activeTimerItem.value
+        const previousActualSeconds = previousItem ? displayActual(previousItem) : 0
+        await timer.pause()
+        if (previousItem) {
+          await daily.applyStoppedTimer(previousItem.id, previousActualSeconds)
+        }
+      }
+      daily.setActiveItem(null)
+      selectedItemId.value = ''
+      await daily.load(today)
+    })
     if (calendarMonth.value === today.slice(0, 7)) {
       void loadCalendarMonth()
     }
@@ -644,6 +659,12 @@ async function restoreMissingActiveItem(): Promise<void> {
     !snapshot?.daily_plan_item_id ||
     daily.plan?.items.some((item) => item.id === snapshot.daily_plan_item_id)
   ) {
+    return
+  }
+  // Only repair a missing item inside the same calendar day. A paused timer
+  // from yesterday is still resumable/history-safe, but its daily item must
+  // never be moved into today's newly refreshed plan.
+  if (localDateString(new Date(snapshot.started_at)) !== todayDate.value) {
     return
   }
   const task = snapshot.task_id

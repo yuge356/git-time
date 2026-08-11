@@ -25,7 +25,7 @@
           </header>
 
           <p class="task-drag-help">
-            每个项目只保留一个主节点，右侧用连线展开模块与任务。点击名称查看具体设置，点击箭头展开分支。
+            每个项目只保留一个主节点，右侧用连线展开模块与任务。点击名称查看具体设置，点击折叠按钮展开或收起分支。
           </p>
 
           <FormMessage :message="loadError || timer.syncError" />
@@ -52,108 +52,199 @@
             </button>
           </div>
 
-          <template v-else-if="tasks.tree.length">
-            <div class="task-mindmap" aria-label="项目与任务导图">
-              <ul class="task-tree task-tree--mindmap">
-                <template v-for="task in tasks.tree" :key="task.id">
-                  <TaskTreeNode
-                    :task="task"
-                    :editor-task-id="selectedTask?.id ?? null"
-                    :creating-child-for-id="creatingChildParentId"
-                    :dragging-task="draggingTask"
-                    :active-task-id="timer.active?.snapshot.task_id ?? null"
-                    :has-active-timer="Boolean(timer.active)"
-                    :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
-                    :timer-busy="timer.busy"
-                    @edit="openEdit"
-                    @add-child="openCreateChild"
-                    @apply-defaults="applyDefaults"
-                    @start-task="startTask"
-                    @remove="removeTask"
-                    @drag-start="startDrag"
-                    @drag-end="finishDrag"
-                    @drop-on="moveUnderTask"
-                  />
+          <section v-else-if="tasks.tree.length" class="task-mindmap-shell">
+            <header class="task-mindmap-toolbar">
+              <div>
+                <strong>任务结构</strong>
+                <span>拖动空白区域平移，点击节点查看详情</span>
+              </div>
+              <div class="task-mindmap-toolbar__controls" aria-label="导图缩放控制">
+                <button class="icon-button" type="button" aria-label="缩小导图" @click="changeMapZoom(-0.1)">−</button>
+                <output aria-live="polite">{{ mapZoomPercent }}%</output>
+                <button class="icon-button" type="button" aria-label="放大导图" @click="changeMapZoom(0.1)">＋</button>
+                <button class="button button--quiet button--small" type="button" @click="fitMap">适应画布</button>
+              </div>
+            </header>
 
-                  <li v-if="activeProjectId === task.id" class="task-project-settings">
-                    <div v-if="selectedTask" class="task-node-toolbar">
-                      <div>
-                        <span>已选择{{ selectedTaskTypeLabel }}</span>
-                        <strong>{{ selectedTask.title }}</strong>
-                      </div>
-                      <div class="task-node-toolbar__actions">
-                        <button
-                          v-if="selectedTask.node_type === 'PROJECT'"
-                          class="button button--quiet button--small"
-                          type="button"
-                          @click="openCreateChild(selectedTask, 'MODULE')"
-                        >
-                          新建模块
-                        </button>
-                        <button
-                          v-if="selectedTask.node_type !== 'TASK'"
-                          class="button button--quiet button--small"
-                          type="button"
-                          @click="openCreateChild(selectedTask, 'TASK')"
-                        >
-                          新建任务
-                        </button>
-                        <button
-                          v-if="selectedTask.node_type !== 'TASK'"
-                          class="button button--quiet button--small"
-                          type="button"
-                          @click="applyDefaults(selectedTask)"
-                        >
-                          应用默认值
-                        </button>
-                        <button
-                          v-if="selectedTask.node_type === 'TASK'"
-                          class="button button--primary button--small"
-                          type="button"
-                          :disabled="timer.busy || Boolean(timer.active && timer.active.snapshot.status !== 'PAUSED')"
-                          @click="startTask(selectedTask)"
-                        >
-                          开始计时
-                        </button>
-                        <button
-                          class="button button--finish button--small"
-                          type="button"
-                          @click="removeTask(selectedTask)"
-                        >
-                          删除{{ selectedTaskTypeLabel }}
-                        </button>
-                      </div>
-                    </div>
-
-                    <TaskEditor
-                      v-if="selectedTask"
-                      :task="selectedTask"
-                      :saving="tasks.saving"
-                      :external-error="editorError"
-                      @close="closeEditor"
-                      @update="updateTask"
+            <div
+              ref="mapViewport"
+              :class="['task-mindmap', { 'task-mindmap--panning': isPanning }]"
+              aria-label="项目与任务导图"
+              @pointerdown="startMapPan"
+              @pointermove="moveMapPan"
+              @pointerup="finishMapPan"
+              @pointercancel="finishMapPan"
+              @wheel.ctrl.prevent="zoomMapAtPointer"
+            >
+              <div class="task-mindmap__surface" :style="mapSurfaceStyle">
+                <div ref="mapCanvas" class="task-mindmap__canvas" :style="mapCanvasStyle">
+                  <ul ref="mapTree" class="task-tree task-tree--mindmap">
+                    <TaskTreeNode
+                      v-for="task in tasks.tree"
+                      :key="task.id"
+                      :task="task"
+                      :editor-task-id="selectedTask?.id ?? null"
+                      :creating-child-for-id="creatingChildParentId"
+                      :dragging-task="draggingTask"
+                      :active-task-id="timer.active?.snapshot.task_id ?? null"
+                      :has-active-timer="Boolean(timer.active)"
+                      :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
+                      :timer-busy="timer.busy"
+                      @edit="openEdit"
+                      @add-child="openCreateChild"
+                      @apply-defaults="applyDefaults"
+                      @start-task="startTask"
+                      @remove="removeTask"
+                      @drag-start="startDrag"
+                      @drag-end="finishDrag"
+                      @drop-on="moveUnderTask"
+                      @layout-change="scheduleMapLayout"
                     />
+                  </ul>
 
-                    <TaskEditor
-                      v-else-if="creatingChildParent"
-                      :task="null"
-                      :node-type="pendingChildNodeType"
-                      :parent-id="creatingChildParent.id"
-                      :parent-title="creatingChildParent.title"
-                      :parent-task="creatingChildParent"
-                      :inherited-default-estimated-seconds="inheritedDefaultEstimatedSeconds"
-                      :inherited-default-repeat-rule="inheritedDefaultRepeatRule"
-                      :inherited-default-reminder-time="inheritedDefaultReminderTime"
-                      :saving="tasks.saving"
-                      :external-error="editorError"
-                      @close="closeEditor"
-                      @create="createTask"
-                    />
-                  </li>
-                </template>
-              </ul>
+                  <svg
+                    v-if="dependencyPaths.length"
+                    class="task-dependency-layer"
+                    :width="mapNaturalSize.width"
+                    :height="mapNaturalSize.height"
+                    :viewBox="`0 0 ${mapNaturalSize.width} ${mapNaturalSize.height}`"
+                    aria-label="任务依赖关系"
+                  >
+                    <defs>
+                      <marker id="task-dependency-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M 0 0 L 8 4 L 0 8 z" />
+                      </marker>
+                    </defs>
+                    <path
+                      v-for="edge in dependencyPaths"
+                      :key="edge.id"
+                      class="task-dependency-line"
+                      :d="edge.path"
+                      marker-end="url(#task-dependency-arrow)"
+                    >
+                      <title>{{ edge.label }}</title>
+                    </path>
+                  </svg>
+                </div>
+              </div>
             </div>
-          </template>
+
+            <p class="task-mindmap-hint">
+              实线表示上下级关系，带箭头的虚线表示前置依赖；按住 Ctrl 滚动鼠标滚轮也可缩放。
+            </p>
+
+            <div v-if="activeProjectId" class="task-project-settings">
+              <div v-if="selectedTask" class="task-node-toolbar">
+                <div>
+                  <span>已选择{{ selectedTaskTypeLabel }}</span>
+                  <strong>{{ selectedTask.title }}</strong>
+                </div>
+                <div class="task-node-toolbar__actions">
+                  <button
+                    v-if="selectedTask.node_type === 'PROJECT'"
+                    class="button button--quiet button--small"
+                    type="button"
+                    @click="openCreateChild(selectedTask, 'MODULE')"
+                  >
+                    新建模块
+                  </button>
+                  <button
+                    v-if="selectedTask.node_type !== 'TASK'"
+                    class="button button--quiet button--small"
+                    type="button"
+                    @click="openCreateChild(selectedTask, 'TASK')"
+                  >
+                    新建任务
+                  </button>
+                  <button
+                    v-if="selectedTask.node_type !== 'TASK'"
+                    class="button button--quiet button--small"
+                    type="button"
+                    @click="applyDefaults(selectedTask)"
+                  >
+                    应用默认值
+                  </button>
+                  <button
+                    v-if="selectedTask.node_type === 'TASK'"
+                    class="button button--primary button--small"
+                    type="button"
+                    :disabled="timer.busy || Boolean(timer.active && timer.active.snapshot.status !== 'PAUSED')"
+                    @click="startTask(selectedTask)"
+                  >
+                    开始计时
+                  </button>
+                  <button
+                    class="button button--finish button--small"
+                    type="button"
+                    @click="removeTask(selectedTask)"
+                  >
+                    删除{{ selectedTaskTypeLabel }}
+                  </button>
+                </div>
+              </div>
+
+              <section v-if="selectedTask?.node_type === 'TASK'" class="task-dependency-editor">
+                <div class="task-dependency-editor__heading">
+                  <div>
+                    <span class="eyebrow">任务依赖</span>
+                    <h3>设置前置任务</h3>
+                  </div>
+                  <span>{{ dependencyDraft.length }} 项依赖</span>
+                </div>
+                <p>被勾选的任务需要先完成，导图中会以带箭头的虚线连接到当前任务。</p>
+                <div v-if="dependencyOptions.length" class="task-dependency-options">
+                  <label v-for="option in dependencyOptions" :key="option.id">
+                    <input v-model="dependencyDraft" type="checkbox" :value="option.id" />
+                    <span>{{ option.label }}</span>
+                  </label>
+                </div>
+                <p v-else class="field-help">还没有其他可设置为前置依赖的任务。</p>
+                <div class="task-dependency-editor__actions">
+                  <button
+                    class="button button--quiet button--small"
+                    type="button"
+                    :disabled="!dependencyChanged || tasks.saving"
+                    @click="resetDependencyDraft"
+                  >
+                    撤销
+                  </button>
+                  <button
+                    class="button button--primary button--small"
+                    type="button"
+                    :disabled="!dependencyChanged || tasks.saving"
+                    @click="saveDependencies"
+                  >
+                    保存依赖
+                  </button>
+                </div>
+              </section>
+
+              <TaskEditor
+                v-if="selectedTask"
+                :task="selectedTask"
+                :saving="tasks.saving"
+                :external-error="editorError"
+                @close="closeEditor"
+                @update="updateTask"
+              />
+
+              <TaskEditor
+                v-else-if="creatingChildParent"
+                :task="null"
+                :node-type="pendingChildNodeType"
+                :parent-id="creatingChildParent.id"
+                :parent-title="creatingChildParent.title"
+                :parent-task="creatingChildParent"
+                :inherited-default-estimated-seconds="inheritedDefaultEstimatedSeconds"
+                :inherited-default-repeat-rule="inheritedDefaultRepeatRule"
+                :inherited-default-reminder-time="inheritedDefaultReminderTime"
+                :saving="tasks.saving"
+                :external-error="editorError"
+                @close="closeEditor"
+                @create="createTask"
+              />
+            </div>
+          </section>
         </div>
       </section>
     </main>
@@ -161,7 +252,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { CSSProperties } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
@@ -178,6 +270,7 @@ import type {
   TaskUpdatePayload,
 } from '@/types/task'
 import { getApiErrorMessage } from '@/utils/api-error'
+import { projectPrefixedTaskTitle } from '@/utils/task-title'
 
 const tasks = useTaskStore()
 const auth = useAuthStore()
@@ -190,8 +283,44 @@ const draggingTask = ref<Task | null>(null)
 const loadError = ref('')
 const editorError = ref('')
 const actionMessage = ref('')
+const mapViewport = ref<HTMLElement | null>(null)
+const mapCanvas = ref<HTMLElement | null>(null)
+const mapTree = ref<HTMLElement | null>(null)
+const mapZoom = ref(1)
+const mapNaturalSize = ref({ width: 1114, height: 460 })
+const isPanning = ref(false)
+const dependencyDraft = ref<string[]>([])
+const dependencyPaths = ref<DependencyPath[]>([])
+let resizeObserver: ResizeObserver | null = null
+let layoutFrame = 0
+let panState: PanState | null = null
+
+interface PanState {
+  pointerId: number
+  clientX: number
+  clientY: number
+  scrollLeft: number
+  scrollTop: number
+}
+
+interface DependencyPath {
+  id: string
+  path: string
+  label: string
+}
+
 const projectCount = computed(() => tasks.items.filter((task) => task.node_type === 'PROJECT').length)
 const executableTaskCount = computed(() => tasks.items.filter((task) => task.node_type === 'TASK').length)
+const mapZoomPercent = computed(() => Math.round(mapZoom.value * 100))
+const mapSurfaceStyle = computed<CSSProperties>(() => ({
+  width: `${Math.ceil(mapNaturalSize.value.width * mapZoom.value)}px`,
+  height: `${Math.ceil(mapNaturalSize.value.height * mapZoom.value)}px`,
+}))
+const mapCanvasStyle = computed<CSSProperties>(() => ({
+  width: `${mapNaturalSize.value.width}px`,
+  minHeight: `${mapNaturalSize.value.height}px`,
+  transform: `scale(${mapZoom.value})`,
+}))
 const selectedTaskTypeLabel = computed(() => {
   if (selectedTask.value?.node_type === 'PROJECT') return '项目'
   if (selectedTask.value?.node_type === 'MODULE') return '模块'
@@ -203,6 +332,19 @@ const creatingChildParent = computed<Task | null>(() =>
 const activeProjectId = computed<string | null>(() =>
   resolveProjectId(selectedTask.value ?? creatingChildParent.value),
 )
+const dependencyOptions = computed(() => tasks.items
+  .filter((task) => task.node_type === 'TASK' && task.id !== selectedTask.value?.id)
+  .map((task) => ({
+    id: task.id,
+    label: projectPrefixedTaskTitle(task, tasks.items),
+  }))
+  .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN')))
+const dependencyChanged = computed(() => {
+  const current = [...(selectedTask.value?.dependency_ids ?? [])].sort()
+  const draft = [...dependencyDraft.value].sort()
+  return current.length !== draft.length
+    || current.some((item, index) => item !== draft[index])
+})
 const pendingChildNodeType = computed<TaskNodeType>(() =>
   creatingChildNodeType.value
     ?? (creatingChildParent.value?.node_type === 'PROJECT' ? 'MODULE' : 'TASK'),
@@ -215,6 +357,25 @@ const inheritedDefaultRepeatRule = computed<TaskRepeatRule | null>(() =>
 )
 const inheritedDefaultReminderTime = computed<string | null>(() =>
   resolveInheritedDefault('default_daily_reminder_time'),
+)
+
+watch(
+  () => selectedTask.value?.id,
+  resetDependencyDraft,
+  { immediate: true },
+)
+
+watch(
+  () => tasks.items.map((task) => [
+    task.id,
+    task.parent_id,
+    task.status,
+    task.progress_ratio,
+    task.due_date,
+    (task.dependency_ids ?? []).join(','),
+  ]),
+  scheduleMapLayout,
+  { deep: true },
 )
 
 type ContainerDefaultKey =
@@ -249,6 +410,178 @@ function resolveInheritedDefault<K extends ContainerDefaultKey>(key: K): Task[K]
   return null
 }
 
+function resetDependencyDraft(): void {
+  dependencyDraft.value = [...(selectedTask.value?.dependency_ids ?? [])]
+}
+
+async function saveDependencies(): Promise<void> {
+  const task = selectedTask.value
+  if (!task || task.node_type !== 'TASK' || !dependencyChanged.value) return
+  editorError.value = ''
+  actionMessage.value = ''
+  try {
+    const updated = await tasks.update(task.id, {
+      dependency_ids: [...dependencyDraft.value],
+    })
+    selectedTask.value = updated
+    resetDependencyDraft()
+    actionMessage.value = `已更新“${updated.title}”的前置依赖。`
+    scheduleMapLayout()
+  } catch (error) {
+    editorError.value = getApiErrorMessage(error)
+  }
+}
+
+function scheduleMapLayout(): void {
+  void nextTick(() => {
+    if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
+    layoutFrame = window.requestAnimationFrame(() => {
+      layoutFrame = 0
+      syncMapLayout()
+    })
+  })
+}
+
+function syncMapLayout(): void {
+  const tree = mapTree.value
+  const canvas = mapCanvas.value
+  if (!tree || !canvas) return
+  if (!resizeObserver) {
+    resizeObserver = new ResizeObserver(scheduleMapLayout)
+    resizeObserver.observe(tree)
+  }
+  mapNaturalSize.value = {
+    width: Math.max(960, Math.ceil(tree.scrollWidth)),
+    height: Math.max(420, Math.ceil(tree.scrollHeight)),
+  }
+  updateDependencyPaths()
+}
+
+function updateDependencyPaths(): void {
+  const canvas = mapCanvas.value
+  if (!canvas) {
+    dependencyPaths.value = []
+    return
+  }
+  const canvasRect = canvas.getBoundingClientRect()
+  const zoom = mapZoom.value
+  const taskById = new Map(tasks.items.map((task) => [task.id, task]))
+  const edges: DependencyPath[] = []
+  tasks.items.forEach((targetTask) => {
+    ;(targetTask.dependency_ids ?? []).forEach((sourceId, index) => {
+      const sourceTask = taskById.get(sourceId)
+      const source = canvas.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(sourceId)}"]`)
+      const target = canvas.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(targetTask.id)}"]`)
+      if (!sourceTask || !source || !target) return
+      const sourceRect = source.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      const sourceCenterX = (sourceRect.left + sourceRect.right) / 2
+      const targetCenterX = (targetRect.left + targetRect.right) / 2
+      const movesRight = sourceCenterX <= targetCenterX
+      const startX = (
+        (movesRight ? sourceRect.right + 8 * zoom : sourceRect.left - 8 * zoom)
+        - canvasRect.left
+      ) / zoom
+      const endX = (
+        (movesRight ? targetRect.left - 12 * zoom : targetRect.right + 12 * zoom)
+        - canvasRect.left
+      ) / zoom
+      const startY = ((sourceRect.top + sourceRect.bottom) / 2 - canvasRect.top) / zoom
+      const endY = ((targetRect.top + targetRect.bottom) / 2 - canvasRect.top) / zoom
+      const direction = movesRight ? 1 : -1
+      const curve = Math.max(52, Math.abs(endX - startX) * 0.42)
+      const laneOffset = (index % 4) * 8
+      const controlY = startY <= endY ? -laneOffset : laneOffset
+      const round = (value: number): number => Math.round(value * 10) / 10
+      edges.push({
+        id: `${sourceId}-${targetTask.id}`,
+        path: [
+          `M ${round(startX)} ${round(startY)}`,
+          `C ${round(startX + direction * curve)} ${round(startY + controlY)},`,
+          `${round(endX - direction * curve)} ${round(endY - controlY)},`,
+          `${round(endX)} ${round(endY)}`,
+        ].join(' '),
+        label: `${sourceTask.title} → ${targetTask.title}`,
+      })
+    })
+  })
+  dependencyPaths.value = edges
+}
+
+function setMapZoom(nextZoom: number, clientX?: number, clientY?: number): void {
+  const viewport = mapViewport.value
+  const previousZoom = mapZoom.value
+  const next = Math.min(1.6, Math.max(0.4, Math.round(nextZoom * 10) / 10))
+  if (!viewport || next === previousZoom) return
+  const viewportRect = viewport.getBoundingClientRect()
+  const anchorClientX = clientX ?? viewportRect.left + viewport.clientWidth / 2
+  const anchorClientY = clientY ?? viewportRect.top + viewport.clientHeight / 2
+  const anchorOffsetX = anchorClientX - viewportRect.left
+  const anchorOffsetY = anchorClientY - viewportRect.top
+  const naturalX = (viewport.scrollLeft + anchorOffsetX) / previousZoom
+  const naturalY = (viewport.scrollTop + anchorOffsetY) / previousZoom
+  mapZoom.value = next
+  void nextTick(() => {
+    viewport.scrollLeft = naturalX * next - anchorOffsetX
+    viewport.scrollTop = naturalY * next - anchorOffsetY
+    scheduleMapLayout()
+  })
+}
+
+function changeMapZoom(delta: number): void {
+  setMapZoom(mapZoom.value + delta)
+}
+
+function zoomMapAtPointer(event: WheelEvent): void {
+  setMapZoom(mapZoom.value + (event.deltaY < 0 ? 0.1 : -0.1), event.clientX, event.clientY)
+}
+
+function fitMap(): void {
+  const viewport = mapViewport.value
+  if (!viewport) return
+  const horizontalScale = (viewport.clientWidth - 28) / mapNaturalSize.value.width
+  const verticalScale = (viewport.clientHeight - 28) / mapNaturalSize.value.height
+  mapZoom.value = Math.min(1, Math.max(0.4, Math.min(horizontalScale, verticalScale)))
+  mapZoom.value = Math.round(mapZoom.value * 10) / 10
+  void nextTick(() => {
+    viewport.scrollTo({ left: 0, top: 0, behavior: 'smooth' })
+    scheduleMapLayout()
+  })
+}
+
+function startMapPan(event: PointerEvent): void {
+  if (event.button !== 0) return
+  const target = event.target as HTMLElement
+  if (target.closest('button, input, select, textarea, .task-row')) return
+  const viewport = mapViewport.value
+  if (!viewport) return
+  panState = {
+    pointerId: event.pointerId,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    scrollLeft: viewport.scrollLeft,
+    scrollTop: viewport.scrollTop,
+  }
+  isPanning.value = true
+  viewport.setPointerCapture(event.pointerId)
+  event.preventDefault()
+}
+
+function moveMapPan(event: PointerEvent): void {
+  const viewport = mapViewport.value
+  if (!viewport || !panState || panState.pointerId !== event.pointerId) return
+  viewport.scrollLeft = panState.scrollLeft - (event.clientX - panState.clientX)
+  viewport.scrollTop = panState.scrollTop - (event.clientY - panState.clientY)
+}
+
+function finishMapPan(event: PointerEvent): void {
+  const viewport = mapViewport.value
+  if (!viewport || !panState || panState.pointerId !== event.pointerId) return
+  if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
+  panState = null
+  isPanning.value = false
+}
+
 onMounted(async () => {
   try {
     const ownerId = auth.user?.profile.id
@@ -257,7 +590,19 @@ onMounted(async () => {
     }
   } catch (error) {
     loadError.value = getApiErrorMessage(error)
+  } finally {
+    await nextTick()
+    if (mapTree.value) {
+      resizeObserver = new ResizeObserver(scheduleMapLayout)
+      resizeObserver.observe(mapTree.value)
+    }
+    scheduleMapLayout()
   }
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
 })
 
 function openCreate(): void {

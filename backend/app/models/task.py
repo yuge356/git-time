@@ -28,6 +28,7 @@ class TaskStatus(StrEnum):
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"
     PAUSED = "PAUSED"
+    BLOCKED = "BLOCKED"
     DONE = "DONE"
 
 
@@ -54,6 +55,15 @@ class TaskBudgetMode(StrEnum):
 
     ROLLUP = "ROLLUP"
     FIXED_CAP = "FIXED_CAP"
+
+
+class TaskPriority(StrEnum):
+    """Small, stable priority scale shared by every task view."""
+
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    URGENT = "URGENT"
 
 
 class Task(TimestampMixin, Base):
@@ -96,6 +106,12 @@ class Task(TimestampMixin, Base):
         default=TaskNodeType.PROJECT,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    priority: Mapped[TaskPriority] = mapped_column(
+        Enum(TaskPriority, name="task_priority", native_enum=False),
+        nullable=False,
+        default=TaskPriority.MEDIUM,
+    )
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus, name="task_status"),
         nullable=False,
@@ -121,3 +137,37 @@ class Task(TimestampMixin, Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TaskDependency(Base):
+    """A directed prerequisite edge kept separate from the task hierarchy."""
+
+    __tablename__ = "task_dependencies"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["task_id", "owner_id"],
+            ["tasks.id", "tasks.owner_id"],
+            name="fk_task_dependencies_task_same_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["depends_on_task_id", "owner_id"],
+            ["tasks.id", "tasks.owner_id"],
+            name="fk_task_dependencies_prerequisite_same_owner",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "task_id <> depends_on_task_id",
+            name="ck_task_dependencies_not_self",
+        ),
+        Index("ix_task_dependencies_owner_task", "owner_id", "task_id"),
+        Index(
+            "ix_task_dependencies_owner_prerequisite",
+            "owner_id",
+            "depends_on_task_id",
+        ),
+    )
+
+    task_id: Mapped[UUID] = mapped_column(primary_key=True)
+    depends_on_task_id: Mapped[UUID] = mapped_column(primary_key=True)
+    owner_id: Mapped[UUID] = mapped_column(nullable=False)

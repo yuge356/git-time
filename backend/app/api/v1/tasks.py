@@ -4,13 +4,14 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
 
 from app.api.dependencies import CurrentUser, DatabaseSession
 from app.models.session import Session, SessionStatus
 from app.models.task import (
     Task,
     TaskBudgetMode,
+    TaskDependency,
     TaskNodeType,
     TaskRepeatRule,
     TaskStatus,
@@ -26,6 +27,7 @@ from app.services.tasks import (
     build_owned_task_responses,
     collect_subtree_ids,
     get_owned_task,
+    replace_task_dependencies,
     resolve_container_defaults,
     validate_parent,
 )
@@ -130,6 +132,8 @@ async def create_task(
         parent_id=payload.parent_id,
         node_type=payload.node_type,
         title=payload.title,
+        priority=payload.priority,
+        due_date=payload.due_date,
         estimated_seconds=estimated_seconds,
         budget_mode=payload.budget_mode,
         fixed_budget_seconds=(
@@ -149,6 +153,12 @@ async def create_task(
     )
     db.add(task)
     await db.flush()
+    await replace_task_dependencies(
+        db,
+        current_user.id,
+        task.id,
+        payload.dependency_ids,
+    )
     await db.refresh(task)
     responses = await build_owned_task_responses(db, current_user.id)
     response = next(item for item in responses if item.id == task.id)
@@ -196,6 +206,17 @@ async def update_task(
 
     if "title" in changes:
         task.title = changes["title"]
+    if "priority" in changes:
+        task.priority = changes["priority"]
+    if "due_date" in changes:
+        task.due_date = changes["due_date"]
+    if "dependency_ids" in changes:
+        await replace_task_dependencies(
+            db,
+            current_user.id,
+            task.id,
+            changes["dependency_ids"],
+        )
     task_only_fields = {
         "estimated_seconds",
         "repeat_rule",
@@ -341,6 +362,15 @@ async def delete_task(
         )
 
     deleted_at = datetime.now(UTC)
+    await db.execute(
+        delete(TaskDependency).where(
+            TaskDependency.owner_id == current_user.id,
+            or_(
+                TaskDependency.task_id.in_(subtree_ids),
+                TaskDependency.depends_on_task_id.in_(subtree_ids),
+            ),
+        )
+    )
     for task in owned_tasks:
         if task.id in subtree_ids:
             task.deleted_at = deleted_at

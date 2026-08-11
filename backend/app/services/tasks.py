@@ -5,11 +5,11 @@ from datetime import UTC, datetime, time
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import Session, SessionStatus
-from app.models.task import Task, TaskBudgetMode, TaskNodeType, TaskStatus
+from app.models.task import Task, TaskBudgetMode, TaskDependency, TaskNodeType, TaskStatus
 from app.schemas.task import BudgetLevel, TaskResponse
 
 
@@ -37,6 +37,7 @@ def to_task_response(
     task_count: int = 0,
     completed_task_count: int = 0,
     is_leaf: bool | None = None,
+    dependency_ids: Sequence[UUID] = (),
 ) -> TaskResponse:
     """Build a response from server-owned hierarchy and budget summaries."""
 
@@ -47,6 +48,9 @@ def to_task_response(
         parent_id=task.parent_id,
         node_type=task.node_type,
         title=task.title,
+        priority=task.priority,
+        due_date=task.due_date,
+        dependency_ids=list(dependency_ids),
         status=task.status,
         estimated_seconds=task.estimated_seconds,
         budget_mode=task.budget_mode,
@@ -215,6 +219,18 @@ async def build_owned_task_responses(
         )
     )
     sessions = session_result.all()
+    active_task_ids = {task.id for task in tasks}
+    dependency_map: dict[UUID, list[UUID]] = {}
+    if active_task_ids:
+        dependency_result = await db.execute(
+            select(TaskDependency.task_id, TaskDependency.depends_on_task_id).where(
+                TaskDependency.owner_id == owner_id,
+                TaskDependency.task_id.in_(active_task_ids),
+                TaskDependency.depends_on_task_id.in_(active_task_ids),
+            )
+        )
+        for task_id, dependency_id in dependency_result.all():
+            dependency_map.setdefault(task_id, []).append(dependency_id)
     parent_ids = {task.parent_id for task in tasks if task.parent_id is not None}
     direct, totals = calculate_task_time_totals(tasks, sessions)
     children_estimated, planned, task_counts, completed_counts = calculate_task_summaries(tasks)
@@ -228,9 +244,86 @@ async def build_owned_task_responses(
             task_count=task_counts.get(task.id, 0),
             completed_task_count=completed_counts.get(task.id, 0),
             is_leaf=task.id not in parent_ids,
+            dependency_ids=dependency_map.get(task.id, ()),
         )
         for task in tasks
     ]
+
+
+async def replace_task_dependencies(
+    db: AsyncSession,
+    owner_id: UUID,
+    task_id: UUID,
+    dependency_ids: Sequence[UUID],
+) -> None:
+    """Validate and replace a task's prerequisite edges without allowing cycles."""
+
+    unique_ids = list(dict.fromkeys(dependency_ids))
+    if task_id in unique_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A task cannot depend on itself",
+        )
+
+    if unique_ids:
+        owned_result = await db.scalars(
+            select(Task.id).where(
+                Task.owner_id == owner_id,
+                Task.id.in_(unique_ids),
+                Task.deleted_at.is_(None),
+            )
+        )
+        owned_ids = set(owned_result.all())
+        if owned_ids != set(unique_ids):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dependency task not found",
+            )
+
+    edge_result = await db.execute(
+        select(TaskDependency.task_id, TaskDependency.depends_on_task_id).where(
+            TaskDependency.owner_id == owner_id,
+            TaskDependency.task_id != task_id,
+        )
+    )
+    graph: dict[UUID, set[UUID]] = {}
+    for source_id, dependency_id in edge_result.all():
+        graph.setdefault(source_id, set()).add(dependency_id)
+    graph[task_id] = set(unique_ids)
+
+    def reaches(start_id: UUID, target_id: UUID) -> bool:
+        pending = [start_id]
+        visited: set[UUID] = set()
+        while pending:
+            current = pending.pop()
+            if current == target_id:
+                return True
+            if current in visited:
+                continue
+            visited.add(current)
+            pending.extend(graph.get(current, ()))
+        return False
+
+    if any(reaches(dependency_id, task_id) for dependency_id in unique_ids):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task dependencies cannot contain a cycle",
+        )
+
+    await db.execute(
+        delete(TaskDependency).where(
+            TaskDependency.owner_id == owner_id,
+            TaskDependency.task_id == task_id,
+        )
+    )
+    db.add_all(
+        TaskDependency(
+            owner_id=owner_id,
+            task_id=task_id,
+            depends_on_task_id=dependency_id,
+        )
+        for dependency_id in unique_ids
+    )
 
 
 async def get_owned_task(

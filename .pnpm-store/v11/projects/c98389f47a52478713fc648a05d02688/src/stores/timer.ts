@@ -43,28 +43,95 @@ interface PendingExitPause {
   snapshot: SessionSnapshot
 }
 
+interface TimerHeartbeat {
+  owner_id: string
+  session_id: string
+  observed_at: string
+}
+
 function exitPauseStorageKey(ownerId: string): string {
   return `time-budget:pending-exit-pause:${ownerId}`
 }
 
+function timerHeartbeatStorageKey(ownerId: string): string {
+  return `time-budget:timer-heartbeat:${ownerId}`
+}
+
+function writeTimerHeartbeat(ownerId: string, sessionId: string): void {
+  try {
+    const heartbeat: TimerHeartbeat = {
+      owner_id: ownerId,
+      session_id: sessionId,
+      observed_at: new Date().toISOString(),
+    }
+    localStorage.setItem(timerHeartbeatStorageKey(ownerId), JSON.stringify(heartbeat))
+  } catch {
+    // Lifecycle events still persist a complete pause snapshot. The heartbeat
+    // is an additional crash-recovery guard for browsers that skip them.
+  }
+}
+
+function readTimerHeartbeat(ownerId: string): TimerHeartbeat | null {
+  try {
+    const value = localStorage.getItem(timerHeartbeatStorageKey(ownerId))
+    if (!value) return null
+    const heartbeat = JSON.parse(value) as TimerHeartbeat
+    if (
+      heartbeat.owner_id !== ownerId ||
+      typeof heartbeat.session_id !== 'string' ||
+      !Number.isFinite(Date.parse(heartbeat.observed_at))
+    ) {
+      localStorage.removeItem(timerHeartbeatStorageKey(ownerId))
+      return null
+    }
+    return heartbeat
+  } catch {
+    return null
+  }
+}
+
+function clearTimerHeartbeat(ownerId: string): void {
+  try {
+    localStorage.removeItem(timerHeartbeatStorageKey(ownerId))
+  } catch {
+    // Nothing else is required when browser storage is unavailable.
+  }
+}
+
 function readPendingExitPause(ownerId: string): PendingExitPause | null {
   const key = exitPauseStorageKey(ownerId)
-  const value = localStorage.getItem(key)
-  if (!value) return null
   try {
+    const value = localStorage.getItem(key)
+    if (!value) return null
     const pending = JSON.parse(value) as PendingExitPause
     if (
       pending.owner_id !== ownerId ||
       typeof pending.session_id !== 'string' ||
       pending.snapshot?.status !== 'PAUSED'
     ) {
-      localStorage.removeItem(key)
+      clearPendingExitPause(ownerId)
       return null
     }
     return pending
   } catch {
-    localStorage.removeItem(key)
+    clearPendingExitPause(ownerId)
     return null
+  }
+}
+
+function writePendingExitPause(ownerId: string, pending: PendingExitPause): void {
+  try {
+    localStorage.setItem(exitPauseStorageKey(ownerId), JSON.stringify(pending))
+  } catch {
+    // IndexedDB persistence and the keepalive request below remain available.
+  }
+}
+
+function clearPendingExitPause(ownerId: string): void {
+  try {
+    localStorage.removeItem(exitPauseStorageKey(ownerId))
+  } catch {
+    // A stale marker is harmless and will be validated on the next load.
   }
 }
 
@@ -78,12 +145,54 @@ async function restorePendingExitPause(ownerId: string): Promise<void> {
     pending.target_seconds,
   )
   await enqueueSessionSnapshot(ownerId, pending.session_id, pending.snapshot)
-  localStorage.removeItem(exitPauseStorageKey(ownerId))
+  clearPendingExitPause(ownerId)
 }
 
 function nextTimestamp(previous: string | null = null): string {
   const previousTime = previous ? Date.parse(previous) : 0
   return new Date(Math.max(Date.now(), previousTime + 1)).toISOString()
+}
+
+async function recoverInterruptedRunningTimer(
+  ownerId: string,
+  timerState: LocalTimerState,
+): Promise<LocalTimerState> {
+  if (timerState.snapshot.status !== 'RUNNING') {
+    clearTimerHeartbeat(ownerId)
+    return timerState
+  }
+
+  const heartbeat = readTimerHeartbeat(ownerId)
+  const previousUpdate = Date.parse(timerState.snapshot.client_updated_at)
+  const observedAt = heartbeat?.session_id === timerState.session_id
+    ? Date.parse(heartbeat.observed_at)
+    : previousUpdate
+  const pauseTime = new Date(
+    Math.max(
+      Number.isFinite(previousUpdate) ? previousUpdate + 1 : 0,
+      Math.min(Date.now(), Number.isFinite(observedAt) ? observedAt : Date.now()),
+    ),
+  )
+  const snapshot: SessionSnapshot = {
+    ...timerState.snapshot,
+    status: 'PAUSED',
+    duration_seconds: snapshotDuration(timerState.snapshot, pauseTime),
+    last_resumed_at: null,
+    client_updated_at: pauseTime.toISOString(),
+  }
+  const recovered = { ...timerState, snapshot }
+
+  // A previous page stopped without completing its unload handler. Convert
+  // the last observed running state into a durable pause before syncing.
+  await saveActiveTimer(
+    ownerId,
+    timerState.session_id,
+    snapshot,
+    timerState.target_seconds,
+  )
+  await enqueueSessionSnapshot(ownerId, timerState.session_id, snapshot)
+  clearTimerHeartbeat(ownerId)
+  return recovered
 }
 
 function isMissingDailyPlanItemError(error: unknown): boolean {
@@ -169,6 +278,9 @@ export const useTimerStore = defineStore('timer', {
       this.tickerId = window.setInterval(() => {
         if (this.active) {
           this.displaySeconds = snapshotDuration(this.active.snapshot)
+          if (this.ownerId && this.active.snapshot.status === 'RUNNING') {
+            writeTimerHeartbeat(this.ownerId, this.active.session_id)
+          }
         }
       }, 1_000)
     },
@@ -178,7 +290,10 @@ export const useTimerStore = defineStore('timer', {
       this.ownerId = ownerId
       this.initialized = false
       await restorePendingExitPause(ownerId)
-      this.active = (await loadActiveTimer(ownerId)) ?? null
+      const storedTimer = await loadActiveTimer(ownerId)
+      this.active = storedTimer
+        ? await recoverInterruptedRunningTimer(ownerId, storedTimer)
+        : null
       this.targetSeconds = this.active?.target_seconds ?? null
       this.history = []
       this.syncError = ''
@@ -204,6 +319,9 @@ export const useTimerStore = defineStore('timer', {
         })
         window.addEventListener('focus', retryPending)
         document.addEventListener('visibilitychange', () => {
+          // Hiding the document also happens when the user switches tabs or
+          // applications. Keep the timer running in those cases; only a real
+          // document unload (pagehide/beforeunload below) pauses it.
           if (document.visibilityState === 'visible') retryPending()
         })
         window.addEventListener('pagehide', () => {
@@ -449,6 +567,7 @@ export const useTimerStore = defineStore('timer', {
 
       try {
         await this.persistSnapshot(sessionId, snapshot, true)
+        if (this.ownerId) writeTimerHeartbeat(this.ownerId, sessionId)
         try {
           // Structural changes must be attempted before their session, but a
           // rejected or temporarily blocked sync must not cancel local timing.
@@ -483,6 +602,7 @@ export const useTimerStore = defineStore('timer', {
           client_updated_at: now,
         }
         await this.persistSnapshot(this.active.session_id, snapshot, true)
+        if (this.ownerId) clearTimerHeartbeat(this.ownerId)
         await this.syncLatestOrKeepOffline(this.active.session_id)
       } finally {
         this.busy = false
@@ -516,13 +636,14 @@ export const useTimerStore = defineStore('timer', {
 
       // localStorage is synchronous, so this recovery marker survives even
       // when the browser stops asynchronous IndexedDB work during unload.
-      localStorage.setItem(exitPauseStorageKey(ownerId), JSON.stringify(pending))
+      writePendingExitPause(ownerId, pending)
+      clearTimerHeartbeat(ownerId)
       this.active = { ...this.active, snapshot }
       this.displaySeconds = snapshot.duration_seconds
 
       void this.persistSnapshot(sessionId, snapshot, true)
         .then(() => {
-          localStorage.removeItem(exitPauseStorageKey(ownerId))
+          clearPendingExitPause(ownerId)
         })
         .catch(() => {
           // The recovery marker remains for initialize() on the next visit.
@@ -542,6 +663,7 @@ export const useTimerStore = defineStore('timer', {
           client_updated_at: now,
         }
         await this.persistSnapshot(this.active.session_id, snapshot, true)
+        if (this.ownerId) writeTimerHeartbeat(this.ownerId, this.active.session_id)
         await this.syncLatestOrKeepOffline(this.active.session_id)
       } finally {
         this.busy = false
@@ -567,6 +689,7 @@ export const useTimerStore = defineStore('timer', {
           complete_daily_item: completeDailyItem,
         }
         await this.persistSnapshot(sessionId, snapshot, false)
+        if (this.ownerId) clearTimerHeartbeat(this.ownerId)
         this.targetSeconds = null
         if (syncImmediately) {
           await this.syncLatestOrKeepOffline(sessionId)

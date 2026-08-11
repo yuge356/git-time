@@ -16,7 +16,9 @@
             'task-row--drop-target': dragTarget && canAcceptDrop,
           },
         ]"
+        :data-task-id="task.id"
         :aria-label="rowAriaLabel"
+        @click="selectNode"
         @dragenter.prevent="enterDrag"
         @dragover.prevent="overDrag"
         @dragleave="leaveDrag"
@@ -46,7 +48,8 @@
               :aria-expanded="expanded"
               @click.stop="toggleExpanded"
             >
-              {{ expanded ? '⌄' : '›' }}
+              <span aria-hidden="true">{{ expanded ? '−' : '+' }}</span>
+              <small v-if="!expanded && task.children.length">{{ task.children.length }}</small>
             </button>
             <button
               class="task-row__name"
@@ -58,8 +61,17 @@
             </button>
             <span v-if="isContainer" class="node-type-badge">{{ nodeTypeLabel }}</span>
           </span>
-          <TaskStatusBadge v-if="task.node_type === 'TASK'" :status="task.status" />
-          <span v-else class="task-progress-label">{{ progressLabel }}</span>
+        </span>
+
+        <span class="task-map-node__meta">
+          <TaskStatusBadge :status="displayStatus" />
+          <span class="task-map-node__progress-text">{{ progressPercent }}%</span>
+          <span v-if="priorityLabel" class="task-map-node__priority">{{ priorityLabel }}</span>
+          <span v-if="task.due_date" class="task-map-node__due">截止 {{ shortDueDate }}</span>
+        </span>
+
+        <span class="task-map-node__progress" aria-hidden="true">
+          <span :style="{ width: `${progressPercent}%` }"></span>
         </span>
 
         <span v-if="isContainer" class="container-summary">
@@ -169,6 +181,7 @@
           @drag-start="$emit('drag-start', $event)"
           @drag-end="$emit('drag-end')"
           @drop-on="$emit('drop-on', $event)"
+          @layout-change="$emit('layout-change')"
         />
       </ul>
     </div>
@@ -202,6 +215,7 @@ const emit = defineEmits<{
   'drag-start': [task: Task]
   'drag-end': []
   'drop-on': [task: Task]
+  'layout-change': []
 }>()
 
 const expanded = ref(props.task.node_type !== 'TASK')
@@ -219,7 +233,35 @@ const typeLabels: Record<TaskNodeType, string> = {
 }
 const nodeTypeLabel = computed(() => typeLabels[props.task.node_type])
 const childTypeLabel = computed(() => typeLabels[childNodeType.value])
-const progressPercent = computed(() => Math.round((props.task.progress_ratio ?? 0) * 100))
+const progressRatio = computed(() => {
+  if (props.task.node_type !== 'TASK') return props.task.progress_ratio ?? 0
+  if (props.task.status === 'DONE') return 1
+  if (props.task.planned_seconds <= 0) return 0
+  return Math.min(1, props.task.actual_seconds / props.task.planned_seconds)
+})
+const progressPercent = computed(() => Math.round(progressRatio.value * 100))
+const displayStatus = computed(() => {
+  if (props.task.node_type === 'TASK') return props.task.status
+  if (props.task.task_count > 0 && props.task.completed_task_count === props.task.task_count) {
+    return 'DONE' as const
+  }
+  if (props.task.actual_seconds > 0 || props.task.completed_task_count > 0) {
+    return 'IN_PROGRESS' as const
+  }
+  return 'TODO' as const
+})
+const priorityLabels = {
+  LOW: '',
+  MEDIUM: '',
+  HIGH: '高优先级',
+  URGENT: '紧急',
+} as const
+const priorityLabel = computed(() => priorityLabels[props.task.priority ?? 'MEDIUM'])
+const shortDueDate = computed(() => {
+  if (!props.task.due_date) return ''
+  const [, month, day] = props.task.due_date.split('-')
+  return `${Number(month)}/${Number(day)}`
+})
 const progressLabel = computed(() =>
   props.task.task_count > 0
     ? `${props.task.completed_task_count} / ${props.task.task_count}`
@@ -276,6 +318,7 @@ watch(
 
 function toggleExpanded(): void {
   expanded.value = !expanded.value
+  emit('layout-change')
 }
 
 function startDrag(event: DragEvent): void {
@@ -296,6 +339,12 @@ function closeMenuOnFocusOut(event: FocusEvent): void {
 function editTask(): void {
   actionMenuOpen.value = false
   emit('edit', props.task)
+}
+
+function selectNode(event: MouseEvent): void {
+  const target = event.target as HTMLElement
+  if (target.closest('button, input, select, textarea')) return
+  editTask()
 }
 
 function addChildTask(nodeType: TaskNodeType): void {
