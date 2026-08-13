@@ -4,6 +4,8 @@
 
 ## 枚举
 
+生产 PostgreSQL 使用原生枚举与 RLS；本地 SQLite 预览以字符串保存相同枚举值，并跳过 PostgreSQL 专用的枚举修改和 RLS 策略语句，业务字段与 API 行为保持一致。
+
 | 枚举 | 值 |
 |---|---|
 | `task_status` | `TODO`、`IN_PROGRESS`、`PAUSED`、`BLOCKED`、`DONE` |

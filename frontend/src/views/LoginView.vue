@@ -1,9 +1,9 @@
 <template>
-  <AuthLayout>
+  <AuthLayout variant="login">
     <header class="form-header">
-      <p class="eyebrow">欢迎回来</p>
-      <h2>登录账户</h2>
-      <p>继续管理你的项目与任务时间预算。</p>
+      <p class="eyebrow">WELCOME BACK</p>
+      <h2>继续你的节奏</h2>
+      <p>登录后，回到今天真正重要的事情上。</p>
     </header>
 
     <form class="form-stack" @submit.prevent="submit">

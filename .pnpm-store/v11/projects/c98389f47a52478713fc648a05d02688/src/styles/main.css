@@ -206,6 +206,324 @@ a {
   box-shadow: var(--shadow-card);
 }
 
+/* 登录页：以图形、轨迹与留白构成更克制的品牌首屏。 */
+.auth-layout--minimal {
+  grid-template-columns: minmax(540px, 1.15fr) minmax(420px, 0.85fr);
+  background: #fbfaff;
+}
+
+.auth-layout--minimal .auth-intro {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  padding: clamp(30px, 4.5vw, 66px);
+  border-right: 1px solid #e8e3f5;
+  background:
+    linear-gradient(135deg, rgb(124 92 252 / 5%), transparent 48%),
+    #f7f6fb;
+}
+
+.auth-layout--minimal .auth-intro::after {
+  position: absolute;
+  z-index: -1;
+  right: 0;
+  bottom: 0;
+  width: min(28vw, 340px);
+  height: min(28vw, 340px);
+  border-top: 1px solid rgb(124 92 252 / 14%);
+  border-left: 1px solid rgb(124 92 252 / 14%);
+  content: "";
+}
+
+.auth-layout--minimal .auth-intro .brand {
+  position: relative;
+  z-index: 3;
+}
+
+.auth-layout--minimal .auth-intro .brand__mark {
+  border: 1px solid rgb(124 92 252 / 22%);
+  background: #fff;
+  box-shadow: 0 12px 30px rgb(71 52 140 / 10%);
+  color: var(--primary-dark);
+  backdrop-filter: none;
+}
+
+.auth-layout--minimal .auth-intro .brand strong {
+  color: var(--ink);
+  font-family: "Iowan Old Style", "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  letter-spacing: 0.02em;
+}
+
+.auth-layout--minimal .auth-intro .brand small {
+  color: var(--muted);
+}
+
+.auth-line-art {
+  position: absolute;
+  z-index: 0;
+  inset: 7% 2% 13% 6%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.auth-line-art svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.auth-line-art__grid {
+  fill: none;
+  stroke: #dcd7eb;
+  stroke-dasharray: 2 12;
+  stroke-linecap: round;
+  stroke-width: 1;
+}
+
+.auth-line-art__orbit {
+  fill: rgb(255 255 255 / 28%);
+  stroke: #d1c9ef;
+  stroke-width: 1.4;
+}
+
+.auth-line-art__orbit--inner {
+  fill: rgb(255 255 255 / 45%);
+  stroke-dasharray: 4 9;
+}
+
+.auth-line-art__accent {
+  fill: none;
+  stroke: url("#auth-orbit-gradient");
+  stroke-linecap: round;
+  stroke-width: 8;
+}
+
+.auth-line-art__curve {
+  fill: none;
+  stroke: #7c5cfc;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.auth-line-art__hand {
+  fill: none;
+  stroke: #3b365b;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.auth-line-art__point {
+  fill: #5b3df5;
+  stroke: #fff;
+  stroke-width: 5;
+}
+
+.auth-line-art__point--small {
+  stroke-width: 3;
+}
+
+.auth-line-note {
+  position: absolute;
+  display: grid;
+  gap: 3px;
+  min-width: 126px;
+  padding: 12px 14px;
+  border: 1px solid rgb(124 92 252 / 16%);
+  border-radius: 3px;
+  background: rgb(255 255 255 / 76%);
+  box-shadow: 0 14px 36px rgb(57 42 113 / 7%);
+  backdrop-filter: blur(12px);
+}
+
+.auth-line-note::before {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  width: 54px;
+  height: 1px;
+  background: rgb(124 92 252 / 35%);
+  content: "";
+}
+
+.auth-line-note span {
+  color: var(--ink);
+  font-family: "Iowan Old Style", Georgia, serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.auth-line-note small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.auth-line-note--time {
+  top: 22%;
+  right: 8%;
+}
+
+.auth-line-note--progress {
+  right: 17%;
+  bottom: 17%;
+}
+
+.auth-line-index {
+  position: absolute;
+  top: 14%;
+  left: 2%;
+  color: #aaa4bd;
+  font-family: "Iowan Old Style", Georgia, serif;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  writing-mode: vertical-rl;
+}
+
+.auth-layout--minimal .auth-intro__content {
+  z-index: 2;
+  max-width: 660px;
+  padding: 0 0 clamp(18px, 4vh, 54px);
+}
+
+.auth-layout--minimal .auth-intro__content::before {
+  display: none;
+}
+
+.auth-layout--minimal .auth-intro .eyebrow {
+  color: var(--primary-dark);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+}
+
+.auth-layout--minimal .auth-intro h1 {
+  max-width: 9ch;
+  margin: 18px 0 22px;
+  color: #27223f;
+  font-family: "Iowan Old Style", "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  font-size: clamp(48px, 5.5vw, 82px);
+  font-weight: 600;
+  letter-spacing: -0.06em;
+  line-height: 1.1;
+}
+
+.auth-layout--minimal .auth-intro p:not(.eyebrow) {
+  max-width: 440px;
+  margin: 0;
+  color: #716c87;
+  font-size: 15px;
+  letter-spacing: 0.03em;
+  line-height: 1.9;
+}
+
+.auth-layout--minimal .auth-panel {
+  position: relative;
+  padding: clamp(34px, 6vw, 92px);
+  background: #fff;
+}
+
+.auth-panel__edition {
+  position: absolute;
+  top: clamp(24px, 4vw, 48px);
+  right: clamp(28px, 4vw, 56px);
+  left: clamp(28px, 4vw, 56px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #aaa6ba;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+
+.auth-panel__edition i {
+  height: 1px;
+  flex: 1;
+  background: #ece8f4;
+}
+
+.auth-layout--minimal .auth-card {
+  width: min(100%, 430px);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.auth-layout--minimal .form-header {
+  margin-bottom: 42px;
+}
+
+.auth-layout--minimal .form-header h2 {
+  margin: 12px 0 12px;
+  font-family: "Iowan Old Style", "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  font-size: clamp(34px, 3.8vw, 48px);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+}
+
+.auth-layout--minimal .form-header > p:last-child {
+  color: #8a859d;
+  font-size: 14px;
+}
+
+.auth-layout--minimal .form-stack {
+  gap: 24px;
+}
+
+.auth-layout--minimal .field {
+  gap: 10px;
+}
+
+.auth-layout--minimal .field > span {
+  color: #56516d;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.auth-layout--minimal .field input {
+  min-height: 56px;
+  padding: 0 2px;
+  border-width: 0 0 1px;
+  border-color: #dcd7e8;
+  border-radius: 0;
+  background: transparent;
+  font-size: 15px;
+}
+
+.auth-layout--minimal .field input:focus {
+  border-color: var(--primary-dark);
+  background: transparent;
+  box-shadow: 0 1px 0 var(--primary-dark);
+}
+
+.auth-layout--minimal .field input::placeholder {
+  color: #b4afc0;
+}
+
+.auth-layout--minimal .field input:-webkit-autofill,
+.auth-layout--minimal .field input:-webkit-autofill:hover,
+.auth-layout--minimal .field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+  box-shadow: 0 0 0 1000px #fff inset;
+  transition: background-color 9999s ease-out;
+}
+
+.auth-layout--minimal .button--primary {
+  min-height: 54px;
+  margin-top: 8px;
+  border-radius: 3px;
+  box-shadow: 0 14px 32px rgb(91 61 245 / 18%);
+  letter-spacing: 0.12em;
+}
+
+.auth-layout--minimal .form-footer {
+  margin-top: 30px;
+  font-size: 13px;
+}
+
 .eyebrow {
   margin: 0;
   color: var(--primary);
@@ -4847,6 +5165,37 @@ body.task-editor-modal-open {
     grid-template-columns: 1fr;
   }
 
+  .auth-layout--minimal {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-layout--minimal .auth-intro {
+    min-height: 390px;
+    border-right: 0;
+    border-bottom: 1px solid #e8e3f5;
+  }
+
+  .auth-layout--minimal .auth-line-art {
+    inset: -10% 0 -25% 34%;
+    opacity: 0.82;
+  }
+
+  .auth-layout--minimal .auth-intro__content {
+    max-width: 520px;
+    padding: 70px 0 0;
+  }
+
+  .auth-layout--minimal .auth-intro h1 {
+    max-width: 11ch;
+    font-size: clamp(42px, 8vw, 66px);
+  }
+
+  .auth-layout--minimal .auth-panel {
+    min-height: 610px;
+    padding-top: 100px;
+    padding-bottom: 72px;
+  }
+
   .auth-intro {
     min-height: 340px;
   }
@@ -5131,6 +5480,41 @@ body.task-editor-modal-open {
     min-height: 300px;
   }
 
+  .auth-layout--minimal .auth-intro {
+    min-height: 340px;
+    padding: 24px 20px 32px;
+  }
+
+  .auth-layout--minimal .auth-intro .brand small {
+    display: none;
+  }
+
+  .auth-layout--minimal .auth-line-art {
+    inset: 0 -26% -18% 22%;
+    opacity: 0.58;
+  }
+
+  .auth-layout--minimal .auth-line-note,
+  .auth-layout--minimal .auth-line-index {
+    display: none;
+  }
+
+  .auth-layout--minimal .auth-intro__content {
+    padding-top: 72px;
+  }
+
+  .auth-layout--minimal .auth-intro h1 {
+    max-width: 9ch;
+    margin-bottom: 14px;
+    font-size: clamp(38px, 12vw, 52px);
+  }
+
+  .auth-layout--minimal .auth-intro p:not(.eyebrow) {
+    max-width: 330px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
   .auth-intro__content {
     padding-top: 48px;
   }
@@ -5142,6 +5526,15 @@ body.task-editor-modal-open {
   .auth-panel {
     padding-top: 48px;
     padding-bottom: 56px;
+  }
+
+  .auth-layout--minimal .auth-panel {
+    min-height: 560px;
+    padding: 82px 24px 54px;
+  }
+
+  .auth-layout--minimal .form-header {
+    margin-bottom: 32px;
   }
 
   .field-grid {
