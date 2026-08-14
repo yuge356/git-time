@@ -1,12 +1,15 @@
-# 时间预算学习追踪器
+# DayFlow
 
-一套基于 Vue 3、Vite、FastAPI 与 PostgreSQL 的学习任务和时间预算管理软件。
+一套基于 Vue 3、Vite、FastAPI 与 PostgreSQL 的项目、任务和时间管理软件。
 
 ## 已实现功能
 
-- 账户注册、登录、个人资料、时区与可搜索性设置
-- 简约图线叠加登录界面，使用更克制的留白、轨迹图形与高级字体层级
-- “项目 / 课程 → 模块 → 可执行任务”三级任务树，可在思维导图与标签视图间切换
+- Supabase Auth 邮箱/手机号 + 密码注册登录；手机号在应用层映射为内部邮箱身份，MVP 不接入短信服务
+- Supabase 托管 PostgreSQL 保存用户资料、项目、计时与统计源数据
+- 中文界面的操作成功、失败、网络及本地存储提醒统一使用中文，错误翻译集中管理以便后续扩展英文版
+- 紫白左右分栏登录卡片，登录与注册在同一页面内切换，包含英文欢迎区、浅灰输入框、忘记密码提示与响应式布局
+- DayFlow 品牌字标与大号紫底白字 DF Logo，字母使用华文琥珀字体并保持适中间距
+- “项目 / 课程 → 模块 → 可执行任务”三级任务树，可在思维导图与标签视图间切换；导图按内容撑开并随整个网页滚动查看
 - 项目、模块和任务统一使用弹窗创建/编辑；支持折叠、拖拽层级、进度、优先级、截止日期与任务依赖
 - 开始、暂停、恢复和结束学习计时；项目和模块汇总末级任务的预算与实际时长
 - 每日计划、长期任务引用、临时事项、完成进度与连续打卡
@@ -25,6 +28,7 @@
 frontend/               Vue 3 + Vite + TypeScript + Pinia + Dexie
 backend/                FastAPI + SQLAlchemy Async + Pydantic
 backend/migrations/     Alembic + PostgreSQL RLS / 完整性触发器
+supabase/migrations/    Supabase 首次建库与安全加固迁移
 backend/tests/          SQLite API 回归测试
 docs/                   架构、数据库、离线同步、API 与部署文档
 compose.yaml            本地开发 PostgreSQL
@@ -36,10 +40,10 @@ compose.production.yaml 完整生产容器编排
 完整步骤见 [部署教程](docs/deployment.md)。
 
 ```powershell
-# 1. 启动本地 PostgreSQL
-docker compose up -d postgres
+# 1. 按 docs/supabase-setup.md 配置 Supabase Auth 与数据库连接
+#    数据库密码可用 .\scripts\configure-supabase-database.ps1 安全录入并验证；支持特殊字符密码
 
-# 2. 后端（新终端）
+# 2. 后端（新终端；也可保留 SQLite 做纯本地预览）
 cd backend
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -76,6 +80,15 @@ Vite 开发服务器也会直接守护本地后端，因此即使使用 `pnpm de
 .\scripts\stop-local.cmd
 ```
 
+如果希望固定预览链接在每次登录 Windows 后自动启动并持续守护，可执行：
+
+```powershell
+.\scripts\install-preview-autostart.ps1
+```
+
+预览地址始终为 `http://localhost:5174`。完整说明及卸载方式见
+[固定本地预览](docs/local-preview.md)。
+
 ## 验证
 
 ```powershell
@@ -95,6 +108,8 @@ pnpm run build
 - [API 清单](docs/api.md)
 - [离线同步](docs/offline-sync.md)
 - [部署教程](docs/deployment.md)
+- [Supabase MVP 配置](docs/supabase-setup.md)
+- [固定本地预览](docs/local-preview.md)
 
 ## 文档维护约定
 

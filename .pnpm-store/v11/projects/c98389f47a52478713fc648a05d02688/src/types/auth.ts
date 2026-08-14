@@ -11,7 +11,8 @@ export interface Profile {
 }
 
 export interface Account {
-  email: string
+  email: string | null
+  phone: string | null
   profile: Profile
 }
 
@@ -22,14 +23,14 @@ export interface AuthResponse {
 }
 
 export interface RegisterPayload {
-  email: string
+  identifier: string
   username: string
   display_name: string
   password: string
 }
 
 export interface LoginPayload {
-  email: string
+  identifier: string
   password: string
 }
 
@@ -41,4 +42,3 @@ export interface ProfileUpdatePayload {
   timezone?: string
   is_searchable?: boolean
 }
-

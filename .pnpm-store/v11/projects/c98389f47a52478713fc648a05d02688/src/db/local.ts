@@ -125,6 +125,15 @@ export async function saveCachedDailyPlan(plan: DailyPlan): Promise<void> {
   await localDb.cachedDailyPlans.put(cloneForStorage(plan))
 }
 
+export async function saveCachedTask(task: Task): Promise<void> {
+  await localDb.cachedTasks.put(cloneForStorage(task))
+}
+
+export async function saveCachedTasks(tasks: Task[]): Promise<void> {
+  if (tasks.length === 0) return
+  await localDb.cachedTasks.bulkPut(cloneForStorage(tasks))
+}
+
 export async function pendingSyncCount(ownerId: string): Promise<number> {
   return localDb.syncOperations.where('owner_id').equals(ownerId).count()
 }

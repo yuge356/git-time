@@ -38,9 +38,9 @@ export const useNotificationStore = defineStore('notifications', {
       this.connect()
     },
 
-    connect(): void {
+    async connect(): Promise<void> {
       if (this.stopped || this.socket?.readyState === WebSocket.OPEN) return
-      const url = notificationService.socketUrl()
+      const url = await notificationService.socketUrl()
       if (!url) return
       const socket = new WebSocket(url)
       this.socket = socket
@@ -54,7 +54,7 @@ export const useNotificationStore = defineStore('notifications', {
       socket.onclose = () => {
         if (this.socket === socket) this.socket = null
         if (!this.stopped) {
-          this.reconnectTimer = window.setTimeout(() => this.connect(), 3_000)
+          this.reconnectTimer = window.setTimeout(() => void this.connect(), 3_000)
         }
       }
     },

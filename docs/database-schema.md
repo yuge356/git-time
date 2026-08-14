@@ -1,6 +1,7 @@
 # 数据库表结构
 
-数据库为 PostgreSQL 17。主键均使用 UUID，时间字段均为 `TIMESTAMPTZ`，除特别说明外不可为空。
+MVP 数据库运行在 Supabase 托管 PostgreSQL。主键均使用 UUID，时间字段均为 `TIMESTAMPTZ`，除特别说明外不可为空。
+首次部署脚本位于 `supabase/migrations/`；`backend/migrations/` 继续作为后续业务版本的 Alembic 迁移来源。
 
 ## 枚举
 
@@ -19,12 +20,21 @@
 
 | 字段 | 类型 | 约束/说明 |
 |---|---|---|
-| `id` | UUID | PK |
-| `email` | CITEXT | UNIQUE，登录邮箱 |
-| `password_hash` | VARCHAR(255) | Argon2 哈希 |
+| `id` | UUID | PK、FK → `auth.users.id`，账号删除时级联清理业务数据 |
+| `email` | CITEXT | 可空、UNIQUE；邮箱账号的公开身份镜像 |
+| `phone` | VARCHAR(32) | 可空、UNIQUE；从 Supabase 原生 phone claim 或 DayFlow 内部手机号别名还原的 E.164 身份 |
+| `password_hash` | VARCHAR(255) | 可空；仅 `APP_AUTH_PROVIDER=local` 的兼容字段，Supabase 账号始终为空 |
 | `is_active` | BOOLEAN | 默认 true |
 | `created_at` | TIMESTAMPTZ | 创建时间 |
 | `updated_at` | TIMESTAMPTZ | 更新时间 |
+
+真正的登录凭据仅位于 Supabase 管理的 `auth.users`。`handle_dayflow_auth_user` 触发器在账号创建时原子写入
+`public.users` 和 `profiles`，只复制 UUID、邮箱、手机号及注册表单提供的用户名/显示名。该安全定义函数已撤销
+匿名与普通登录角色的直接执行权限。所有业务表启用 RLS，安全检查结果应保持为 0 条安全告警。
+FastAPI 使用的 `postgres` Session Pooler 身份只被允许显式 `SET ROLE dayflow_app`；成员关系保持
+`INHERIT FALSE`，`dayflow_app` 自身保持 `NOLOGIN` 与 `NOBYPASSRLS`。
+手机号账号在 `auth.users.email` 中使用 `phone.<digits>@phone.dayflow.invalid` 内部别名；公共 `users` 表仅保存
+还原后的 E.164 手机号并将 `email` 保持为空。
 
 ## `profiles`
 

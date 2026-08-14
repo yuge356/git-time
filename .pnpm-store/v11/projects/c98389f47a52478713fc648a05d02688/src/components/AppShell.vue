@@ -126,7 +126,7 @@ async function logout(): Promise<void> {
       }
     }
     notifications.disconnect()
-    auth.logout()
+    await auth.logout()
     await router.replace('/login')
   } catch {
     logoutError.value = '计时暂停失败，请重试'

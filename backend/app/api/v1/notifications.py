@@ -7,12 +7,10 @@ from uuid import UUID
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import func, select
 
-from app.api.dependencies import CurrentUser, DatabaseSession
+from app.api.dependencies import CurrentUser, DatabaseSession, authenticate_access_token
 from app.core.config import settings
-from app.core.security import InvalidTokenError, decode_access_token
-from app.db.session import set_request_identity
+from app.core.security import InvalidTokenError
 from app.models.sharing import Notification
-from app.models.user import User
 from app.schemas.sharing import NotificationResponse, UnreadCount
 from app.services.notifications import notification_manager
 
@@ -99,21 +97,14 @@ async def notification_socket(
         await websocket.close(code=1008)
         return
     try:
-        user_id = decode_access_token(token)
+        user = await authenticate_access_token(db, token)
     except InvalidTokenError:
         await websocket.close(code=1008)
         return
-    await set_request_identity(db, user_id)
-    user = await db.scalar(
-        select(User).where(User.id == user_id, User.is_active.is_(True))
-    )
-    if user is None:
-        await websocket.close(code=1008)
-        return
 
-    await notification_manager.connect(user_id, websocket)
+    await notification_manager.connect(user.id, websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        notification_manager.disconnect(user_id, websocket)
+        notification_manager.disconnect(user.id, websocket)

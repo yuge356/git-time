@@ -27,3 +27,11 @@
 7. 网络错误保留队列；业务冲突保留错误信息，待冲突条件解除后重试。
 
 所有缓存和队列均带 `owner_id`，切换账户不会读取其他账户的离线数据。
+
+Supabase Auth 会话使用独立的浏览器存储键 `dayflow-supabase-auth`，SDK 自动刷新 Access Token；Axios 和
+通知 WebSocket 每次建立连接时读取最新会话，不把过期令牌复制到业务 IndexedDB。退出登录先通知 Supabase
+撤销当前会话，再清理 Pinia 中的账号状态；业务离线数据仍按 `profile.id` 隔离。
+
+任务、每日计划、计时快照和同步队列在写入 IndexedDB 前统一转换为可序列化的普通对象，避免 Vue
+响应式代理或代理数组触发 `DataCloneError`。浏览器存储异常不会直接把英文技术信息显示给用户，而是
+通过统一错误翻译层显示中文操作建议。

@@ -57,9 +57,7 @@ export const router = createRouter({
     },
     {
       path: '/register',
-      name: 'register',
-      component: () => import('@/views/RegisterView.vue'),
-      meta: { guestOnly: true },
+      redirect: { name: 'login', query: { mode: 'register' } },
     },
     {
       path: '/profile',

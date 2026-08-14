@@ -7,9 +7,22 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import settings
 from app.db.base import Base
 from app.db.session import get_db, get_service_db
 from app.main import app
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def use_local_auth_in_tests() -> AsyncIterator[None]:
+    """Keep the deterministic API suite independent from hosted Supabase Auth."""
+
+    previous = settings.auth_provider
+    settings.auth_provider = "local"
+    try:
+        yield
+    finally:
+        settings.auth_provider = previous
 
 
 @pytest_asyncio.fixture
@@ -49,4 +62,3 @@ async def client() -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides.clear()
     await test_engine.dispose()
-

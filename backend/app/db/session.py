@@ -3,13 +3,26 @@
 from collections.abc import AsyncIterator
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 
 engine = create_async_engine(settings.database_url, pool_pre_ping=True)
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
+
+
+if settings.database_role and engine.url.get_backend_name() == "postgresql":
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def use_runtime_database_role(dbapi_connection: object, _: object) -> None:
+        """Drop pooled application connections to the RLS-enforced role."""
+
+        cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+        try:
+            cursor.execute(f'SET ROLE "{settings.database_role}"')
+        finally:
+            cursor.close()
 
 
 async def set_request_identity(session: AsyncSession, user_id: UUID) -> None:
@@ -50,4 +63,3 @@ async def get_service_db() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
-

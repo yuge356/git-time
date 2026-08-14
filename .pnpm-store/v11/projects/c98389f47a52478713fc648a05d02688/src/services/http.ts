@@ -1,5 +1,7 @@
 import axios from 'axios'
 
+import { supabase } from './supabase'
+
 const TOKEN_STORAGE_KEY = 'time-budget-access-token'
 
 export const http = axios.create({
@@ -10,8 +12,9 @@ export const http = axios.create({
   },
 })
 
-http.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_STORAGE_KEY)
+http.interceptors.request.use(async (config) => {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token ?? localStorage.getItem(TOKEN_STORAGE_KEY)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }

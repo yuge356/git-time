@@ -1,12 +1,12 @@
 # API 清单
 
-所有地址以 `/api/v1` 为前缀；除注册、登录和 WebSocket 握手外均使用
-`Authorization: Bearer <token>`。
+所有地址以 `/api/v1` 为前缀；MVP 的注册、登录和令牌刷新由 Supabase Auth 提供，前端访问 DayFlow API 时使用
+`Authorization: Bearer <supabase_access_token>`。WebSocket 在查询参数中携带同一令牌并执行相同校验。
 
 | 模块 | 方法与地址 | 用途 |
 |---|---|---|
-| 认证 | `POST /auth/register` | 注册 |
-| 认证 | `POST /auth/login` | 登录 |
+| 兼容认证 | `POST /auth/register` | 仅 `APP_AUTH_PROVIDER=local` 的测试/离线开发注册 |
+| 兼容认证 | `POST /auth/login` | 仅 `APP_AUTH_PROVIDER=local` 的测试/离线开发登录 |
 | 认证 | `GET /auth/me` | 当前账户 |
 | 资料 | `GET /profiles/me` | 当前资料 |
 | 资料 | `PATCH /profiles/me` | 修改资料、时区与可搜索性 |
@@ -49,3 +49,8 @@
 
 `GET /analytics/summary` 必须提供 `date_from=YYYY-MM-DD` 与 `date_to=YYYY-MM-DD`，范围最多
 366 天。
+
+Supabase Auth 的客户端调用为 `signUp({ email, password })`、`signInWithPassword(...)` 和 `signOut()`；
+邮箱账号直接使用邮箱，手机号账号使用确定性的 `phone.<digits>@phone.dayflow.invalid` 内部别名，因此不需要
+Supabase Phone provider 或短信供应商。DayFlow 不代理或记录明文密码；`GET /auth/me` 会校验 Supabase
+令牌、隐藏内部别名并返回真实业务资料。

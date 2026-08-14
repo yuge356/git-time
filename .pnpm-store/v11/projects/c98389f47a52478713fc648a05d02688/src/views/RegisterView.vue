@@ -3,7 +3,7 @@
     <header class="form-header">
       <p class="eyebrow">开始使用</p>
       <h2>创建账户</h2>
-      <p>创建你的项目与任务时间预算空间。</p>
+      <p>创建你的 DayFlow 项目与时间管理空间。</p>
     </header>
 
     <form class="form-stack" @submit.prevent="submit">
@@ -39,11 +39,11 @@
       <label class="field">
         <span>邮箱</span>
         <input
-          v-model.trim="form.email"
-          type="email"
-          autocomplete="email"
+          v-model.trim="form.identifier"
+          type="text"
+          autocomplete="username"
           required
-          placeholder="name@example.com"
+          placeholder="name@example.com / +8613800000000"
         />
       </label>
 
@@ -87,7 +87,7 @@ const auth = useAuthStore()
 const router = useRouter()
 const errorMessage = ref('')
 const form = reactive({
-  email: '',
+  identifier: '',
   username: '',
   display_name: '',
   password: '',

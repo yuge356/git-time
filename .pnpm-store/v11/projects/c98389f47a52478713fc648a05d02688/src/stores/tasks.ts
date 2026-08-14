@@ -4,6 +4,8 @@ import {
   enqueueSyncOperation,
   localDb,
   pendingSyncCount,
+  saveCachedTask,
+  saveCachedTasks,
 } from '@/db/local'
 import {
   getPendingOperations,
@@ -171,7 +173,7 @@ export const useTaskStore = defineStore('tasks', {
      */
     async mergeServerItems(serverItems: Task[]): Promise<Task[]> {
       if (!this.ownerId) return serverItems
-      await localDb.cachedTasks.bulkPut(serverItems)
+      await saveCachedTasks(serverItems)
       const pendingOps = await getPendingOperations(this.ownerId, 'task')
       if (pendingOps.length === 0) {
         await this.dropStaleCache(serverItems, new Set())
@@ -321,7 +323,7 @@ export const useTaskStore = defineStore('tasks', {
       }
       try {
         this.items.push(task)
-        await localDb.cachedTasks.put(task)
+        await saveCachedTask(task)
         await enqueueSyncOperation(this.ownerId, 'task', id, 'create', {
           ...payload,
           id,
@@ -358,7 +360,7 @@ export const useTaskStore = defineStore('tasks', {
       }
       try {
         this.items = this.items.map((item) => (item.id === taskId ? updated : item))
-        await localDb.cachedTasks.put(updated)
+        await saveCachedTask(updated)
         await enqueueSyncOperation(this.ownerId, 'task', taskId, 'update', {
           ...payload,
         })
@@ -400,7 +402,7 @@ export const useTaskStore = defineStore('tasks', {
             ),
           }))
         await localDb.cachedTasks.bulkDelete([...deletedIds])
-        await localDb.cachedTasks.bulkPut(this.items)
+        await saveCachedTasks(this.items)
         await enqueueSyncOperation(this.ownerId, 'task', taskId, 'delete', {})
         this.pendingCount = await pendingSyncCount(this.ownerId)
         await this.flush()
@@ -420,7 +422,7 @@ export const useTaskStore = defineStore('tasks', {
         await this.flush()
         const response = await taskService.applyDefaults(taskId, payload)
         this.items = response.tasks
-        await localDb.cachedTasks.bulkPut(response.tasks)
+        await saveCachedTasks(response.tasks)
         return response
       } finally {
         this.saving = false

@@ -1,51 +1,152 @@
 <template>
-  <AuthLayout variant="login">
+  <AuthLayout variant="login" :auth-mode="mode" @switch-mode="switchMode">
     <header class="form-header">
-      <p class="eyebrow">WELCOME BACK</p>
-      <h2>继续你的节奏</h2>
-      <p>登录后，回到今天真正重要的事情上。</p>
+      <h2>{{ mode === 'login' ? 'Login' : 'Register' }}</h2>
+      <p>
+        {{ mode === 'login' ? 'Welcome back to DayFlow' : 'Create your DayFlow account' }}
+      </p>
     </header>
 
-    <form class="form-stack" @submit.prevent="submit">
-      <label class="field">
-        <span>邮箱</span>
-        <input
-          v-model.trim="form.email"
-          type="email"
-          autocomplete="email"
-          required
-          placeholder="name@example.com"
-        />
+    <form v-if="mode === 'login'" class="form-stack auth-login-form" @submit.prevent="submitLogin">
+      <label class="auth-login-field">
+        <span class="sr-only">用户名或邮箱</span>
+        <span class="auth-login-input">
+          <input
+            v-model.trim="loginForm.identifier"
+            type="text"
+            autocomplete="username"
+            required
+            placeholder="Email / Phone (+86...)"
+          />
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a7 7 0 0 0-14 0" />
+          </svg>
+        </span>
       </label>
 
-      <label class="field">
-        <span>密码</span>
-        <input
-          v-model="form.password"
-          type="password"
-          autocomplete="current-password"
-          required
-          placeholder="请输入密码"
-        />
+      <label class="auth-login-field">
+        <span class="sr-only">密码</span>
+        <span class="auth-login-input">
+          <input
+            v-model="loginForm.password"
+            type="password"
+            autocomplete="current-password"
+            required
+            placeholder="Password"
+          />
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="5" y="10" width="14" height="10" rx="2" />
+            <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+          </svg>
+        </span>
+      </label>
+
+      <button class="auth-forgot" type="button" @click="showPasswordHelp">
+        Forgot password?
+      </button>
+
+      <FormMessage :message="errorMessage" />
+      <p v-if="helpMessage" class="auth-help-message" role="status">{{ helpMessage }}</p>
+
+      <button class="button button--primary" type="submit" :disabled="auth.loading">
+        {{ auth.loading ? 'Logging in…' : 'Login' }}
+      </button>
+    </form>
+
+    <form v-else class="form-stack auth-login-form auth-register-form" @submit.prevent="submitRegister">
+      <div class="auth-register-grid">
+        <label class="auth-login-field">
+          <span class="sr-only">用户名</span>
+          <span class="auth-login-input">
+            <input
+              v-model.trim="registerForm.username"
+              type="text"
+              autocomplete="username"
+              minlength="3"
+              maxlength="30"
+              pattern="[A-Za-z0-9_]+"
+              required
+              placeholder="Username"
+            />
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a7 7 0 0 0-14 0" />
+            </svg>
+          </span>
+        </label>
+
+        <label class="auth-login-field">
+          <span class="sr-only">显示名称</span>
+          <span class="auth-login-input">
+            <input
+              v-model.trim="registerForm.display_name"
+              type="text"
+              autocomplete="name"
+              maxlength="80"
+              required
+              placeholder="Display name"
+            />
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 20h16M7 16l9-9 2 2-9 9-3 1 1-3Z" />
+            </svg>
+          </span>
+        </label>
+      </div>
+
+      <label class="auth-login-field">
+        <span class="sr-only">邮箱</span>
+        <span class="auth-login-input">
+          <input
+            v-model.trim="registerForm.identifier"
+            type="text"
+            autocomplete="username"
+            required
+            placeholder="Email / Phone (+86...)"
+          />
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <path d="m4 7 8 6 8-6" />
+          </svg>
+        </span>
+      </label>
+
+      <label class="auth-login-field">
+        <span class="sr-only">密码</span>
+        <span class="auth-login-input">
+          <input
+            v-model="registerForm.password"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            maxlength="128"
+            required
+            placeholder="Password · 8+ characters"
+          />
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="5" y="10" width="14" height="10" rx="2" />
+            <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+          </svg>
+        </span>
       </label>
 
       <FormMessage :message="errorMessage" />
 
       <button class="button button--primary" type="submit" :disabled="auth.loading">
-        {{ auth.loading ? '登录中…' : '登录' }}
+        {{ auth.loading ? 'Creating…' : 'Create account' }}
       </button>
     </form>
 
     <p class="form-footer">
-      还没有账户？
-      <RouterLink to="/register">创建账户</RouterLink>
+      {{ mode === 'login' ? "Don't have an account?" : 'Already have an account?' }}
+      <button class="auth-mode-switch" type="button" @click="switchMode(mode === 'login' ? 'register' : 'login')">
+        {{ mode === 'login' ? 'Register' : 'Login' }}
+      </button>
     </p>
   </AuthLayout>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { useRoute, useRouter, RouterLink } from 'vue-router'
+import { reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import AuthLayout from '@/components/AuthLayout.vue'
 import FormMessage from '@/components/FormMessage.vue'
@@ -55,18 +156,55 @@ import { getApiErrorMessage } from '@/utils/api-error'
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const mode = ref<'login' | 'register'>(route.query.mode === 'register' ? 'register' : 'login')
 const errorMessage = ref('')
-const form = reactive({
-  email: '',
+const helpMessage = ref('')
+const loginForm = reactive({
+  identifier: '',
+  password: '',
+})
+const registerForm = reactive({
+  identifier: '',
+  username: '',
+  display_name: '',
   password: '',
 })
 
-async function submit(): Promise<void> {
+watch(
+  () => route.query.mode,
+  (nextMode) => {
+    if (nextMode === 'register') switchMode('register')
+  },
+)
+
+function switchMode(nextMode: 'login' | 'register'): void {
+  mode.value = nextMode
   errorMessage.value = ''
+  helpMessage.value = ''
+}
+
+function showPasswordHelp(): void {
+  helpMessage.value = 'MVP 阶段暂不提供密码找回，请妥善保存密码。'
+}
+
+async function submitLogin(): Promise<void> {
+  errorMessage.value = ''
+  helpMessage.value = ''
   try {
-    await auth.login(form)
+    await auth.login(loginForm)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/today'
     await router.replace(redirect)
+  } catch (error) {
+    errorMessage.value = getApiErrorMessage(error)
+  }
+}
+
+async function submitRegister(): Promise<void> {
+  errorMessage.value = ''
+  helpMessage.value = ''
+  try {
+    await auth.register(registerForm)
+    await router.replace('/tasks')
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)
   }

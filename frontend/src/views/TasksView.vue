@@ -69,24 +69,20 @@
               <header class="task-mindmap-toolbar">
                 <div>
                   <strong>任务结构</strong>
-                  <span>拖动空白区域平移，点击节点查看详情</span>
+                  <span>通过整个网页滚动查看导图，点击节点查看详情</span>
                 </div>
                 <div class="task-mindmap-toolbar__controls" aria-label="导图缩放控制">
                   <button class="icon-button" type="button" aria-label="缩小导图" @click="changeMapZoom(-0.1)">−</button>
                   <output aria-live="polite">{{ mapZoomPercent }}%</output>
                   <button class="icon-button" type="button" aria-label="放大导图" @click="changeMapZoom(0.1)">＋</button>
-                  <button class="button button--quiet button--small" type="button" @click="fitMap">适应画布</button>
+                  <button class="button button--quiet button--small" type="button" @click="fitMap">适合页面</button>
                 </div>
               </header>
 
             <div
               ref="mapViewport"
-              :class="['task-mindmap', { 'task-mindmap--panning': isPanning }]"
+              class="task-mindmap"
               aria-label="项目与任务导图"
-              @pointerdown="startMapPan"
-              @pointermove="moveMapPan"
-              @pointerup="finishMapPan"
-              @pointercancel="finishMapPan"
               @wheel.ctrl.prevent="zoomMapAtPointer"
             >
               <div class="task-mindmap__surface" :style="mapSurfaceStyle">
@@ -370,21 +366,11 @@ const mapViewport = ref<HTMLElement | null>(null)
 const mapCanvas = ref<HTMLElement | null>(null)
 const mapTree = ref<HTMLElement | null>(null)
 const mapZoom = ref(1)
-const mapNaturalSize = ref({ width: 1114, height: 460 })
-const isPanning = ref(false)
+const mapNaturalSize = ref({ width: 1114, height: 260 })
 const dependencyDraft = ref<string[]>([])
 const dependencyPaths = ref<DependencyPath[]>([])
 let resizeObserver: ResizeObserver | null = null
 let layoutFrame = 0
-let panState: PanState | null = null
-
-interface PanState {
-  pointerId: number
-  clientX: number
-  clientY: number
-  scrollLeft: number
-  scrollTop: number
-}
 
 interface DependencyPath {
   id: string
@@ -410,7 +396,7 @@ const selectedTaskTypeLabel = computed(() => {
   return '任务'
 })
 const taskViewHelpText = computed(() => taskViewMode.value === 'MINDMAP'
-  ? '每个项目只保留一个主节点，右侧用连线展开模块与任务。点击名称查看设置，点击折叠按钮展开或收起分支。'
+  ? '每个项目只保留一个主节点，右侧用连线展开模块与任务。导图随内容撑开页面，通过网页滚动查看全部节点。'
   : '项目、模块与任务按标签分层排列。点击名称查看设置，使用左侧拖动手柄调整任务层级。')
 const editorDialogOpen = computed(() => Boolean(
   creating.value || selectedTask.value || creatingChildParentId.value,
@@ -556,7 +542,7 @@ function syncMapLayout(): void {
   }
   mapNaturalSize.value = {
     width: Math.max(960, Math.ceil(tree.scrollWidth)),
-    height: Math.max(420, Math.ceil(tree.scrollHeight)),
+    height: Math.max(180, Math.ceil(tree.scrollHeight)),
   }
   updateDependencyPaths()
 }
@@ -612,22 +598,11 @@ function updateDependencyPaths(): void {
   dependencyPaths.value = edges
 }
 
-function setMapZoom(nextZoom: number, clientX?: number, clientY?: number): void {
-  const viewport = mapViewport.value
-  const previousZoom = mapZoom.value
+function setMapZoom(nextZoom: number): void {
   const next = Math.min(1.6, Math.max(0.4, Math.round(nextZoom * 10) / 10))
-  if (!viewport || next === previousZoom) return
-  const viewportRect = viewport.getBoundingClientRect()
-  const anchorClientX = clientX ?? viewportRect.left + viewport.clientWidth / 2
-  const anchorClientY = clientY ?? viewportRect.top + viewport.clientHeight / 2
-  const anchorOffsetX = anchorClientX - viewportRect.left
-  const anchorOffsetY = anchorClientY - viewportRect.top
-  const naturalX = (viewport.scrollLeft + anchorOffsetX) / previousZoom
-  const naturalY = (viewport.scrollTop + anchorOffsetY) / previousZoom
+  if (next === mapZoom.value) return
   mapZoom.value = next
   void nextTick(() => {
-    viewport.scrollLeft = naturalX * next - anchorOffsetX
-    viewport.scrollTop = naturalY * next - anchorOffsetY
     scheduleMapLayout()
   })
 }
@@ -637,53 +612,20 @@ function changeMapZoom(delta: number): void {
 }
 
 function zoomMapAtPointer(event: WheelEvent): void {
-  setMapZoom(mapZoom.value + (event.deltaY < 0 ? 0.1 : -0.1), event.clientX, event.clientY)
+  setMapZoom(mapZoom.value + (event.deltaY < 0 ? 0.1 : -0.1))
 }
 
 function fitMap(): void {
   const viewport = mapViewport.value
   if (!viewport) return
-  const horizontalScale = (viewport.clientWidth - 28) / mapNaturalSize.value.width
-  const verticalScale = (viewport.clientHeight - 28) / mapNaturalSize.value.height
-  mapZoom.value = Math.min(1, Math.max(0.4, Math.min(horizontalScale, verticalScale)))
+  const availableWidth = Math.max(320, document.documentElement.clientWidth - 196)
+  const horizontalScale = availableWidth / mapNaturalSize.value.width
+  mapZoom.value = Math.min(1, Math.max(0.4, horizontalScale))
   mapZoom.value = Math.round(mapZoom.value * 10) / 10
   void nextTick(() => {
-    viewport.scrollTo({ left: 0, top: 0, behavior: 'smooth' })
+    viewport.scrollIntoView({ block: 'start', inline: 'start', behavior: 'smooth' })
     scheduleMapLayout()
   })
-}
-
-function startMapPan(event: PointerEvent): void {
-  if (event.button !== 0) return
-  const target = event.target as HTMLElement
-  if (target.closest('button, input, select, textarea, .task-row')) return
-  const viewport = mapViewport.value
-  if (!viewport) return
-  panState = {
-    pointerId: event.pointerId,
-    clientX: event.clientX,
-    clientY: event.clientY,
-    scrollLeft: viewport.scrollLeft,
-    scrollTop: viewport.scrollTop,
-  }
-  isPanning.value = true
-  viewport.setPointerCapture(event.pointerId)
-  event.preventDefault()
-}
-
-function moveMapPan(event: PointerEvent): void {
-  const viewport = mapViewport.value
-  if (!viewport || !panState || panState.pointerId !== event.pointerId) return
-  viewport.scrollLeft = panState.scrollLeft - (event.clientX - panState.clientX)
-  viewport.scrollTop = panState.scrollTop - (event.clientY - panState.clientY)
-}
-
-function finishMapPan(event: PointerEvent): void {
-  const viewport = mapViewport.value
-  if (!viewport || !panState || panState.pointerId !== event.pointerId) return
-  if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
-  panState = null
-  isPanning.value = false
 }
 
 onMounted(async () => {

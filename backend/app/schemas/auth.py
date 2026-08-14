@@ -32,7 +32,8 @@ class LoginRequest(BaseModel):
 class AccountResponse(BaseModel):
     """Authenticated account representation."""
 
-    email: EmailStr
+    email: EmailStr | None = None
+    phone: str | None = None
     profile: ProfileResponse
 
 
@@ -42,4 +43,3 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: AccountResponse
-

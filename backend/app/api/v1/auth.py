@@ -26,7 +26,7 @@ ServiceDatabase = Annotated[AsyncSession, Depends(get_service_db)]
 def account_response(user: User, profile: Profile) -> AccountResponse:
     """Convert ORM objects to the stable public account schema."""
 
-    return AccountResponse(email=user.email, profile=profile)
+    return AccountResponse(email=user.email, phone=user.phone, profile=profile)
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -76,7 +76,11 @@ async def login(payload: LoginRequest, db: ServiceDatabase) -> AuthResponse:
         .options(selectinload(User.profile))
         .where(User.email == str(payload.email))
     )
-    if user is None or not verify_password(payload.password, user.password_hash):
+    if (
+        user is None
+        or user.password_hash is None
+        or not verify_password(payload.password, user.password_hash)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email or password is incorrect",
@@ -99,4 +103,3 @@ async def read_current_account(current_user: CurrentUser) -> AccountResponse:
     """Return the account represented by the bearer token."""
 
     return account_response(current_user, current_user.profile)
-

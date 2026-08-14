@@ -1,9 +1,8 @@
 <template>
-  <RouterLink class="brand" to="/" aria-label="时间预算追踪器首页">
-    <span class="brand__mark" aria-hidden="true">TB</span>
-    <span>
-      <strong>时间预算</strong>
-      <small>项目与任务追踪器</small>
+  <RouterLink class="brand" to="/" aria-label="DayFlow 首页">
+    <span class="brand__mark" aria-hidden="true">DF</span>
+    <span class="brand__copy">
+      <strong>DayFlow</strong>
     </span>
   </RouterLink>
 </template>

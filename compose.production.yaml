@@ -1,23 +1,4 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
   backend:
     build:
       context: ./backend
@@ -26,11 +7,11 @@ services:
       APP_ENVIRONMENT: production
       APP_SECRET_KEY: ${APP_SECRET_KEY}
       APP_DATABASE_URL: ${APP_DATABASE_URL}
+      APP_DATABASE_ROLE: ${APP_DATABASE_ROLE:-dayflow_app}
       APP_CORS_ORIGINS: ${APP_CORS_ORIGINS}
-      APP_ACCESS_TOKEN_EXPIRE_MINUTES: ${APP_ACCESS_TOKEN_EXPIRE_MINUTES:-720}
-    depends_on:
-      postgres:
-        condition: service_healthy
+      APP_AUTH_PROVIDER: ${APP_AUTH_PROVIDER:-supabase}
+      APP_SUPABASE_URL: ${APP_SUPABASE_URL}
+      APP_SUPABASE_PUBLISHABLE_KEY: ${APP_SUPABASE_PUBLISHABLE_KEY}
     healthcheck:
       test:
         [
@@ -48,12 +29,11 @@ services:
       context: ./frontend
       args:
         VITE_API_BASE_URL: /api/v1
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY}
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_healthy
-
-volumes:
-  postgres_data:

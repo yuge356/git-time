@@ -1,6 +1,13 @@
 """Account and profile API behavior tests."""
 
+from uuid import uuid4
+
+import pytest
 from httpx import AsyncClient
+
+from app.api import dependencies
+from app.core.config import settings
+from app.core.supabase_auth import SupabaseIdentity
 
 REGISTER_PAYLOAD = {
     "email": "learner@example.com",
@@ -82,3 +89,34 @@ async def test_profile_requires_authentication(client: AsyncClient) -> None:
     response = await client.patch("/api/v1/profiles/me", json={"display_name": "No access"})
     assert response.status_code == 401
 
+
+async def test_supabase_identity_creates_application_profile(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A verified hosted identity is mirrored without storing its password."""
+
+    identity = SupabaseIdentity(
+        id=uuid4(),
+        email=None,
+        phone="+8613800138000",
+        user_metadata={"username": "phone_user", "display_name": "手机用户"},
+    )
+
+    async def verified_identity(_: str) -> SupabaseIdentity:
+        return identity
+
+    settings.auth_provider = "supabase"
+    monkeypatch.setattr(dependencies, "verify_supabase_access_token", verified_identity)
+
+    response = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": "Bearer supabase-access-token"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["profile"]["id"] == str(identity.id)
+    assert body["email"] is None
+    assert body["phone"] == identity.phone
+    assert body["profile"]["username"] == "phone_user"

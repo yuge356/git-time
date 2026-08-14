@@ -15,7 +15,7 @@
           <div>
             <strong>{{ auth.user.profile.display_name }}</strong>
             <span>@{{ auth.user.profile.username }}</span>
-            <small>{{ auth.user.email }}</small>
+            <small>{{ accountIdentifier }}</small>
           </div>
         </div>
 
@@ -106,8 +106,10 @@ const form = reactive({
 
 const initials = computed(() => {
   const name = auth.user?.profile.display_name.trim()
-  return name ? name.slice(0, 2).toUpperCase() : 'TB'
+  return name ? name.slice(0, 2).toUpperCase() : 'DF'
 })
+
+const accountIdentifier = computed(() => auth.user?.phone ?? auth.user?.email ?? '')
 
 async function save(): Promise<void> {
   if (!auth.user) return

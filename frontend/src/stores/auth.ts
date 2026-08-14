@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 
 import { authService } from '@/services/auth'
-import { TOKEN_STORAGE_KEY } from '@/services/http'
 import type {
   Account,
   LoginPayload,
@@ -20,7 +19,7 @@ const FIRST_LOGIN_INTRO_STORAGE_KEY = 'time-budget:first-login-intro-owner'
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
-    token: localStorage.getItem(TOKEN_STORAGE_KEY),
+    token: null,
     user: null,
     initialized: false,
     loading: false,
@@ -36,7 +35,6 @@ export const useAuthStore = defineStore('auth', {
       this.token = token
       this.user = user
       this.showPageIntros = showPageIntros
-      localStorage.setItem(TOKEN_STORAGE_KEY, token)
       if (showPageIntros) {
         sessionStorage.setItem(FIRST_LOGIN_INTRO_STORAGE_KEY, user.profile.id)
       } else {
@@ -48,7 +46,6 @@ export const useAuthStore = defineStore('auth', {
       this.token = null
       this.user = null
       this.showPageIntros = false
-      localStorage.removeItem(TOKEN_STORAGE_KEY)
       sessionStorage.removeItem(FIRST_LOGIN_INTRO_STORAGE_KEY)
     },
 
@@ -79,7 +76,9 @@ export const useAuthStore = defineStore('auth', {
     async initialize(): Promise<void> {
       if (this.initialized) return
       try {
-        if (this.token) {
+        const session = await authService.currentSession()
+        if (session) {
+          this.token = session.access_token
           this.user = await authService.currentAccount()
           this.showPageIntros =
             sessionStorage.getItem(FIRST_LOGIN_INTRO_STORAGE_KEY) === this.user.profile.id
@@ -91,8 +90,12 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    logout(): void {
-      this.clearSession()
+    async logout(): Promise<void> {
+      try {
+        await authService.logout()
+      } finally {
+        this.clearSession()
+      }
     },
   },
 })

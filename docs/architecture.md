@@ -6,7 +6,8 @@
 浏览器
 ├─ Vue 页面与组件
 ├─ Pinia 业务状态
-├─ Axios HTTP / WebSocket
+├─ Supabase JS：注册、登录、会话刷新
+├─ Axios HTTP / WebSocket：携带 Supabase Access Token
 └─ Dexie IndexedDB
    ├─ 计时快照与 Session 待同步队列
    ├─ 任务、每日计划缓存
@@ -14,13 +15,14 @@
           │
           ▼
 FastAPI
-├─ API 路由：认证、任务、计时、计划、统计、伙伴、分享、通知
+├─ 向 Supabase Auth /auth/v1/user 校验 Access Token
+├─ API 路由：任务、计时、计划、统计、伙伴、分享、通知
 ├─ Pydantic：请求验证与响应边界
 ├─ Service：所有权、状态机、预算、聚合、分享权限
 └─ SQLAlchemy Async：事务和数据访问
           │
           ▼
-PostgreSQL
+Supabase 托管 PostgreSQL
 ├─ 表、外键、检查约束、唯一索引
 ├─ Alembic 版本迁移
 ├─ 所有者一致性触发器
@@ -62,12 +64,24 @@ PostgreSQL
 
 ## 3. 安全边界
 
-- 密码使用 Argon2 哈希，访问令牌使用带过期时间的 JWT。
+- Supabase Auth 单独保存密码并签发/刷新访问令牌；DayFlow 数据表不保存 Supabase 密码或密码哈希。
+- Supabase 托管项目启用原生 Phone provider 会强制要求短信供应商。MVP 不接入短信，因此前端把已校验的 E.164
+  手机号确定性映射为 `phone.<digits>@phone.dayflow.invalid` 内部邮箱身份；FastAPI 和数据库触发器再还原手机号，
+  且不会把内部别名暴露到业务 API。
+- 前端只持有公开的 publishable key，不得放置 service role key、数据库密码或 JWT 私钥。
+- FastAPI 用公开 key 调用 Supabase Auth 用户接口校验令牌，兼容项目当前及以后更换的 JWT 签名方式。
 - 浏览器不持有数据库凭据。
 - 每次认证请求设置事务级 `app.current_user_id`。
+- FastAPI 的池连接建立后执行 `SET ROLE dayflow_app`；该角色无登录、无 `BYPASSRLS`，数据库密码对应的
+  管理员身份不会进入业务查询。`postgres` 仅获得进入该角色所需的 `SET TRUE` 成员选项，保持
+  `INHERIT FALSE`，因此连接建立前不会自动继承业务权限。Alembic 使用独立连接，仍可执行迁移。
 - PostgreSQL RLS 限制账户、任务、Session、计划、伙伴、分享、鼓励和通知可见范围。
 - API 服务层重复检查所有权、伙伴状态和屏蔽状态，形成应用层与数据库层双重约束。
-- CORS 来源、JWT 密钥和数据库连接均从环境变量读取。
+- CORS 来源、Supabase 公共配置和数据库连接均从环境变量读取。
+
+`APP_AUTH_PROVIDER=local` 仅用于离线开发和自动化测试，保留旧的 FastAPI 邮箱注册接口；MVP 实际运行使用
+`APP_AUTH_PROVIDER=supabase`。Supabase 账户首次访问 API 时由数据库触发器（同库）或 API 兼容桥（本地库）
+建立 `public.users` 与 `profiles` 镜像。WebSocket 与普通 HTTP 请求共用同一令牌校验流程。
 
 ## 4. 前后端模块
 
@@ -82,3 +96,6 @@ PostgreSQL
 | 分享与鼓励 | plan shares、encouragements |
 | 通知中心 | notifications、WebSocket |
 | IndexedDB 同步 | 幂等客户端 UUID API |
+
+前端通过统一错误翻译层处理 FastAPI `detail`、Axios 网络错误、IndexedDB DOMException 和本地状态错误。
+当前中文界面只展示中文提醒；翻译映射与业务异常分离，后续增加英文界面时可以复用同一错误标识和状态码。

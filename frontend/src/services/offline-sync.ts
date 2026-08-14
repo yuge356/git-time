@@ -1,6 +1,11 @@
 import axios from 'axios'
 
-import { localDb, pendingSyncCount, saveCachedDailyPlan } from '@/db/local'
+import {
+  localDb,
+  pendingSyncCount,
+  saveCachedDailyPlan,
+  saveCachedTask,
+} from '@/db/local'
 import { http } from '@/services/http'
 import type { DailyPlan, DailyPlanItem } from '@/types/daily-plan'
 import type { SyncOperation } from '@/types/offline'
@@ -85,13 +90,13 @@ async function replayOperation(operation: SyncOperation): Promise<void> {
   if (operation.entity_type === 'task') {
     if (operation.action === 'create') {
       const { data } = await http.post<Task>('/tasks', operation.payload)
-      await localDb.cachedTasks.put(data)
+      await saveCachedTask(data)
     } else if (operation.action === 'update') {
       const { data } = await http.patch<Task>(
         `/tasks/${operation.entity_id}`,
         operation.payload,
       )
-      await localDb.cachedTasks.put(data)
+      await saveCachedTask(data)
     } else {
       await http.delete(`/tasks/${operation.entity_id}`)
       await localDb.cachedTasks.delete(operation.entity_id)

@@ -1,5 +1,6 @@
-import { http, TOKEN_STORAGE_KEY } from './http'
 import type { Notification } from '@/types/sharing'
+import { http } from './http'
+import { supabase } from './supabase'
 
 export const notificationService = {
   async list(): Promise<Notification[]> {
@@ -19,8 +20,10 @@ export const notificationService = {
     return data
   },
 
-  socketUrl(): string | null {
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY)
+  async socketUrl(): Promise<string | null> {
+    const { data, error } = await supabase.auth.getSession()
+    if (error) throw error
+    const token = data.session?.access_token
     if (!token) return null
     const base = new URL(
       http.defaults.baseURL ?? '/api/v1',
