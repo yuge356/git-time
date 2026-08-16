@@ -33,11 +33,15 @@ backend/tests/          SQLite API 回归测试
 docs/                   架构、数据库、离线同步、API 与部署文档
 compose.yaml            本地开发 PostgreSQL
 compose.production.yaml 完整生产容器编排
+vercel.json             Vercel Services：Vite 前端 `/` + FastAPI 后端 `/api`
 ```
 
 ## 快速启动
 
 完整步骤见 [部署教程](docs/deployment.md)。
+
+仓库也支持在同一个 Vercel Project 中通过 Vercel Services 部署前后端；Vercel 配置、环境变量和上线步骤见
+[Vercel Services 部署](docs/deployment.md#二vercel-services-部署)。
 
 ```powershell
 # 1. 按 docs/supabase-setup.md 配置 Supabase Auth 与数据库连接

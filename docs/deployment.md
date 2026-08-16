@@ -91,7 +91,70 @@ MVP 使用 Supabase 控制台提供的数据库备份/导出能力。手工运�
 当前实时通知管理器在单个后端进程内工作，因此生产编排固定为一个 Uvicorn worker。通知已经持久化，
 短暂断线不会丢失；如果未来水平扩容，需要引入跨进程发布订阅后再增加副本。
 
-## 二、本地开发安装
+## 二、Vercel Services 部署
+
+仓库根目录的 `vercel.json` 使用 Vercel Services 稳定版配置，在同一个 Vercel Project 中声明两个服务：
+
+- `frontend`：服务根目录为 `frontend/`，由 Vercel 根据 `package.json` 自动识别为 Vite；
+- `backend`：服务根目录为 `backend/`，由 Vercel 根据 `pyproject.toml` 自动识别为 FastAPI，ASGI 入口为
+  `app.main:app`；
+- `/api/*` 请求转发到 `backend`，其他请求转发到 `frontend`。现有前端默认使用
+  `VITE_API_BASE_URL=/api/v1`，因此生产环境保持同源访问，无需硬编码后端域名。
+
+### 1. 创建或更新 Vercel Project
+
+1. 在 Vercel 导入本仓库，或打开已经关联本仓库的 Project。
+2. 在 **Settings → Build and Deployment** 中确认 Framework Preset 为 **Services**。
+3. 确认 Production Branch 指向实际生产分支；本仓库默认使用 `main`。
+4. 不要把 Project Root Directory 改为 `frontend` 或 `backend`；`vercel.json` 必须从仓库根目录读取。
+
+### 2. 配置环境变量
+
+在 **Settings → Environment Variables** 中为 Production（需要时也勾选 Preview）配置：
+
+```text
+# 前端构建时变量
+VITE_API_BASE_URL=/api/v1
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<Supabase publishable key>
+
+# FastAPI 运行时变量
+APP_ENVIRONMENT=production
+APP_SECRET_KEY=<至少 32 个随机字符>
+APP_DATABASE_URL=<Supabase Session pooler URI，密码必须 URL 编码>
+APP_DATABASE_ROLE=dayflow_app
+APP_AUTH_PROVIDER=supabase
+APP_SUPABASE_URL=https://<project-ref>.supabase.co
+APP_SUPABASE_PUBLISHABLE_KEY=<Supabase publishable key>
+APP_CORS_ORIGINS=["https://<Vercel 生产域名>"]
+```
+
+不要提交数据库密码、`APP_SECRET_KEY` 或 `.env` 文件。Vite 的 `VITE_*` 变量会进入浏览器构建产物，只能放
+publishable key，不能放 Supabase `service_role` key。
+
+### 3. 部署与验证
+
+保存环境变量后，在 **Deployments** 打开最新部署并点击 **Redeploy**；首次从 Git 推送触发的新部署可直接等待
+构建完成。部署成功后至少验证：
+
+```text
+https://<生产域名>/
+https://<生产域名>/api/v1/...
+```
+
+后端健康接口当前定义为 `/health`，而 Vercel 对外只公开 `/api/*` 给后端服务，因此它不作为公开部署探针。
+可通过登录、读取项目列表等现有 `/api/v1` 请求确认后端与 Supabase 连接正常。
+
+Vercel 部署不会自动执行 Alembic。发布包含数据库迁移的版本前，先在受控终端使用同一个
+`APP_DATABASE_URL` 执行 `alembic upgrade head`，确认成功后再部署应用。
+
+### 4. Vercel 运行限制
+
+FastAPI 在 Vercel 上以函数运行。普通 HTTP API 可按上述方式部署；现有 `/api/v1/ws/notifications` WebSocket
+实时通知需要长期连接，不能把它视为 Vercel 函数上的可靠常驻通道。通知数据仍会持久化，若生产环境必须保持
+实时推送，应为 WebSocket 单独使用支持长连接的服务，或后续改用 Supabase Realtime。
+
+## 三、本地开发安装
 
 ### 1. 安装软件
 
