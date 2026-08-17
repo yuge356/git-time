@@ -20,6 +20,7 @@ export interface AuthResponse {
   access_token: string
   token_type: 'bearer'
   user: Account
+  onboarding_completed: boolean
 }
 
 export interface RegisterPayload {

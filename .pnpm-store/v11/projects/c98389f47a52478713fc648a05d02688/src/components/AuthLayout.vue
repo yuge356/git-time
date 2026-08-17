@@ -6,24 +6,24 @@
 
         <div class="auth-login-welcome">
           <p class="eyebrow">
-            {{ authMode === 'login' ? 'WELCOME TO DAYFLOW' : 'START WITH DAYFLOW' }}
+            {{ authMode === 'login' ? '欢迎使用 DAYFLOW' : '从 DAYFLOW 开始' }}
           </p>
           <h1 id="login-welcome-title">
-            {{ authMode === 'login' ? 'Hello, Welcome!' : 'Create with clarity.' }}
+            {{ authMode === 'login' ? '你好，欢迎回来' : '从清晰的计划开始' }}
           </h1>
           <p>
-            {{ authMode === 'login' ? "Don't have an account?" : 'Already have an account?' }}
+            {{ authMode === 'login' ? '还没有账号？' : '已经有账号？' }}
           </p>
           <button
             class="auth-login-register"
             type="button"
             @click="emit('switch-mode', authMode === 'login' ? 'register' : 'login')"
           >
-            {{ authMode === 'login' ? 'Register' : 'Login' }}
+            {{ authMode === 'login' ? '注册' : '登录' }}
           </button>
         </div>
 
-        <p class="auth-login-tagline">PLAN · FOCUS · FLOW</p>
+        <p class="auth-login-tagline">计划 · 专注 · 流动</p>
       </section>
 
       <section class="auth-login-panel" aria-label="登录表单">

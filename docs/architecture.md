@@ -6,7 +6,7 @@
 浏览器
 ├─ Vue 页面与组件
 ├─ Pinia 业务状态
-├─ Supabase JS：注册、登录、会话刷新
+├─ Supabase JS：注册、登录、会话刷新、首次指引状态
 ├─ Axios HTTP / WebSocket：携带 Supabase Access Token
 └─ Dexie IndexedDB
    ├─ 计时快照与 Session 待同步队列
@@ -62,9 +62,19 @@ Supabase 托管 PostgreSQL
 通知先写入数据库，再通过 WebSocket 尝试推送。浏览器断线后重新读取持久化通知，因此实时连接不是
 可靠性的唯一来源。
 
+### 公开入口与首次使用
+
+未登录访问 `/` 时由 Vue Router 显示公开欢迎页，受保护业务路由仍会跳转到中文登录页。注册时前端在
+Supabase Auth `user_metadata` 中写入 `onboarding_completed=false`；路由守卫据此把新账号导向
+`/onboarding`。完成或跳过指引时调用 Supabase `updateUser` 写入 `onboarding_completed=true` 和完成时间。
+
+该字段只控制非安全性质的界面流程，不参与 API 授权或 RLS 判断。升级前已经存在且缺少该字段的账号默认
+视为已完成，因此不会被错误拦截；业务 `profiles` 表和 PostgreSQL schema 均无需修改。
+
 ## 3. 安全边界
 
 - Supabase Auth 单独保存密码并签发/刷新访问令牌；DayFlow 数据表不保存 Supabase 密码或密码哈希。
+- 首次使用状态保存在可由当前用户更新的 Auth `user_metadata`，只用于前端导航，不能作为权限依据。
 - Supabase 托管项目启用原生 Phone provider 会强制要求短信供应商。MVP 不接入短信，因此前端把已校验的 E.164
   手机号确定性映射为 `phone.<digits>@phone.dayflow.invalid` 内部邮箱身份；FastAPI 和数据库触发器再还原手机号，
   且不会把内部别名暴露到业务 API。
@@ -87,7 +97,7 @@ Supabase 托管 PostgreSQL
 
 | 前端 | 后端 |
 |---|---|
-| 登录、注册、资料 | auth、profiles |
+| 欢迎页、登录、注册、首次指引、资料 | auth、profiles |
 | 思维导图/标签任务视图、弹窗编辑、预算提示 | tasks、task service |
 | 计时器、历史、离线队列 | sessions、session state machine |
 | 今日计划、打卡 | daily plans、check-ins |

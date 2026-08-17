@@ -8,7 +8,15 @@ export const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/today',
+      name: 'welcome',
+      component: () => import('@/views/WelcomeView.vue'),
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/onboarding',
+      name: 'onboarding',
+      component: () => import('@/views/OnboardingView.vue'),
+      meta: { requiresAuth: true, onboardingOnly: true },
     },
     {
       path: '/tasks',
@@ -78,6 +86,16 @@ router.beforeEach(async (to) => {
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+  if (auth.requiresOnboarding && to.name !== 'onboarding') {
+    const redirect = to.meta.requiresAuth ? to.fullPath : undefined
+    return {
+      name: 'onboarding',
+      ...(redirect ? { query: { redirect } } : {}),
+    }
+  }
+  if (to.meta.onboardingOnly && auth.isAuthenticated && !auth.requiresOnboarding) {
+    return { name: 'today' }
   }
   if (to.meta.guestOnly && auth.isAuthenticated) {
     return { name: 'today' }

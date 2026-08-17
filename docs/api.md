@@ -50,7 +50,9 @@
 `GET /analytics/summary` 必须提供 `date_from=YYYY-MM-DD` 与 `date_to=YYYY-MM-DD`，范围最多
 366 天。
 
-Supabase Auth 的客户端调用为 `signUp({ email, password })`、`signInWithPassword(...)` 和 `signOut()`；
+Supabase Auth 的客户端调用为 `signUp({ email, password, options.data })`、`signInWithPassword(...)`、
+`updateUser({ data })` 和 `signOut()`；注册元数据中的 `onboarding_completed=false` 标记新账号需要首次使用
+指引，完成或跳过时更新为 `true`。该标记不参与 FastAPI 权限判断或 PostgreSQL RLS。
 邮箱账号直接使用邮箱，手机号账号使用确定性的 `phone.<digits>@phone.dayflow.invalid` 内部别名，因此不需要
 Supabase Phone provider 或短信供应商。DayFlow 不代理或记录明文密码；`GET /auth/me` 会校验 Supabase
 令牌、隐藏内部别名并返回真实业务资料。
