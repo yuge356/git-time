@@ -27,6 +27,13 @@
   --gradient-blue: linear-gradient(135deg, #6fa8ff 0%, #4f83f1 100%);
   --shadow-card: 0 18px 45px rgb(96 76 200 / 8%);
   --shadow-pop: 0 12px 32px rgb(124 92 252 / 22%);
+  /* 轻度玻璃层：保持接近实色，只用于容器层级，不改变页面主背景。 */
+  --glass-surface: color-mix(in srgb, var(--surface) 94%, transparent);
+  --glass-surface-strong: color-mix(in srgb, var(--surface) 97%, transparent);
+  --glass-border: color-mix(in srgb, var(--line) 78%, transparent);
+  --glass-shadow: 0 10px 28px rgb(52 44 96 / 7%);
+  --glass-shadow-raised: 0 14px 34px rgb(45 38 84 / 12%);
+  --glass-blur: 8px;
 }
 
 * {
@@ -140,10 +147,7 @@ a {
   justify-content: space-between;
   padding: clamp(28px, 5vw, 72px);
   overflow: hidden;
-  background:
-    radial-gradient(circle at 88% 8%, rgb(253 126 168 / 45%), transparent 36%),
-    radial-gradient(circle at 8% 92%, rgb(111 168 255 / 35%), transparent 40%),
-    linear-gradient(150deg, #8e6bff 0%, #6c47f5 58%, #5b3df5 100%);
+  background: #6c47f5;
 }
 
 .auth-intro .brand strong {
@@ -228,9 +232,7 @@ a {
   min-height: 100vh;
   padding: clamp(30px, 4.5vw, 66px);
   border-right: 1px solid #e8e3f5;
-  background:
-    linear-gradient(135deg, rgb(124 92 252 / 5%), transparent 48%),
-    #f7f6fb;
+  background: #f7f6fb;
 }
 
 .auth-layout--minimal .auth-intro::after {
@@ -712,6 +714,68 @@ a {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.auth-register-method {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #f1f1f3;
+}
+
+.auth-register-method button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #777481;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.auth-register-method button.is-active {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: 0 2px 8px rgb(41 35 66 / 8%);
+}
+
+.auth-phone-field {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.42fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.auth-phone-field:has(.auth-custom-dial-code) {
+  grid-template-columns: minmax(130px, 0.34fr) 88px minmax(0, 1fr);
+}
+
+.auth-country-select select,
+.auth-custom-dial-code input {
+  width: 100%;
+  min-height: 54px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  outline: none;
+  background: #f1f1f3;
+  color: #1f1d2b;
+  font: inherit;
+}
+
+.auth-country-select select:focus,
+.auth-custom-dial-code input:focus {
+  border-color: rgb(124 92 252 / 45%);
+  background: #fff;
+}
+
+.auth-phone-hint {
+  margin: -8px 2px 0;
+  color: #888592;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .auth-login-field,
 .auth-login-input {
   display: block;
@@ -915,6 +979,11 @@ a {
   }
 
   .auth-register-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-phone-field,
+  .auth-phone-field:has(.auth-custom-dial-code) {
     grid-template-columns: 1fr;
   }
 }
@@ -2193,7 +2262,7 @@ a {
 
 .task-tree--cards .task-row--project {
   border-left-color: var(--primary);
-  background: linear-gradient(135deg, #fff, #faf8ff);
+  background: #faf8ff;
 }
 
 .task-tree--cards .task-row--module {
@@ -2623,7 +2692,7 @@ a {
 
 .task-row--project {
   border-color: #d7d0f8;
-  background: linear-gradient(135deg, #fff 0%, #faf9ff 100%);
+  background: #faf9ff;
 }
 
 .task-row--module {
@@ -2664,24 +2733,7 @@ a {
 .task-tree--mindmap .task-row--project::before,
 .task-tree--mindmap .task-row--module::before,
 .task-tree--mindmap .task-row--task::before {
-  position: absolute;
-  top: -1px;
-  bottom: -1px;
-  left: 0;
-  width: 6px;
-  border-radius: 14px 0 0 14px;
-  background: var(--gradient-purple);
-  content: "";
-}
-
-.task-tree--mindmap .task-row--module::before {
-  width: 5px;
-  background: #9e89ef;
-}
-
-.task-tree--mindmap .task-row--task::before {
-  width: 5px;
-  background: #bbaef2;
+  content: none;
 }
 
 .task-tree--mindmap .task-row--module:hover,
@@ -3280,9 +3332,7 @@ a {
   top: 24px;
   padding: 30px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 100% 0%, rgb(142 107 255 / 24%), transparent 42%),
-    var(--primary-soft);
+  background: var(--primary-soft);
 }
 
 .task-help h2 {
@@ -3636,6 +3686,14 @@ body.task-editor-modal-open {
   margin-left: 0;
 }
 
+.active-timer-bar__notice {
+  max-width: 260px;
+  color: #8a5b18;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .active-timer-bar__error {
   position: absolute;
   right: 12px;
@@ -3655,6 +3713,7 @@ body.task-editor-modal-open {
   width: min(1040px, calc(100% - 40px));
   margin: 0 auto;
   padding: 38px 0 72px;
+  background: #fff;
 }
 
 .today-heading {
@@ -3701,9 +3760,7 @@ body.task-editor-modal-open {
   padding: 22px;
   border: 1px solid rgb(124 92 252 / 22%);
   border-radius: 22px;
-  background:
-    radial-gradient(circle at 92% 8%, rgb(255 215 235 / 55%), transparent 34%),
-    linear-gradient(135deg, #fff 0%, #f8f6ff 100%);
+  background: #fff;
   box-shadow: var(--shadow-card);
 }
 
@@ -3753,6 +3810,15 @@ body.task-editor-modal-open {
   font-size: 13px;
 }
 
+.focus-timer__body .focus-timer__notice {
+  padding: 9px 11px;
+  border: 1px solid #f0d6aa;
+  border-radius: 10px;
+  background: #fff8eb;
+  color: #8a5b18;
+  line-height: 1.5;
+}
+
 .focus-timer__actions {
   display: flex;
   align-items: center;
@@ -3776,9 +3842,7 @@ body.task-editor-modal-open {
   padding: 22px;
   border: 1px solid rgb(124 92 252 / 16%);
   border-radius: 22px;
-  background:
-    radial-gradient(circle at 94% 4%, rgb(224 216 255 / 48%), transparent 31%),
-    #fff;
+  background: #fff;
   box-shadow: var(--shadow-card);
 }
 
@@ -4113,7 +4177,7 @@ body.task-editor-modal-open {
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--task-progress);
-  background: linear-gradient(90deg, rgb(124 92 252 / 17%), rgb(124 92 252 / 9%));
+  background: rgb(124 92 252 / 12%);
   content: "";
   pointer-events: none;
   transition: width 500ms linear;
@@ -4138,7 +4202,7 @@ body.task-editor-modal-open {
 }
 
 .daily-item-list li.daily-item--timing::before {
-  background: linear-gradient(90deg, rgb(124 92 252 / 24%), rgb(124 92 252 / 11%));
+  background: rgb(124 92 252 / 18%);
 }
 
 .daily-item-list li.daily-item--overrun {
@@ -4146,11 +4210,11 @@ body.task-editor-modal-open {
 }
 
 .daily-item-list li.daily-item--overrun::before {
-  background: linear-gradient(90deg, rgb(224 82 110 / 22%), rgb(224 82 110 / 10%));
+  background: rgb(224 82 110 / 15%);
 }
 
 .daily-item-list li.daily-item--done::before {
-  background: linear-gradient(90deg, rgb(47 191 143 / 18%), rgb(47 191 143 / 7%));
+  background: rgb(47 191 143 / 12%);
 }
 
 .daily-check {
@@ -4167,7 +4231,7 @@ body.task-editor-modal-open {
 
 .daily-check--done {
   border-color: transparent;
-  background: var(--gradient-purple);
+  background: var(--primary);
   box-shadow: 0 6px 14px rgb(124 92 252 / 30%);
 }
 
@@ -4429,7 +4493,7 @@ body.task-editor-modal-open {
 .metric-card--lilac,
 .metric-card--sky {
   border-color: rgb(117 89 245 / 8%);
-  background: linear-gradient(145deg, #e2ddff, #d0c8ff);
+  background: #ddd7ff;
 }
 
 .metric-card__topline {
@@ -5249,7 +5313,7 @@ body.task-editor-modal-open {
   padding: 14px;
   border: 1px solid #ece8fa;
   border-radius: 16px;
-  background: linear-gradient(145deg, #fff, #faf9ff);
+  background: #fff;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
@@ -6760,5 +6824,87 @@ body.task-editor-modal-open {
 
   .partner-management > summary {
     padding: 18px;
+  }
+}
+
+/*
+ * 轻度玻璃拟态增强
+ * - 页面背景、正文、表单和图表仍使用稳定实色；
+ * - 仅卡片、导航侧栏和浮层获得低透明度、弱模糊与克制阴影；
+ * - 使用现有设计令牌，未来主题切换时可自然继承对应 surface/line。
+ */
+.app-sidebar {
+  border-right-color: var(--glass-border);
+  background: var(--surface);
+  background: var(--glass-surface-strong);
+  box-shadow: 3px 0 16px rgb(55 45 96 / 4%);
+}
+
+.auth-login-shell,
+.welcome-showcase,
+.welcome-features,
+.onboarding-shell,
+.profile-card,
+.task-list-panel,
+.focus-timer,
+.activity-calendar,
+.today-checklist,
+.analytics-card {
+  border-color: var(--glass-border);
+  background: var(--surface);
+  background: var(--glass-surface-strong);
+  box-shadow: var(--glass-shadow);
+}
+
+.task-action-menu__panel,
+.task-editor-modal,
+.trend-calendar__popover,
+.active-timer-bar {
+  border-color: var(--glass-border);
+  background: var(--surface);
+  background: var(--glass-surface);
+  box-shadow: var(--glass-shadow-raised);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-sidebar,
+  .auth-login-shell,
+  .welcome-showcase,
+  .welcome-features,
+  .onboarding-shell,
+  .profile-card,
+  .task-list-panel,
+  .focus-timer,
+  .activity-calendar,
+  .today-checklist,
+  .analytics-card {
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: blur(var(--glass-blur));
+  }
+
+  .task-action-menu__panel,
+  .task-editor-modal,
+  .trend-calendar__popover,
+  .active-timer-bar {
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --glass-surface: color-mix(in srgb, var(--surface) 97%, transparent);
+    --glass-surface-strong: color-mix(in srgb, var(--surface) 99%, transparent);
+    --glass-shadow: 0 7px 18px rgb(52 44 96 / 5%);
+    --glass-shadow-raised: 0 10px 24px rgb(45 38 84 / 9%);
+    --glass-blur: 4px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-surface: var(--surface);
+    --glass-surface-strong: var(--surface);
+    --glass-blur: 0px;
   }
 }

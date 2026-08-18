@@ -1,12 +1,13 @@
 """Hierarchical task CRUD and time-budget endpoints."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 
 from app.api.dependencies import CurrentUser, DatabaseSession
+from app.models.daily_plan import DailyPlan, DailyPlanItem
 from app.models.session import Session, SessionStatus
 from app.models.task import (
     Task,
@@ -254,6 +255,25 @@ async def update_task(
         )
     if "status" in changes:
         task.completed_at = datetime.now(UTC) if task.status == TaskStatus.DONE else None
+    if "estimated_seconds" in changes:
+        active_plan_ids = select(DailyPlan.id).where(
+            DailyPlan.owner_id == current_user.id,
+            DailyPlan.plan_date >= date.today(),
+            DailyPlan.deleted_at.is_(None),
+        )
+        await db.execute(
+            update(DailyPlanItem)
+            .where(
+                DailyPlanItem.owner_id == current_user.id,
+                DailyPlanItem.task_id == task.id,
+                DailyPlanItem.daily_plan_id.in_(active_plan_ids),
+                DailyPlanItem.deleted_at.is_(None),
+            )
+            .values(
+                estimated_seconds=task.estimated_seconds,
+                updated_at=datetime.now(UTC),
+            )
+        )
 
     await db.flush()
     await db.refresh(task)

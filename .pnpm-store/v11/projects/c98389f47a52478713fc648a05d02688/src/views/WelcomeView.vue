@@ -117,18 +117,18 @@ const slides = [
     alt: 'DayFlow 今日任务与专注计时界面',
   },
   {
-    kicker: '项目',
-    title: '用清晰结构承接复杂计划',
-    description: '在项目、模块和任务之间建立可执行的层级关系。',
-    image: '/welcome-tasks.png',
-    alt: 'DayFlow 项目与任务管理界面',
-  },
-  {
     kicker: '时间统计',
     title: '让每一段投入都有回响',
     description: '从时间分布和趋势中看见节奏，及时修正计划。',
     image: '/welcome-analytics.png',
     alt: 'DayFlow 时间统计与趋势分析界面',
+  },
+  {
+    kicker: '项目',
+    title: '用清晰结构承接复杂计划',
+    description: '在项目、模块和任务之间建立可执行的层级关系。',
+    image: '/welcome-tasks.png',
+    alt: 'DayFlow 项目与任务管理界面',
   },
 ] as const
 

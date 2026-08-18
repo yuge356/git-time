@@ -54,6 +54,11 @@ async function accountForSession(session: Session): Promise<AuthResponse> {
 }
 
 export const authService = {
+  async registrationCountry(): Promise<string> {
+    const { data } = await http.get<{ country_code: string }>('/auth/registration-country')
+    return data.country_code
+  },
+
   async register(payload: RegisterPayload): Promise<AuthResponse> {
     requireSupabaseConfiguration()
     const identifier = validatedIdentifier(payload.identifier)

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -21,6 +21,24 @@ from app.schemas.auth import (
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 ServiceDatabase = Annotated[AsyncSession, Depends(get_service_db)]
+
+
+@router.get("/registration-country")
+async def registration_country(request: Request) -> dict[str, str]:
+    """Return the country inferred by the hosting proxy, defaulting to China.
+
+    This endpoint is a registration convenience only. The header is never
+    used for authorization, billing or other security decisions.
+    """
+
+    country_code = (
+        request.headers.get("x-vercel-ip-country")
+        or request.headers.get("cf-ipcountry")
+        or "CN"
+    ).strip().upper()
+    if len(country_code) != 2 or not country_code.isalpha():
+        country_code = "CN"
+    return {"country_code": country_code}
 
 
 def account_response(user: User, profile: Profile) -> AccountResponse:

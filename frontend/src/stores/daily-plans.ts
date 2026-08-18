@@ -551,6 +551,55 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       }
     },
 
+    async syncLinkedTaskEstimate(
+      ownerId: string,
+      taskId: string,
+      estimatedSeconds: number,
+    ): Promise<void> {
+      const normalizedSeconds = Math.max(0, Math.round(estimatedSeconds))
+      const today = localDateString()
+      const plans = await localDb.cachedDailyPlans
+        .where('owner_id')
+        .equals(ownerId)
+        .toArray()
+      let loadedPlanChanged = false
+
+      for (const plan of plans) {
+        if (plan.plan_date < today) continue
+        const linkedItems = plan.items.filter((item) => item.task_id === taskId)
+        if (linkedItems.length === 0) continue
+        const linkedIds = new Set(linkedItems.map((item) => item.id))
+        const updatedPlan = recalculatePlan({
+          ...plan,
+          items: plan.items.map((item) =>
+            linkedIds.has(item.id)
+              ? {
+                  ...item,
+                  estimated_seconds: normalizedSeconds,
+                  updated_at: new Date().toISOString(),
+                }
+              : item,
+          ),
+        })
+        await saveCachedDailyPlan(updatedPlan)
+        if (this.plan?.id === updatedPlan.id) {
+          this.plan = updatedPlan
+          loadedPlanChanged = true
+        }
+        for (const item of linkedItems) {
+          await enqueueSyncOperation(ownerId, 'daily_plan_item', item.id, 'update', {
+            daily_plan_id: plan.id,
+            estimated_seconds: normalizedSeconds,
+          })
+        }
+      }
+
+      if (this.ownerId === ownerId) {
+        this.pendingCount = await pendingSyncCount(ownerId)
+        if (loadedPlanChanged) await this.buildLocalCheckIn()
+      }
+    },
+
     async applyFinishedTimer(itemId: string, actualSeconds: number): Promise<void> {
       if (!this.plan) return
       const existing = this.plan.items.find((item) => item.id === itemId)

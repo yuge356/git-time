@@ -1,5 +1,6 @@
 """Hierarchical task API behavior tests."""
 
+from datetime import date
 from uuid import uuid4
 
 from httpx import AsyncClient
@@ -172,6 +173,40 @@ async def test_task_status_controls_completed_timestamp(client: AsyncClient) -> 
     assert blocked.status_code == 200
     assert blocked.json()["status"] == "BLOCKED"
     assert blocked.json()["completed_at"] is None
+
+
+async def test_task_time_update_syncs_linked_today_item(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "sync_today_budget")
+    _, _, task = await create_structured_task(client, token, "同步时间")
+    today = date.today().isoformat()
+    plan = await client.post(
+        "/api/v1/daily-plans",
+        headers=auth_header(token),
+        json={"plan_date": today},
+    )
+    assert plan.status_code == 201
+    item = await client.post(
+        f"/api/v1/daily-plans/{plan.json()['id']}/items",
+        headers=auth_header(token),
+        json={"task_id": task["id"]},
+    )
+    assert item.status_code == 201
+    assert item.json()["estimated_seconds"] == 3_600
+
+    updated = await client.patch(
+        f"/api/v1/tasks/{task['id']}",
+        headers=auth_header(token),
+        json={"estimated_seconds": 5_400},
+    )
+    refreshed_plan = await client.get(
+        f"/api/v1/daily-plans/by-date/{today}",
+        headers=auth_header(token),
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["estimated_seconds"] == 5_400
+    assert refreshed_plan.status_code == 200
+    assert refreshed_plan.json()["items"][0]["estimated_seconds"] == 5_400
 
 
 async def test_task_map_metadata_and_dependencies_are_persisted(

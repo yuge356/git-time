@@ -6,6 +6,7 @@
 | 模块 | 方法与地址 | 用途 |
 |---|---|---|
 | 兼容认证 | `POST /auth/register` | 仅 `APP_AUTH_PROVIDER=local` 的测试/离线开发注册 |
+| 注册便捷设置 | `GET /auth/registration-country` | 从托管代理的 IP 国家请求头返回两位国家代码，不可用于鉴权；缺省为 `CN` |
 | 兼容认证 | `POST /auth/login` | 仅 `APP_AUTH_PROVIDER=local` 的测试/离线开发登录 |
 | 认证 | `GET /auth/me` | 当前账户 |
 | 资料 | `GET /profiles/me` | 当前资料 |
@@ -13,7 +14,7 @@
 | 任务 | `GET /tasks` | 任务平铺列表及预算统计 |
 | 任务 | `POST /tasks` | 创建项目、模块或可执行任务 |
 | 任务 | `GET /tasks/{id}` | 任务详情 |
-| 任务 | `PATCH /tasks/{id}` | 修改任务 |
+| 任务 | `PATCH /tasks/{id}` | 修改任务；计划用时变更同步到今天及未来的关联每日计划条目 |
 | 任务 | `POST /tasks/{id}/apply-defaults` | 把项目/模块默认值应用到已有任务 |
 | 任务 | `DELETE /tasks/{id}` | 软删除任务子树 |
 | 计时 | `GET /sessions` | 最近 Session |

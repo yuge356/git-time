@@ -327,6 +327,7 @@ import FormMessage from '@/components/FormMessage.vue'
 import TaskEditor from '@/components/tasks/TaskEditor.vue'
 import TaskTreeNode from '@/components/tasks/TaskTreeNode.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useDailyPlanStore } from '@/stores/daily-plans'
 import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
 import type {
@@ -341,6 +342,7 @@ import { projectPrefixedTaskTitle } from '@/utils/task-title'
 
 const tasks = useTaskStore()
 const auth = useAuthStore()
+const daily = useDailyPlanStore()
 const timer = useTimerStore()
 const creating = ref(false)
 const creatingChildParentId = ref<string | null>(null)
@@ -728,7 +730,11 @@ async function createTask(payload: TaskCreatePayload): Promise<void> {
 async function updateTask(taskId: string, payload: TaskUpdatePayload): Promise<void> {
   editorError.value = ''
   try {
-    await tasks.update(taskId, payload)
+    const updated = await tasks.update(taskId, payload)
+    if (payload.estimated_seconds !== undefined && tasks.ownerId) {
+      await daily.syncLinkedTaskEstimate(tasks.ownerId, taskId, updated.estimated_seconds)
+      await timer.updateTargetForTask(taskId, updated.estimated_seconds)
+    }
     closeEditor()
   } catch (error) {
     editorError.value = getApiErrorMessage(error)

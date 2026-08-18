@@ -31,6 +31,8 @@ interface TimerState {
   online: boolean
   syncError: string
   completedRevision: number
+  targetNotice: string
+  notifiedSessionId: string | null
   tickerId: number | null
   retryTimerId: number | null
   onlineListenerBound: boolean
@@ -55,6 +57,41 @@ function exitPauseStorageKey(ownerId: string): string {
 
 function timerHeartbeatStorageKey(ownerId: string): string {
   return `time-budget:timer-heartbeat:${ownerId}`
+}
+
+function targetNoticeStorageKey(ownerId: string, sessionId: string): string {
+  return `time-budget:target-notice:${ownerId}:${sessionId}`
+}
+
+function hasTargetNoticeMarker(ownerId: string, sessionId: string): boolean {
+  try {
+    return localStorage.getItem(targetNoticeStorageKey(ownerId, sessionId)) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeTargetNoticeMarker(ownerId: string, sessionId: string): void {
+  try {
+    localStorage.setItem(targetNoticeStorageKey(ownerId, sessionId), '1')
+  } catch {
+    // The in-memory marker still prevents duplicate reminders this visit.
+  }
+}
+
+function clearTargetNoticeMarker(ownerId: string, sessionId: string): void {
+  try {
+    localStorage.removeItem(targetNoticeStorageKey(ownerId, sessionId))
+  } catch {
+    // A stale marker is scoped to a completed session and is harmless.
+  }
+}
+
+function requestSystemNotificationPermission(): void {
+  if (!('Notification' in window) || Notification.permission !== 'default') return
+  void Notification.requestPermission().catch(() => {
+    // The in-app reminder remains available when browser permission is denied.
+  })
 }
 
 function writeTimerHeartbeat(ownerId: string, sessionId: string): void {
@@ -267,6 +304,8 @@ export const useTimerStore = defineStore('timer', {
     online: navigator.onLine,
     syncError: '',
     completedRevision: 0,
+    targetNotice: '',
+    notifiedSessionId: null,
     tickerId: null,
     retryTimerId: null,
     onlineListenerBound: false,
@@ -278,6 +317,7 @@ export const useTimerStore = defineStore('timer', {
       this.tickerId = window.setInterval(() => {
         if (this.active) {
           this.displaySeconds = snapshotDuration(this.active.snapshot)
+          this.maybeNotifyTargetReached()
           if (this.ownerId && this.active.snapshot.status === 'RUNNING') {
             writeTimerHeartbeat(this.ownerId, this.active.session_id)
           }
@@ -299,6 +339,8 @@ export const useTimerStore = defineStore('timer', {
       this.syncError = ''
       this.online = navigator.onLine
       this.displaySeconds = this.active ? snapshotDuration(this.active.snapshot) : 0
+      this.targetNotice = ''
+      this.notifiedSessionId = null
       this.startTicker()
 
       if (!this.onlineListenerBound) {
@@ -385,6 +427,36 @@ export const useTimerStore = defineStore('timer', {
     async refreshHistory(): Promise<void> {
       if (!this.online) return
       this.history = await sessionService.list()
+    },
+
+    maybeNotifyTargetReached(): void {
+      if (
+        !this.ownerId ||
+        !this.active ||
+        this.active.snapshot.status !== 'RUNNING' ||
+        !this.targetSeconds ||
+        this.displaySeconds < this.targetSeconds
+      ) {
+        return
+      }
+      const sessionId = this.active.session_id
+      if (
+        this.notifiedSessionId === sessionId ||
+        hasTargetNoticeMarker(this.ownerId, sessionId)
+      ) {
+        this.notifiedSessionId = sessionId
+        return
+      }
+
+      this.notifiedSessionId = sessionId
+      this.targetNotice = '已到达计划用时，计时仍在继续；请按当前进度决定何时暂停或结束。'
+      writeTargetNoticeMarker(this.ownerId, sessionId)
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('DayFlow 时间提醒', {
+          body: this.targetNotice,
+          tag: `dayflow-target-${sessionId}`,
+        })
+      }
     },
 
     async syncPending(): Promise<void> {
@@ -535,6 +607,28 @@ export const useTimerStore = defineStore('timer', {
       }
     },
 
+    async updateTargetForTask(taskId: string, targetSeconds: number): Promise<void> {
+      if (!this.ownerId || !this.active || this.active.snapshot.task_id !== taskId) return
+      const sessionId = this.active.session_id
+      const normalizedTarget = targetSeconds > 0 ? Math.round(targetSeconds) : null
+      clearTargetNoticeMarker(this.ownerId, sessionId)
+      this.targetSeconds = normalizedTarget
+      this.targetNotice = ''
+      this.notifiedSessionId = null
+      this.active = {
+        ...this.active,
+        target_seconds: normalizedTarget,
+      }
+      await saveActiveTimer(
+        this.ownerId,
+        sessionId,
+        this.active.snapshot,
+        normalizedTarget,
+      )
+      if (normalizedTarget) requestSystemNotificationPermission()
+      this.maybeNotifyTargetReached()
+    },
+
     async start(
       taskId: string | null,
       dailyPlanItemId: string | null = null,
@@ -552,6 +646,9 @@ export const useTimerStore = defineStore('timer', {
       this.syncError = ''
       this.targetSeconds = targetSeconds && targetSeconds > 0 ? targetSeconds : null
       const sessionId = crypto.randomUUID()
+      this.targetNotice = ''
+      this.notifiedSessionId = null
+      if (this.targetSeconds) requestSystemNotificationPermission()
       const now = nextTimestamp()
       const snapshot: SessionSnapshot = {
         task_id: taskId,
@@ -654,6 +751,7 @@ export const useTimerStore = defineStore('timer', {
     async resume(): Promise<void> {
       if (!this.active || this.active.snapshot.status !== 'PAUSED') return
       this.busy = true
+      if (this.targetSeconds) requestSystemNotificationPermission()
       try {
         const now = nextTimestamp(this.active.snapshot.client_updated_at)
         const snapshot: SessionSnapshot = {
@@ -690,7 +788,10 @@ export const useTimerStore = defineStore('timer', {
         }
         await this.persistSnapshot(sessionId, snapshot, false)
         if (this.ownerId) clearTimerHeartbeat(this.ownerId)
+        if (this.ownerId) clearTargetNoticeMarker(this.ownerId, sessionId)
         this.targetSeconds = null
+        this.targetNotice = ''
+        this.notifiedSessionId = null
         if (syncImmediately) {
           await this.syncLatestOrKeepOffline(sessionId)
           await this.refreshHistory()

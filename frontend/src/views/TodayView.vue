@@ -57,6 +57,9 @@
               </template>
             </p>
             <p v-else>从下方今日任务中选择一项，然后开始计时。</p>
+            <p v-if="timer.targetNotice" class="focus-timer__notice" role="status">
+              <strong>时间提醒：</strong>{{ timer.targetNotice }}
+            </p>
           </div>
 
           <div class="focus-timer__actions">

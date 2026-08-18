@@ -11,6 +11,9 @@
       </span>
       <strong>{{ activeTitle }}</strong>
       <time>{{ formatTimer(timer.displaySeconds) }}</time>
+      <span v-if="timer.targetNotice" class="active-timer-bar__notice">
+        {{ timer.targetNotice }}
+      </span>
     </RouterLink>
 
     <div class="active-timer-bar__actions">

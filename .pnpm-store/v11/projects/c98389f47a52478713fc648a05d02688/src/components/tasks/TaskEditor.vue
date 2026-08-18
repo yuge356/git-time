@@ -53,7 +53,9 @@
               <input v-model.number="form.minutes" type="number" min="0" max="59" />
             </label>
           </div>
-          <small>设为 0 表示暂不设置时间预算。</small>
+          <small>
+            {{ task ? '已有任务可暂时保留 0 分钟。' : '新建任务必须设置大于 0 的计划用时。' }}
+          </small>
         </fieldset>
 
         <div class="task-schedule-grid">
@@ -339,6 +341,10 @@ function submit(): void {
   const defaultEstimatedSeconds = seconds(form.default_hours, form.default_minutes)
   if (estimatedSeconds === null || fixedBudgetSeconds === null || defaultEstimatedSeconds === null) {
     errorMessage.value = '时间必须是有效的非负整数，且不能超过 87600 小时。'
+    return
+  }
+  if (!props.task && isExecutableTask.value && estimatedSeconds === 0) {
+    errorMessage.value = '请先设置任务的计划用时，小时和分钟不能同时为 0。'
     return
   }
   if (form.budget_mode === 'FIXED_CAP' && fixedBudgetSeconds === 0) {

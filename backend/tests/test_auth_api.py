@@ -17,6 +17,20 @@ REGISTER_PAYLOAD = {
 }
 
 
+async def test_registration_country_uses_proxy_header_and_china_fallback(
+    client: AsyncClient,
+) -> None:
+    detected = await client.get(
+        "/api/v1/auth/registration-country",
+        headers={"x-vercel-ip-country": "JP"},
+    )
+    fallback = await client.get("/api/v1/auth/registration-country")
+
+    assert detected.status_code == 200
+    assert detected.json() == {"country_code": "JP"}
+    assert fallback.json() == {"country_code": "CN"}
+
+
 async def test_register_login_and_read_current_account(client: AsyncClient) -> None:
     register = await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
     assert register.status_code == 201
