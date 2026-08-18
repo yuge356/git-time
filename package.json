@@ -1,0 +1,10 @@
+{
+  "name": "time-budget-learning-tracker",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev": "corepack pnpm --dir frontend install && node scripts/start-local.mjs",
+    "dev:web": "corepack pnpm --dir frontend install && corepack pnpm --dir frontend dev:web",
+    "build": "corepack pnpm --dir frontend build"
+  }
+}

@@ -44,7 +44,7 @@ Supabase 托管 PostgreSQL
 预算状态按 80%、100%、150% 三个阈值计算。
 
 任务数据在 API、Pinia 和 IndexedDB 中保持为独立的平铺记录，`parent_id` 表示层级，依赖关系保存为
-独立有向边。项目页面只负责把同一份数据渲染成“思维导图”或“标签”视图，因此以后增加看板、日历、
+独立有向边。项目页面只负责把同一份数据渲染成“任务树”或“大纲列表”视图，因此以后增加看板、日历、
 甘特图时不需要改变底层任务模型。用户的视图选择保存在浏览器本地；新增和编辑统一通过模态弹窗完成。
 
 ### 每日计划
@@ -98,7 +98,7 @@ Supabase Auth `user_metadata` 中写入 `onboarding_completed=false`；路由守
 | 前端 | 后端 |
 |---|---|
 | 欢迎页、登录、注册、首次指引、资料 | auth、profiles |
-| 思维导图/标签任务视图、弹窗编辑、预算提示 | tasks、task service |
+| 任务树/大纲列表任务视图、弹窗编辑、预算提示 | tasks、task service |
 | 计时器、历史、离线队列 | sessions、session state machine |
 | 今日计划、打卡 | daily plans、check-ins |
 | 统计图表 | analytics |
