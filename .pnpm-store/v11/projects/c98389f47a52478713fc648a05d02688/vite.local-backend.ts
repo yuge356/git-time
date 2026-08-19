@@ -7,7 +7,12 @@ import type { Plugin, ViteDevServer } from 'vite'
 
 const backendDirectory = fileURLToPath(new URL('../backend/', import.meta.url))
 const pythonExecutable = fileURLToPath(
-  new URL('../backend/.venv/Scripts/python.exe', import.meta.url),
+  new URL(
+    process.platform === 'win32'
+      ? '../backend/.venv/Scripts/python.exe'
+      : '../backend/.venv/bin/python',
+    import.meta.url,
+  ),
 )
 const backendHealthUrl = 'http://127.0.0.1:8000/health'
 
@@ -47,14 +52,22 @@ export function localBackendPlugin(): Plugin {
   let starting = false
   let disposed = false
   let warnedAboutPort = false
+  let migrationBlocked = false
 
   async function ensureBackend(server: ViteDevServer): Promise<void> {
     if (disposed || starting || (backendProcess && backendProcess.exitCode === null)) return
 
     if (await backendIsHealthy()) {
       warnedAboutPort = false
+      migrationBlocked = false
       return
     }
+
+    // A failed migration usually needs a configuration or network correction.
+    // Retrying it every few seconds creates noisy logs and can trigger a
+    // database provider's authentication circuit breaker. A manual backend
+    // start still clears this state as soon as its health endpoint responds.
+    if (migrationBlocked) return
 
     if (await backendPortIsOccupied()) {
       if (!warnedAboutPort) {
@@ -89,7 +102,10 @@ export function localBackendPlugin(): Plugin {
     )
 
     if (migration.status !== 0) {
-      server.config.logger.error('[local backend] Database migration failed; API was not started.')
+      migrationBlocked = true
+      server.config.logger.error(
+        '[local backend] Database migration failed; API was not started. Fix the error, then restart Vite to try again.',
+      )
       starting = false
       return
     }

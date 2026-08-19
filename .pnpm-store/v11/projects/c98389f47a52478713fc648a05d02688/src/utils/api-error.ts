@@ -87,6 +87,8 @@ const messageTranslations: Record<string, string> = {
   'Daily plan store is not initialized': '今日任务数据尚未准备完成，请刷新页面后重试。',
   'Daily plan is not loaded': '今日任务尚未加载完成，请刷新页面后重试。',
   'Timer store is not initialized': '计时数据尚未准备完成，请刷新页面后重试。',
+  'Internal Server Error': '服务器内部错误，请检查数据库配置或稍后重试。',
+  'Server error': '服务器处理异常，请稍后重试。',
 }
 
 const storageErrorTranslations: Record<string, string> = {
@@ -109,6 +111,7 @@ function translateMessage(message: string): string | null {
   if (/Field required/i.test(normalized)) return '请填写所有必填内容。'
   if (/String should have at least/i.test(normalized)) return '输入内容长度不足。'
   if (/String should have at most/i.test(normalized)) return '输入内容长度超过限制。'
+  if (/Internal Server Error/i.test(normalized)) return '服务器内部错误，请检查数据库配置或稍后重试。'
   if (/[\u3400-\u9fff]/.test(normalized)) return normalized
   return null
 }
@@ -119,6 +122,7 @@ function statusMessage(status?: number): string {
   if (status === 404) return '未找到所需内容，可能已被删除。'
   if (status === 409) return '当前数据状态发生冲突，请刷新后重试。'
   if (status === 422) return '输入内容不正确，请检查后重试。'
+  if (status === 500) return '服务器内部错误，请检查后端数据库连接配置。'
   if (status && [502, 503, 504].includes(status)) {
     return '后端服务未启动或正在重启，请启动本地服务后再试。'
   }

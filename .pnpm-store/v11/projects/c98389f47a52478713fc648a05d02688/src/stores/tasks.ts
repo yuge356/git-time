@@ -145,7 +145,7 @@ export const useTaskStore = defineStore('tasks', {
       if (!this.listenerBound) {
         const retryPending = (): void => {
           if (navigator.onLine && this.ownerId) {
-            void this.load().catch(() => {
+            void this.load({ silent: true }).catch(() => {
               // load() already records the visible error/offline state.
             })
           }
@@ -216,9 +216,11 @@ export const useTaskStore = defineStore('tasks', {
       }
     },
 
-    async load(): Promise<void> {
+    async load(options: { silent?: boolean } = {}): Promise<void> {
       if (!this.ownerId) throw new Error('Task store is not initialized')
-      this.loading = true
+      if (!options.silent && this.items.length === 0) {
+        this.loading = true
+      }
       this.online = navigator.onLine
       try {
         if (this.online) {
@@ -329,13 +331,9 @@ export const useTaskStore = defineStore('tasks', {
           id,
         })
         this.pendingCount = await pendingSyncCount(this.ownerId)
-        try {
-          await this.flush()
-        } catch (error) {
-          const confirmed = await this.reconcileTask(id)
-          if (!confirmed) throw error
-          return confirmed
-        }
+        this.flush().catch(() => {
+          void this.reconcileTask(id)
+        })
         return this.items.find((item) => item.id === id) ?? task
       } finally {
         this.saving = false
@@ -365,13 +363,9 @@ export const useTaskStore = defineStore('tasks', {
           ...payload,
         })
         this.pendingCount = await pendingSyncCount(this.ownerId)
-        try {
-          await this.flush()
-        } catch (error) {
-          const confirmed = await this.reconcileTask(taskId)
-          if (!confirmed || !updateWasApplied(confirmed, payload)) throw error
-          return confirmed
-        }
+        this.flush().catch(() => {
+          void this.reconcileTask(taskId)
+        })
         return this.items.find((item) => item.id === taskId) ?? updated
       } finally {
         this.saving = false
@@ -405,7 +399,9 @@ export const useTaskStore = defineStore('tasks', {
         await saveCachedTasks(this.items)
         await enqueueSyncOperation(this.ownerId, 'task', taskId, 'delete', {})
         this.pendingCount = await pendingSyncCount(this.ownerId)
-        await this.flush()
+        this.flush().catch(() => {
+          /* reconciliation happens on next load */
+        })
       } finally {
         this.saving = false
       }

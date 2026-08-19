@@ -312,7 +312,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
@@ -329,6 +329,8 @@ import { formatDuration } from '@/utils/time'
 import { formatTimer } from '@/utils/timer'
 
 const auth = useAuthStore()
+
+defineOptions({ name: 'TodayView' })
 const daily = useDailyPlanStore()
 const tasks = useTaskStore()
 const timer = useTimerStore()
@@ -644,6 +646,19 @@ onBeforeUnmount(() => {
   if (dayRolloverTimer !== null) {
     window.clearInterval(dayRolloverTimer)
     dayRolloverTimer = null
+  }
+})
+
+onActivated(() => {
+  startDayRolloverWatch()
+  const ownerId = auth.user?.profile.id
+  if (ownerId) {
+    tasks.flush().catch(() => {
+      /* silent background sync */
+    })
+    void daily.load(todayDate.value).catch(() => {
+      /* silent background sync */
+    })
   }
 })
 

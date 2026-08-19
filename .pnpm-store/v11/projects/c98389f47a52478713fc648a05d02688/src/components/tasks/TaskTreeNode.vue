@@ -5,6 +5,7 @@
         'task-mind-branch',
         { 'task-mind-branch--expanded': isContainer && expanded && task.children.length },
       ]"
+      :style="themeVars"
     >
       <article
         :class="[
@@ -166,6 +167,7 @@
           v-for="child in task.children"
           :key="child.id"
           :task="child"
+          :project-theme="theme"
           :editor-task-id="editorTaskId"
           :creating-child-for-id="creatingChildForId"
           :dragging-task="draggingTask"
@@ -192,6 +194,7 @@
 import { computed, ref, watch } from 'vue'
 
 import type { Task, TaskNode, TaskNodeType } from '@/types/task'
+import { getProjectTheme, type ProjectTheme } from '@/utils/project-theme'
 import BudgetIndicator from './BudgetIndicator.vue'
 import TaskStatusBadge from './TaskStatusBadge.vue'
 
@@ -204,6 +207,7 @@ const props = defineProps<{
   hasActiveTimer: boolean
   activeTimerPaused: boolean
   timerBusy: boolean
+  projectTheme?: ProjectTheme
 }>()
 
 const emit = defineEmits<{
@@ -223,6 +227,23 @@ const dragTarget = ref(false)
 const actionMenuOpen = ref(false)
 const actionMenuId = computed(() => `task-actions-${props.task.id}`)
 const isContainer = computed(() => props.task.node_type !== 'TASK')
+
+const theme = computed<ProjectTheme>(() =>
+  props.projectTheme ?? getProjectTheme(props.task.node_type === 'PROJECT' ? props.task.id : (props.task.parent_id ?? props.task.id)),
+)
+
+const themeVars = computed(() => ({
+  '--theme-primary': theme.value.primary,
+  '--theme-primary-hover': theme.value.primaryHover,
+  '--theme-soft': theme.value.soft,
+  '--theme-soft-hover': theme.value.softHover,
+  '--theme-line': theme.value.line,
+  '--theme-border': theme.value.border,
+  '--theme-module-bar': theme.value.moduleBar,
+  '--theme-task-bar': theme.value.taskBar,
+  '--theme-glow': theme.value.glow,
+  '--theme-text': theme.value.text,
+}))
 const childNodeType = computed<TaskNodeType>(() =>
   props.task.node_type === 'PROJECT' ? 'MODULE' : 'TASK',
 )

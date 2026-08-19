@@ -96,7 +96,7 @@ const steps = [
   {
     kicker: '02 · 项目与任务',
     title: '把目标拆成可以行动的结构',
-    description: '用“项目 → 模块 → 任务”组织工作，也可以在思维导图与标签视图之间切换。',
+    description: '用“项目 → 模块 → 任务”组织工作，也可以在任务树与大纲列表之间切换。',
     points: ['为任务设置预算、重复频次和截止日期', '把具体任务加入今天，再专注执行'],
     image: '/welcome-tasks.png',
     alt: 'DayFlow 项目任务界面',

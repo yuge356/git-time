@@ -2590,11 +2590,16 @@ a {
 
 .task-card-view {
   display: grid;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid #ebe7f7;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid rgba(235, 230, 252, 0.85);
   border-radius: 20px;
-  background: #fbfaff;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 10px 36px -6px rgba(89, 67, 170, 0.05),
+    0 2px 10px -2px rgba(89, 67, 170, 0.03);
 }
 
 .task-card-view__header {
@@ -2602,23 +2607,25 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #ebe7f7;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(235, 230, 252, 0.85);
 }
 
 .task-card-view__header > div {
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
 .task-card-view__header strong {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .task-card-view__header span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .task-tree--cards {
@@ -2629,29 +2636,248 @@ a {
   display: block;
 }
 
+/* Base Card in Outline Mode */
 .task-tree--cards .task-row {
+  position: relative;
   width: 100%;
-  min-height: 112px;
+  min-height: auto;
   flex-basis: auto;
-  border-left: 5px solid #a895ef;
-  background: #fff;
-  box-shadow: 0 8px 22px rgb(71 56 128 / 6%);
+  border: 1px solid rgba(235, 230, 250, 0.9);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    0 3px 12px -2px rgba(71, 56, 128, 0.04),
+    0 1px 3px rgba(71, 56, 128, 0.02);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    background-color 160ms ease;
 }
 
+.task-tree--cards .task-row:hover {
+  border-color: var(--theme-border, rgba(196, 182, 247, 0.9));
+  box-shadow:
+    0 6px 20px -3px rgba(89, 67, 170, 0.08),
+    0 2px 6px -1px rgba(89, 67, 170, 0.04);
+  transform: translateY(-1px);
+}
+
+/* Level 1: Project (稳重根节点) */
 .task-tree--cards .task-row--project {
-  border-left-color: var(--primary);
-  background: #faf8ff;
+  border-color: var(--theme-border, rgba(220, 213, 247, 0.95));
+  border-left: 5px solid var(--theme-primary, var(--primary));
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    0 4px 18px -3px rgba(71, 56, 128, 0.06),
+    0 1px 4px rgba(71, 56, 128, 0.02);
 }
 
+.task-tree--cards .task-row--project:hover {
+  box-shadow:
+    0 8px 26px -4px var(--theme-glow, rgba(89, 67, 170, 0.12)),
+    0 2px 8px -1px rgba(89, 67, 170, 0.04);
+}
+
+/* Level 2: Module (轻质中层节点) */
 .task-tree--cards .task-row--module {
-  border-left-color: #9f8bea;
+  border-color: var(--theme-border, rgba(230, 224, 248, 0.85));
+  border-left: 4px solid var(--theme-module-bar, #8c73e8);
+  border-radius: 12px;
+  background: rgba(253, 252, 255, 0.88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px -2px rgba(71, 56, 128, 0.04);
 }
 
+.task-tree--cards .task-row--module:hover {
+  box-shadow:
+    0 6px 18px -3px var(--theme-glow, rgba(89, 67, 170, 0.09)),
+    0 2px 6px -1px rgba(89, 67, 170, 0.03);
+}
+
+/* Level 3: Task (简洁末级节点) */
 .task-tree--cards .task-row--task {
-  min-height: 104px;
-  border-left-color: #c0b4ef;
+  border-color: rgba(238, 234, 250, 0.85);
+  border-left: 3.5px solid var(--theme-task-bar, #b3a3f0);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 1px 6px rgba(71, 56, 128, 0.03);
 }
 
+.task-tree--cards .task-row--task:hover {
+  border-color: var(--theme-border, rgba(200, 185, 248, 0.9));
+  box-shadow:
+    0 4px 14px -1px var(--theme-glow, rgba(71, 56, 128, 0.08)),
+    0 1px 4px rgba(71, 56, 128, 0.03);
+}
+
+/* Internal Layout & Typography */
+.task-tree--cards .task-row__main {
+  padding: 10px 14px;
+  gap: 7px;
+}
+
+.task-tree--cards .task-row--project .task-row__main {
+  padding: 13px 16px;
+  gap: 9px;
+}
+
+.task-tree--cards .task-row--project .task-row__name strong {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.task-tree--cards .task-row--module .task-row__name strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.task-tree--cards .task-row--task .task-row__name strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Drag Handle */
+.task-tree--cards .task-drag-handle {
+  width: 32px;
+  flex: 0 0 32px;
+  font-size: 16px;
+  border-right: 1px solid rgba(235, 230, 250, 0.85);
+  color: #a8a0cb;
+  opacity: 0.55;
+  transition: opacity 140ms ease, color 140ms ease, background-color 140ms ease;
+  border-radius: 12px 0 0 12px;
+}
+
+.task-tree--cards .task-drag-handle:hover {
+  opacity: 1;
+  color: var(--theme-primary, var(--primary-dark));
+  background: var(--theme-soft, var(--primary-soft));
+}
+
+.task-tree--cards .task-row--project .task-drag-handle {
+  border-radius: 14px 0 0 14px;
+}
+
+.task-tree--cards .task-row--task .task-drag-handle {
+  border-radius: 10px 0 0 10px;
+}
+
+/* Action Area */
+.task-tree--cards .task-row__actions {
+  padding: 6px 10px;
+  border-left: 1px solid rgba(235, 230, 250, 0.85);
+  gap: 6px;
+}
+
+.task-tree--cards .task-disclosure {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--theme-border, rgba(228, 222, 248, 0.7));
+  background: var(--theme-soft, var(--primary-soft));
+  color: var(--theme-text, var(--primary-dark));
+}
+
+.task-tree--cards .task-disclosure:hover {
+  background: var(--theme-soft-hover, #e6e0ff);
+}
+
+/* Unified Badges */
+.task-tree--cards .node-type-badge {
+  font-size: 10.5px;
+  padding: 2px 7.5px;
+  border-radius: 6px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.task-tree--cards .task-row--project .node-type-badge {
+  background: var(--theme-soft, var(--primary-soft));
+  color: var(--theme-text, var(--primary-dark));
+  border: 1px solid var(--theme-border, transparent);
+}
+
+.task-tree--cards .task-row--module .node-type-badge {
+  background: var(--theme-soft, #f0ecfc);
+  color: var(--theme-text, #6a4ec7);
+}
+
+.task-tree--cards .task-map-node__meta {
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.task-tree--cards .task-map-node__meta .status-badge {
+  padding: 2px 8px;
+  font-size: 10.5px;
+  border-radius: 6px;
+  font-weight: 650;
+}
+
+.task-tree--cards .container-summary {
+  gap: 6px 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.task-tree--cards .task-row__schedule {
+  gap: 6px;
+}
+
+.task-tree--cards .task-row__schedule span {
+  font-size: 10.5px;
+  padding: 2px 7.5px;
+  border-radius: 6px;
+  font-weight: 650;
+  background: var(--theme-soft, var(--primary-soft));
+  color: var(--theme-text, var(--primary-dark));
+}
+
+/* Modern Slim Progress Bar */
+.task-tree--cards .task-map-node__progress {
+  height: 3.5px;
+  border-radius: 999px;
+  background: rgba(228, 222, 248, 0.45);
+  overflow: hidden;
+}
+
+.task-tree--cards .task-map-node__progress > span {
+  background: linear-gradient(
+    90deg,
+    var(--theme-primary, var(--primary)),
+    color-mix(in srgb, var(--theme-primary, var(--primary)) 75%, #a855f7)
+  );
+}
+
+.task-tree--cards .budget-indicator__labels {
+  font-size: 11px;
+}
+
+.task-tree--cards .budget-track {
+  height: 3.5px;
+  border-radius: 999px;
+  background: rgba(228, 222, 248, 0.45);
+}
+
+.task-tree--cards .budget-track__fill {
+  background: var(--theme-primary, var(--gradient-purple));
+}
+
+/* Lightweight Tree Connectors (1.5px) */
 .task-tree--cards .task-mind-branch--expanded > .task-row::after {
   display: none;
 }
@@ -2659,19 +2885,10 @@ a {
 .task-tree--cards .task-tree--nested {
   position: relative;
   display: grid;
-  gap: 10px;
-  margin: 12px 0 0 24px;
-  padding: 0 0 0 30px;
-}
-
-.task-tree--cards .task-tree--nested::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 8px;
-  width: 1px;
-  background: #ddd7f3;
-  content: "";
+  gap: 9px;
+  margin: 6px 0 2px 16px;
+  padding: 0 0 0 22px;
+  border-left: 1.5px solid var(--theme-line, rgba(124, 92, 252, 0.22));
 }
 
 .task-tree--cards .task-tree--nested > .task-tree-node {
@@ -2681,19 +2898,33 @@ a {
 
 .task-tree--cards .task-tree--nested > .task-tree-node::before {
   position: absolute;
-  top: 51px;
+  top: 24px;
   left: -22px;
   display: block;
-  width: 22px;
-  height: 1px;
+  width: 18px;
+  height: 1.5px;
   border: 0;
-  border-radius: 0;
-  background: #ddd7f3;
+  border-radius: 2px;
+  background: var(--theme-line, rgba(124, 92, 252, 0.22));
   content: "";
 }
 
 .task-tree--cards .task-tree--nested > .task-tree-node::after {
   display: none;
+}
+
+/* Dragging & Drop Targets */
+.task-tree--cards .task-row--dragging {
+  opacity: 0.35;
+  transform: scale(0.985);
+}
+
+.task-tree--cards .task-row--drop-target {
+  border-color: var(--theme-primary, var(--focus)) !important;
+  background: var(--theme-soft, var(--primary-soft)) !important;
+  box-shadow:
+    0 0 0 3px var(--theme-glow, rgba(124, 92, 252, 0.20)),
+    0 8px 24px var(--theme-glow, rgba(71, 56, 128, 0.12)) !important;
 }
 
 .task-mindmap-toolbar {
@@ -3623,36 +3854,40 @@ a {
 }
 
 .status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex: 0 0 auto;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
+  padding: 2.5px 7.5px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.2;
 }
 
 .status-badge--todo {
   background: #f1effa;
-  color: #7a76a0;
+  color: #726d96;
 }
 
 .status-badge--in_progress {
-  background: #dcf5ec;
-  color: #147a54;
+  background: #daf5eb;
+  color: #0c734e;
 }
 
 .status-badge--paused {
   background: #ffedd6;
-  color: #a3631a;
+  color: #9a5b14;
 }
 
 .status-badge--blocked {
   background: #ffe8ed;
-  color: #c13d5d;
+  color: #b53253;
 }
 
 .status-badge--done {
-  background: #e0ecff;
-  color: #2f62c4;
+  background: #e1edff;
+  color: #2457b8;
 }
 
 .budget-indicator {

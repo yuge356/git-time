@@ -28,7 +28,7 @@
                   @click="setTaskViewMode('MINDMAP')"
                 >
                   <span aria-hidden="true">⌘</span>
-                  思维导图
+                  任务树
                 </button>
                 <button
                   type="button"
@@ -37,7 +37,7 @@
                   @click="setTaskViewMode('CARDS')"
                 >
                   <span aria-hidden="true">▤</span>
-                  标签
+                  大纲列表
                 </button>
               </div>
               <button class="button button--primary" type="button" @click="openCreate">
@@ -53,7 +53,7 @@
           <FormMessage :message="loadError || timer.syncError" />
           <p v-if="actionMessage" class="task-action-feedback">{{ actionMessage }}</p>
 
-          <p v-if="tasks.loading" class="loading-state">正在加载任务…</p>
+          <p v-if="tasks.loading && tasks.items.length === 0" class="loading-state">正在加载任务…</p>
 
           <div v-else-if="tasks.tree.length === 0" class="empty-state">
             <span aria-hidden="true">01</span>
@@ -92,6 +92,7 @@
                       v-for="task in tasks.tree"
                       :key="task.id"
                       :task="task"
+                      :project-theme="getProjectTheme(task.id)"
                       :editor-task-id="selectedTask?.id ?? null"
                       :creating-child-for-id="creatingChildParentId"
                       :dragging-task="draggingTask"
@@ -143,11 +144,11 @@
               </p>
             </section>
 
-            <section v-else class="task-card-view" aria-label="项目与任务标签视图">
+            <section v-else class="task-card-view" aria-label="项目与任务大纲视图">
               <header class="task-card-view__header">
                 <div>
-                  <strong>项目标签</strong>
-                  <span>按层级纵向浏览，点击名称查看详情，使用左侧手柄调整层级</span>
+                  <strong>项目大纲</strong>
+                  <span>按“项目 → 模块 → 任务”大纲层级纵向浏览与管理，支持展开收起、拖拽调整与快速计时</span>
                 </div>
               </header>
               <ul class="task-tree task-tree--cards">
@@ -155,6 +156,7 @@
                   v-for="task in tasks.tree"
                   :key="task.id"
                   :task="task"
+                  :project-theme="getProjectTheme(task.id)"
                   :editor-task-id="selectedTask?.id ?? null"
                   :creating-child-for-id="creatingChildParentId"
                   :dragging-task="draggingTask"
@@ -319,7 +321,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
@@ -338,7 +340,10 @@ import type {
   TaskUpdatePayload,
 } from '@/types/task'
 import { getApiErrorMessage } from '@/utils/api-error'
+import { getProjectTheme } from '@/utils/project-theme'
 import { projectPrefixedTaskTitle } from '@/utils/task-title'
+
+defineOptions({ name: 'TasksView' })
 
 const tasks = useTaskStore()
 const auth = useAuthStore()
@@ -399,7 +404,7 @@ const selectedTaskTypeLabel = computed(() => {
 })
 const taskViewHelpText = computed(() => taskViewMode.value === 'MINDMAP'
   ? '每个项目只保留一个主节点，右侧用连线展开模块与任务。导图随内容撑开页面，通过网页滚动查看全部节点。'
-  : '项目、模块与任务按标签分层排列。点击名称查看设置，使用左侧拖动手柄调整任务层级。')
+  : '项目、模块与任务按大纲层级纵向排列。点击名称查看设置，使用左侧拖动手柄调整任务层级。')
 const editorDialogOpen = computed(() => Boolean(
   creating.value || selectedTask.value || creatingChildParentId.value,
 ))
@@ -652,6 +657,27 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
   document.body.classList.remove('task-editor-modal-open')
+})
+
+onActivated(async () => {
+  const ownerId = auth.user?.profile.id
+  if (ownerId) {
+    tasks.load({ silent: true }).catch(() => {
+      /* silent background sync */
+    })
+  }
+  await nextTick()
+  if (mapTree.value && !resizeObserver) {
+    resizeObserver = new ResizeObserver(scheduleMapLayout)
+    resizeObserver.observe(mapTree.value)
+  }
+  scheduleMapLayout()
+})
+
+onDeactivated(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
 })
 
 function openCreate(): void {
