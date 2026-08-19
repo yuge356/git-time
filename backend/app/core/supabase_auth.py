@@ -1,11 +1,15 @@
 """Trusted validation for access tokens issued by Supabase Auth."""
 
+import asyncio
 import re
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
 import httpx
+import jwt
+from jwt import InvalidTokenError as PyJwtInvalidTokenError
+from jwt import PyJWKClient, PyJWKClientConnectionError
 
 from app.core.config import settings
 from app.core.security import InvalidTokenError
@@ -14,6 +18,24 @@ PHONE_PASSWORD_EMAIL_PATTERN = re.compile(
     r"^phone\.([1-9]\d{7,14})@phone\.dayflow\.invalid$",
     re.IGNORECASE,
 )
+_jwks_clients: dict[str, PyJWKClient] = {}
+_http_client: httpx.AsyncClient | None = None
+
+
+def _jwks_client() -> PyJWKClient:
+    url = f"{settings.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    client = _jwks_clients.get(url)
+    if client is None:
+        client = PyJWKClient(url, cache_keys=True, lifespan=600, timeout=5)
+        _jwks_clients[url] = client
+    return client
+
+
+def _shared_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=10.0)
+    return _http_client
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,8 +76,30 @@ async def verify_supabase_access_token(token: str) -> SupabaseIdentity:
         raise InvalidTokenError("Supabase authentication is not configured")
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
+        header = jwt.get_unverified_header(token)
+        if header.get("alg") in {"ES256", "RS256"} and header.get("kid"):
+            signing_key = await asyncio.to_thread(_jwks_client().get_signing_key_from_jwt, token)
+            payload = jwt.decode(
+                token, signing_key.key, algorithms=[header["alg"]],
+                audience="authenticated",
+                issuer=f"{settings.supabase_url.rstrip('/')}/auth/v1",
+            )
+            user_id = UUID(str(payload["sub"]))
+            metadata = payload.get("user_metadata")
+            email, phone = identity_contacts_from_payload(payload)
+            return SupabaseIdentity(
+                user_id,
+                email,
+                phone,
+                metadata if isinstance(metadata, dict) else {},
+            )
+    except PyJWKClientConnectionError:
+        pass
+    except (PyJwtInvalidTokenError, KeyError, TypeError, ValueError) as exc:
+        raise InvalidTokenError("Supabase access token is invalid or expired") from exc
+
+    try:
+        response = await _shared_http_client().get(
                 f"{settings.supabase_url}/auth/v1/user",
                 headers={
                     "apikey": settings.supabase_publishable_key,

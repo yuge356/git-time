@@ -27,6 +27,7 @@
 | 每日计划 | `DELETE /daily-plan-items/{id}` | 删除计划项 |
 | 打卡 | `GET /check-ins/{date}` | 时长、完成数、连续天数 |
 | 统计 | `GET /analytics/summary` | 日期范围统计 |
+| 统计 | `GET /analytics/dashboard` | 一次返回统计页范围汇总、今日汇总和打卡数据，减少页面请求与认证往返 |
 | 搜索 | `GET /users/search?q=` | 搜索可发现用户 |
 | 伙伴 | `GET /partnerships` | 邀请和伙伴列表 |
 | 伙伴 | `POST /partnerships/invitations` | 发出邀请 |

@@ -346,6 +346,7 @@ const estimatedMinutes = ref(30)
 const selectedItemId = ref('')
 const errorMessage = ref('')
 let dayRolloverTimer: number | null = null
+let initialLoadFinished = false
 let lastRealDate = ''
 let calendarRequestId = 0
 
@@ -640,6 +641,7 @@ onMounted(async () => {
     ])
     await restoreMissingActiveItem()
   })
+  initialLoadFinished = true
 })
 
 onBeforeUnmount(() => {
@@ -651,6 +653,7 @@ onBeforeUnmount(() => {
 
 onActivated(() => {
   startDayRolloverWatch()
+  if (!initialLoadFinished) return
   const ownerId = auth.user?.profile.id
   if (ownerId) {
     tasks.flush().catch(() => {

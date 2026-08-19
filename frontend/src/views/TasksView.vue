@@ -378,6 +378,7 @@ const dependencyDraft = ref<string[]>([])
 const dependencyPaths = ref<DependencyPath[]>([])
 let resizeObserver: ResizeObserver | null = null
 let layoutFrame = 0
+let initialLoadFinished = false
 
 interface DependencyPath {
   id: string
@@ -650,6 +651,7 @@ onMounted(async () => {
       resizeObserver.observe(mapTree.value)
     }
     scheduleMapLayout()
+    initialLoadFinished = true
   }
 })
 
@@ -660,6 +662,7 @@ onBeforeUnmount(() => {
 })
 
 onActivated(async () => {
+  if (!initialLoadFinished) return
   const ownerId = auth.user?.profile.id
   if (ownerId) {
     tasks.load({ silent: true }).catch(() => {

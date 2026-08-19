@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { AnalyticsSummary } from '@/types/analytics'
+import type { AnalyticsDashboard, AnalyticsSummary } from '@/types/analytics'
 
 export const analyticsService = {
   async summary(dateFrom: string, dateTo: string): Promise<AnalyticsSummary> {
@@ -8,6 +8,12 @@ export const analyticsService = {
         date_from: dateFrom,
         date_to: dateTo,
       },
+    })
+    return data
+  },
+  async dashboard(dateFrom: string, dateTo: string, today: string): Promise<AnalyticsDashboard> {
+    const { data } = await http.get<AnalyticsDashboard>('/analytics/dashboard', {
+      params: { date_from: dateFrom, date_to: dateTo, today },
     })
     return data
   },

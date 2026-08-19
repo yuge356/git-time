@@ -5,7 +5,7 @@ from datetime import UTC, datetime, time
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import Session, SessionStatus
@@ -135,6 +135,30 @@ def calculate_task_time_totals(
     return direct, totals
 
 
+def roll_up_task_time_totals(tasks: Sequence[Task], direct: dict[UUID, int]) -> dict[UUID, int]:
+    """Roll database-aggregated direct seconds through the task hierarchy."""
+    children: dict[UUID, list[UUID]] = {}
+    for task in tasks:
+        if task.parent_id is not None:
+            children.setdefault(task.parent_id, []).append(task.id)
+    totals: dict[UUID, int] = {}
+
+    def visit(task_id: UUID, active: set[UUID]) -> int:
+        if task_id in totals:
+            return totals[task_id]
+        if task_id in active:
+            return direct.get(task_id, 0)
+        total = direct.get(task_id, 0)
+        for child_id in children.get(task_id, []):
+            total += visit(child_id, {*active, task_id})
+        totals[task_id] = total
+        return total
+
+    for task in tasks:
+        visit(task.id, set())
+    return totals
+
+
 def calculate_task_summaries(
     tasks: Sequence[Task],
 ) -> tuple[dict[UUID, int], dict[UUID, int], dict[UUID, int], dict[UUID, int]]:
@@ -212,13 +236,28 @@ async def build_owned_task_responses(
         .order_by(Task.sort_order, Task.created_at, Task.id)
     )
     tasks = task_result.all()
-    session_result = await db.scalars(
-        select(Session).where(
+    session_result = await db.execute(
+        select(Session.task_id, func.coalesce(func.sum(Session.duration_seconds), 0)).where(
             Session.owner_id == owner_id,
             Session.deleted_at.is_(None),
-        )
+            Session.task_id.is_not(None),
+        ).group_by(Session.task_id)
     )
-    sessions = session_result.all()
+    direct = {task.id: 0 for task in tasks}
+    for task_id, seconds in session_result.all():
+        if task_id in direct:
+            direct[task_id] = int(seconds)
+    running_sessions = list((await db.scalars(select(Session).where(
+        Session.owner_id == owner_id,
+        Session.deleted_at.is_(None),
+        Session.status == SessionStatus.RUNNING,
+        Session.last_resumed_at.is_not(None),
+    ))).all())
+    for session in running_sessions:
+        if session.task_id in direct:
+            direct[session.task_id] += (
+                effective_session_duration(session) - session.duration_seconds
+            )
     active_task_ids = {task.id for task in tasks}
     dependency_map: dict[UUID, list[UUID]] = {}
     if active_task_ids:
@@ -232,7 +271,7 @@ async def build_owned_task_responses(
         for task_id, dependency_id in dependency_result.all():
             dependency_map.setdefault(task_id, []).append(dependency_id)
     parent_ids = {task.parent_id for task in tasks if task.parent_id is not None}
-    direct, totals = calculate_task_time_totals(tasks, sessions)
+    totals = roll_up_task_time_totals(tasks, direct)
     children_estimated, planned, task_counts, completed_counts = calculate_task_summaries(tasks)
     return [
         to_task_response(

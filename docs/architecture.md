@@ -102,6 +102,8 @@ Supabase Auth `user_metadata` 中写入 `onboarding_completed=false`；路由守
 | 计时器、历史、离线队列 | sessions、session state machine |
 | 今日计划、打卡 | daily plans、check-ins |
 | 统计图表 | analytics |
+
+Supabase 使用非对称签名密钥时，API 通过缓存的 JWKS 在本地验证访问令牌，避免每个业务请求再次访问 Auth；旧版 HS256 令牌或 JWKS 暂时不可用时仍通过 Supabase `/auth/v1/user` 安全校验。统计页使用单一 dashboard 请求聚合范围、今日与打卡数据。
 | 伙伴与屏蔽 | partnerships、blocks |
 | 分享与鼓励 | plan shares、encouragements |
 | 通知中心 | notifications、WebSocket |

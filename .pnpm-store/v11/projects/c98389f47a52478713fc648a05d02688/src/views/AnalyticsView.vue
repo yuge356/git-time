@@ -383,7 +383,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
 import { analyticsService } from '@/services/analytics'
-import { dailyPlanService } from '@/services/daily-plans'
 import { useAuthStore } from '@/stores/auth'
 import { useTimerStore } from '@/stores/timer'
 import type { AnalyticsSummary, DailyTrendPoint } from '@/types/analytics'
@@ -612,14 +611,10 @@ async function load(): Promise<void> {
       }
     }
     const todayString = localDateString(new Date())
-    const [rangeSummary, daySummary, dayCheckIn] = await Promise.all([
-      analyticsService.summary(dateFrom.value, dateTo.value),
-      analyticsService.summary(todayString, todayString),
-      dailyPlanService.checkIn(todayString),
-    ])
-    summary.value = rangeSummary
-    todaySummary.value = daySummary
-    todayCheckIn.value = dayCheckIn
+    const dashboard = await analyticsService.dashboard(dateFrom.value, dateTo.value, todayString)
+    summary.value = dashboard.range_summary
+    todaySummary.value = dashboard.today_summary
+    todayCheckIn.value = dashboard.today_check_in
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)
   } finally {

@@ -41,3 +41,9 @@ export interface AnalyticsSummary {
   budget_comparison: BudgetComparison[]
   project_history: ProjectTimeHistory[]
 }
+
+export interface AnalyticsDashboard {
+  range_summary: AnalyticsSummary
+  today_summary: AnalyticsSummary
+  today_check_in: import('@/types/daily-plan').CheckIn
+}

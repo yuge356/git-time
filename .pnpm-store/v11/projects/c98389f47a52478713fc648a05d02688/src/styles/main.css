@@ -7481,16 +7481,7 @@ body.task-editor-modal-open {
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .app-sidebar,
-  .auth-login-shell,
-  .welcome-showcase,
-  .welcome-features,
-  .onboarding-shell,
-  .profile-card,
-  .task-list-panel,
-  .focus-timer,
-  .activity-calendar,
-  .today-checklist,
-  .analytics-card {
+  .auth-login-shell {
     -webkit-backdrop-filter: blur(var(--glass-blur));
     backdrop-filter: blur(var(--glass-blur));
   }

@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.daily_plan import CheckInResponse
+
 
 class TaskTimeSlice(BaseModel):
     """One task's share of direct learning time."""
@@ -62,3 +64,11 @@ class AnalyticsSummary(BaseModel):
     daily_trend: list[DailyTrendPoint]
     budget_comparison: list[BudgetComparison]
     project_history: list[ProjectTimeHistory]
+
+
+class AnalyticsDashboard(BaseModel):
+    """Analytics page payload returned through one authenticated request."""
+
+    range_summary: AnalyticsSummary
+    today_summary: AnalyticsSummary
+    today_check_in: CheckInResponse
