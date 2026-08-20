@@ -805,7 +805,16 @@ a {
   color: #9c9aa3;
 }
 
-.auth-login-input svg {
+.auth-login-input--password input {
+  padding-right: 98px;
+}
+
+.auth-login-input--password input::-ms-clear,
+.auth-login-input--password input::-ms-reveal {
+  display: none;
+}
+
+.auth-login-input > svg {
   position: absolute;
   top: 50%;
   right: 17px;
@@ -826,8 +835,53 @@ a {
   box-shadow: 0 0 0 3px rgb(116 86 245 / 12%);
 }
 
-.auth-login-input:focus-within svg {
+.auth-login-input:focus-within > svg {
   stroke: #5b3df5;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 42px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #777481;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.auth-password-toggle svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.auth-password-toggle:hover,
+.auth-password-toggle:focus-visible,
+.auth-password-toggle[aria-pressed="true"] {
+  background: #e9e5fb;
+  color: #5b3df5;
+}
+
+.auth-password-toggle:focus-visible {
+  outline: 2px solid rgb(116 86 245 / 30%);
+  outline-offset: 1px;
+}
+
+.auth-login-input > .auth-password-lock {
+  right: 15px;
+  width: 18px;
+  height: 18px;
 }
 
 .auth-login-input input:-webkit-autofill,
@@ -2629,7 +2683,18 @@ a {
 }
 
 .task-tree--cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
   gap: 14px;
+}
+
+.task-tree--cards > .task-tree-node,
+.task-tree--cards .task-tree--nested > .task-tree-node,
+.task-tree--cards .task-mind-branch {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
 
 .task-tree--cards .task-mind-branch {
@@ -2668,7 +2733,6 @@ a {
 /* Level 1: Project (稳重根节点) */
 .task-tree--cards .task-row--project {
   border-color: var(--theme-border, rgba(220, 213, 247, 0.95));
-  border-left: 5px solid var(--theme-primary, var(--primary));
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow:
@@ -2685,7 +2749,6 @@ a {
 /* Level 2: Module (轻质中层节点) */
 .task-tree--cards .task-row--module {
   border-color: var(--theme-border, rgba(230, 224, 248, 0.85));
-  border-left: 4px solid var(--theme-module-bar, #8c73e8);
   border-radius: 12px;
   background: rgba(253, 252, 255, 0.88);
   backdrop-filter: blur(6px);
@@ -2702,7 +2765,6 @@ a {
 /* Level 3: Task (简洁末级节点) */
 .task-tree--cards .task-row--task {
   border-color: rgba(238, 234, 250, 0.85);
-  border-left: 3.5px solid var(--theme-task-bar, #b3a3f0);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(4px);
@@ -2795,6 +2857,21 @@ a {
   background: var(--theme-soft-hover, #e6e0ff);
 }
 
+.task-tree--cards .task-disclosure__chevron {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  transition: transform 150ms ease;
+}
+
+.task-tree--cards .task-disclosure[aria-expanded="true"] .task-disclosure__chevron {
+  transform: rotate(180deg);
+}
+
 /* Unified Badges */
 .task-tree--cards .node-type-badge {
   font-size: 10.5px;
@@ -2867,17 +2944,7 @@ a {
   font-size: 11px;
 }
 
-.task-tree--cards .budget-track {
-  height: 3.5px;
-  border-radius: 999px;
-  background: rgba(228, 222, 248, 0.45);
-}
-
-.task-tree--cards .budget-track__fill {
-  background: var(--theme-primary, var(--gradient-purple));
-}
-
-/* Lightweight Tree Connectors (1.5px) */
+/* Outline hierarchy uses whitespace only; connector artwork belongs to mind-map mode. */
 .task-tree--cards .task-mind-branch--expanded > .task-row::after {
   display: none;
 }
@@ -2885,28 +2952,23 @@ a {
 .task-tree--cards .task-tree--nested {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
   gap: 9px;
-  margin: 6px 0 2px 16px;
-  padding: 0 0 0 22px;
-  border-left: 1.5px solid var(--theme-line, rgba(124, 92, 252, 0.22));
+  margin: 8px 0 2px 20px;
+  padding: 0;
+  border: 0;
 }
 
 .task-tree--cards .task-tree--nested > .task-tree-node {
   position: relative;
+  align-self: start;
   padding: 0;
 }
 
 .task-tree--cards .task-tree--nested > .task-tree-node::before {
-  position: absolute;
-  top: 24px;
-  left: -22px;
-  display: block;
-  width: 18px;
-  height: 1.5px;
-  border: 0;
-  border-radius: 2px;
-  background: var(--theme-line, rgba(124, 92, 252, 0.22));
-  content: "";
+  display: none;
+  content: none;
 }
 
 .task-tree--cards .task-tree--nested > .task-tree-node::after {
@@ -7268,7 +7330,7 @@ body.task-editor-modal-open {
 
   .task-tree--cards .task-tree--nested {
     margin-left: 12px;
-    padding-left: 22px;
+    padding-left: 0;
   }
 
   .task-editor-modal__backdrop {

@@ -10,7 +10,7 @@
       </span>
     </div>
     <div
-      v-if="estimatedSeconds > 0"
+      v-if="showTrack && estimatedSeconds > 0"
       class="budget-track"
       role="progressbar"
       :aria-valuenow="percentage"
@@ -38,11 +38,14 @@ import { computed } from 'vue'
 import type { BudgetLevel } from '@/types/task'
 import { formatDuration } from '@/utils/time'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   estimatedSeconds: number
   actualSeconds: number
   level: BudgetLevel
-}>()
+  showTrack?: boolean
+}>(), {
+  showTrack: true,
+})
 
 const percentage = computed(() => {
   if (props.estimatedSeconds <= 0) return 0

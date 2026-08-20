@@ -26,15 +26,33 @@
 
       <label class="auth-login-field">
         <span class="sr-only">密码</span>
-        <span class="auth-login-input">
+        <span class="auth-login-input auth-login-input--password">
           <input
             v-model="loginForm.password"
-            type="password"
+            :type="loginPasswordVisible ? 'text' : 'password'"
             autocomplete="current-password"
             required
             placeholder="密码"
           />
-          <svg viewBox="0 0 24 24" aria-hidden="true">
+          <button
+            class="auth-password-toggle"
+            type="button"
+            :aria-label="loginPasswordVisible ? '隐藏登录密码' : '显示登录密码'"
+            :aria-pressed="loginPasswordVisible"
+            @click.prevent="loginPasswordVisible = !loginPasswordVisible"
+          >
+            <svg v-if="loginPasswordVisible" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 3 21 21" />
+              <path d="M10.6 6.2A10.8 10.8 0 0 1 12 6c6 0 9.5 6 9.5 6a16.8 16.8 0 0 1-2.5 3.1" />
+              <path d="M6.2 6.2C3.8 7.8 2.5 12 2.5 12S6 18 12 18c1.5 0 2.8-.4 4-1" />
+              <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6S2.5 12 2.5 12Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+          <svg class="auth-password-lock" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="5" y="10" width="14" height="10" rx="2" />
             <path d="M8 10V7a4 4 0 0 1 8 0v3" />
           </svg>
@@ -175,17 +193,35 @@
 
       <label class="auth-login-field">
         <span class="sr-only">密码</span>
-        <span class="auth-login-input">
+        <span class="auth-login-input auth-login-input--password">
           <input
             v-model="registerForm.password"
-            type="password"
+            :type="registerPasswordVisible ? 'text' : 'password'"
             autocomplete="new-password"
             minlength="8"
             maxlength="128"
             required
             placeholder="密码（至少 8 个字符）"
           />
-          <svg viewBox="0 0 24 24" aria-hidden="true">
+          <button
+            class="auth-password-toggle"
+            type="button"
+            :aria-label="registerPasswordVisible ? '隐藏注册密码' : '显示注册密码'"
+            :aria-pressed="registerPasswordVisible"
+            @click.prevent="registerPasswordVisible = !registerPasswordVisible"
+          >
+            <svg v-if="registerPasswordVisible" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 3 21 21" />
+              <path d="M10.6 6.2A10.8 10.8 0 0 1 12 6c6 0 9.5 6 9.5 6a16.8 16.8 0 0 1-2.5 3.1" />
+              <path d="M6.2 6.2C3.8 7.8 2.5 12 2.5 12S6 18 12 18c1.5 0 2.8-.4 4-1" />
+              <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6S2.5 12 2.5 12Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+          <svg class="auth-password-lock" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="5" y="10" width="14" height="10" rx="2" />
             <path d="M8 10V7a4 4 0 0 1 8 0v3" />
           </svg>
@@ -229,6 +265,8 @@ const router = useRouter()
 const mode = ref<'login' | 'register'>(route.query.mode === 'register' ? 'register' : 'login')
 const errorMessage = ref('')
 const helpMessage = ref('')
+const loginPasswordVisible = ref(false)
+const registerPasswordVisible = ref(false)
 const registrationIdentifierKind = ref<'phone' | 'email'>('phone')
 const selectedCountryIso = ref(DEFAULT_COUNTRY_ISO)
 const customDialCode = ref('')
@@ -257,6 +295,8 @@ watch(
     mode.value = nextMode === 'register' ? 'register' : 'login'
     errorMessage.value = ''
     helpMessage.value = ''
+    loginPasswordVisible.value = false
+    registerPasswordVisible.value = false
   },
 )
 
@@ -285,6 +325,8 @@ function switchMode(nextMode: 'login' | 'register'): void {
   mode.value = nextMode
   errorMessage.value = ''
   helpMessage.value = ''
+  loginPasswordVisible.value = false
+  registerPasswordVisible.value = false
   const query = { ...route.query }
   if (nextMode === 'register') query.mode = 'register'
   else delete query.mode

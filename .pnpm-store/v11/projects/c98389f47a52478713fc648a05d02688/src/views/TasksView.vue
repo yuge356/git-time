@@ -90,8 +90,9 @@
                   <ul ref="mapTree" class="task-tree task-tree--mindmap">
                     <TaskTreeNode
                       v-for="task in tasks.tree"
-                      :key="task.id"
+                      :key="`mindmap-${task.id}`"
                       :task="task"
+                      presentation="mindmap"
                       :project-theme="getProjectTheme(task.id)"
                       :editor-task-id="selectedTask?.id ?? null"
                       :creating-child-for-id="creatingChildParentId"
@@ -148,14 +149,15 @@
               <header class="task-card-view__header">
                 <div>
                   <strong>项目大纲</strong>
-                  <span>按“项目 → 模块 → 任务”大纲层级纵向浏览与管理，支持展开收起、拖拽调整与快速计时</span>
+                  <span>父任务默认折叠；点击节点前的展开按钮查看子任务，同级子任务保持整齐对齐</span>
                 </div>
               </header>
               <ul class="task-tree task-tree--cards">
                 <TaskTreeNode
                   v-for="task in tasks.tree"
-                  :key="task.id"
+                  :key="`outline-${task.id}`"
                   :task="task"
+                  presentation="outline"
                   :project-theme="getProjectTheme(task.id)"
                   :editor-task-id="selectedTask?.id ?? null"
                   :creating-child-for-id="creatingChildParentId"

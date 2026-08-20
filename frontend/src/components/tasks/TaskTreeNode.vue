@@ -49,8 +49,18 @@
               :aria-expanded="expanded"
               @click.stop="toggleExpanded"
             >
-              <span aria-hidden="true">{{ expanded ? '−' : '+' }}</span>
-              <small v-if="!expanded && task.children.length">{{ task.children.length }}</small>
+              <svg
+                v-if="presentation === 'outline'"
+                class="task-disclosure__chevron"
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+              >
+                <path d="m5 7.5 5 5 5-5" />
+              </svg>
+              <span v-else aria-hidden="true">{{ expanded ? '−' : '+' }}</span>
+              <small v-if="presentation !== 'outline' && !expanded && task.children.length">
+                {{ task.children.length }}
+              </small>
             </button>
             <button
               class="task-row__name"
@@ -99,6 +109,7 @@
           :estimated-seconds="task.planned_seconds"
           :actual-seconds="task.actual_seconds"
           :level="task.budget_level"
+          :show-track="presentation !== 'outline'"
         />
       </div>
 
@@ -167,6 +178,7 @@
           v-for="child in task.children"
           :key="child.id"
           :task="child"
+          :presentation="presentation"
           :project-theme="theme"
           :editor-task-id="editorTaskId"
           :creating-child-for-id="creatingChildForId"
@@ -198,8 +210,9 @@ import { getProjectTheme, type ProjectTheme } from '@/utils/project-theme'
 import BudgetIndicator from './BudgetIndicator.vue'
 import TaskStatusBadge from './TaskStatusBadge.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   task: TaskNode
+  presentation?: 'mindmap' | 'outline'
   editorTaskId: string | null
   creatingChildForId: string | null
   draggingTask: Task | null
@@ -208,7 +221,9 @@ const props = defineProps<{
   activeTimerPaused: boolean
   timerBusy: boolean
   projectTheme?: ProjectTheme
-}>()
+}>(), {
+  presentation: 'mindmap',
+})
 
 const emit = defineEmits<{
   edit: [task: Task]
@@ -222,7 +237,9 @@ const emit = defineEmits<{
   'layout-change': []
 }>()
 
-const expanded = ref(props.task.node_type !== 'TASK')
+const expanded = ref(
+  props.task.node_type !== 'TASK' && props.presentation !== 'outline',
+)
 const dragTarget = ref(false)
 const actionMenuOpen = ref(false)
 const actionMenuId = computed(() => `task-actions-${props.task.id}`)
