@@ -10,6 +10,7 @@ import httpx
 import jwt
 from jwt import InvalidTokenError as PyJwtInvalidTokenError
 from jwt import PyJWKClient, PyJWKClientConnectionError
+from jwt.exceptions import MissingCryptographyError, PyJWKClientError, PyJWKError
 
 from app.core.config import settings
 from app.core.security import InvalidTokenError
@@ -93,7 +94,15 @@ async def verify_supabase_access_token(token: str) -> SupabaseIdentity:
                 phone,
                 metadata if isinstance(metadata, dict) else {},
             )
-    except PyJWKClientConnectionError:
+    except (
+        MissingCryptographyError,
+        PyJWKClientConnectionError,
+        PyJWKClientError,
+        PyJWKError,
+    ):
+        # Keep authentication available during a partial deployment or a
+        # temporary JWKS failure. Supabase still performs the authoritative
+        # signature and expiry validation through /auth/v1/user below.
         pass
     except (PyJwtInvalidTokenError, KeyError, TypeError, ValueError) as exc:
         raise InvalidTokenError("Supabase access token is invalid or expired") from exc

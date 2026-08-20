@@ -114,3 +114,7 @@ Supabase 的 PostgreSQL 16+ 角色成员关系会单独记录 `SET` 选项；迁
 
 本地自动化测试仍将 `APP_AUTH_PROVIDER` 临时切换为 `local` 并使用内存 SQLite，因此不会向免费项目写入
 测试账号或测试任务。
+
+后端通过 Supabase JWKS 本地验证 ES256/RS256 访问令牌，因此生产依赖必须安装
+`PyJWT[crypto]`。若加密运行库在滚动部署期间暂不可用，API 会安全回退到 Supabase
+`/auth/v1/user` 完成签名与过期时间验证，避免把依赖缺失误报为数据库 500。
