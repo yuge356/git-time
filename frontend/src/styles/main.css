@@ -2502,16 +2502,24 @@ a {
 /* ---------- 学习任务页 ---------- */
 
 .tasks-page {
-  max-width: 1280px;
+  max-width: 1360px;
   margin: 0 auto;
-  padding: 48px 32px 96px;
+  padding: 40px 32px 96px;
+  position: relative;
+  border-radius: 28px;
+  background:
+    radial-gradient(1200px 750px at 8% 10%, rgba(212, 232, 255, 0.45) 0%, transparent 60%),
+    radial-gradient(900px 650px at 92% 16%, rgba(215, 248, 242, 0.38) 0%, transparent 55%),
+    radial-gradient(1100px 800px at 50% 85%, rgba(235, 226, 255, 0.42) 0%, transparent 65%),
+    linear-gradient(160deg, #f9fbfe 0%, #f1f5fc 30%, #f2f7fb 65%, #f7f4fc 100%);
+  background-attachment: fixed;
 }
 
 .tasks-page__heading {
   position: static;
   top: auto;
   max-width: 720px;
-  margin-bottom: 36px;
+  margin-bottom: 32px;
 }
 
 .task-workspace {
@@ -2521,10 +2529,16 @@ a {
 .task-list-panel,
 .task-editor,
 .task-help {
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background: var(--surface);
-  box-shadow: var(--shadow-card);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.70);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow:
+    0 18px 45px -10px rgba(85, 70, 160, 0.07),
+    0 1px 3px rgba(85, 70, 160, 0.02),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.95),
+    inset 0 -1px 2px rgba(130, 110, 210, 0.04);
 }
 
 .task-list-panel {
@@ -2646,14 +2660,15 @@ a {
   display: grid;
   gap: 18px;
   padding: 22px;
-  border: 1px solid rgba(235, 230, 252, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.85);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
   box-shadow:
-    0 10px 36px -6px rgba(89, 67, 170, 0.05),
-    0 2px 10px -2px rgba(89, 67, 170, 0.03);
+    0 12px 36px -8px rgba(85, 70, 160, 0.05),
+    0 2px 8px rgba(85, 70, 160, 0.02),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95);
 }
 
 .task-card-view__header {
@@ -2701,20 +2716,22 @@ a {
   display: block;
 }
 
-/* Base Card in Outline Mode */
+/* Base Card in Outline Mode - Liquid Glass */
 .task-tree--cards .task-row {
   position: relative;
   width: 100%;
   min-height: auto;
   flex-basis: auto;
-  border: 1px solid rgba(235, 230, 250, 0.9);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82) 0%, rgba(250, 252, 255, 0.65) 100%);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
   box-shadow:
-    0 3px 12px -2px rgba(71, 56, 128, 0.04),
-    0 1px 3px rgba(71, 56, 128, 0.02);
+    0 6px 20px -4px rgba(71, 56, 128, 0.05),
+    0 1px 3px rgba(71, 56, 128, 0.02),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -1px 1.5px rgba(130, 110, 210, 0.04);
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -2723,60 +2740,65 @@ a {
 }
 
 .task-tree--cards .task-row:hover {
-  border-color: var(--theme-border, rgba(196, 182, 247, 0.9));
+  border-color: rgba(255, 255, 255, 0.98);
   box-shadow:
-    0 6px 20px -3px rgba(89, 67, 170, 0.08),
-    0 2px 6px -1px rgba(89, 67, 170, 0.04);
+    0 10px 28px -4px var(--theme-glow, rgba(89, 67, 170, 0.12)),
+    0 2px 6px -1px rgba(89, 67, 170, 0.04),
+    inset 0 1px 1.5px rgba(255, 255, 255, 1);
   transform: translateY(-1px);
 }
 
-/* Level 1: Project (稳重根节点) */
+/* Level 1: Project (稳重根节点 - Liquid Glass) */
 .task-tree--cards .task-row--project {
-  border-color: var(--theme-border, rgba(220, 213, 247, 0.95));
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.92);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.88) 0%, rgba(245, 242, 255, 0.72) 100%);
   box-shadow:
-    0 4px 18px -3px rgba(71, 56, 128, 0.06),
-    0 1px 4px rgba(71, 56, 128, 0.02);
+    0 8px 24px -4px rgba(71, 56, 128, 0.07),
+    0 1px 4px rgba(71, 56, 128, 0.02),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.95);
 }
 
 .task-tree--cards .task-row--project:hover {
   box-shadow:
-    0 8px 26px -4px var(--theme-glow, rgba(89, 67, 170, 0.12)),
-    0 2px 8px -1px rgba(89, 67, 170, 0.04);
+    0 12px 32px -4px var(--theme-glow, rgba(89, 67, 170, 0.14)),
+    0 2px 8px -1px rgba(89, 67, 170, 0.04),
+    inset 0 1px 2px rgba(255, 255, 255, 1);
 }
 
-/* Level 2: Module (轻质中层节点) */
+/* Level 2: Module (轻质中层节点 - Liquid Glass) */
 .task-tree--cards .task-row--module {
-  border-color: var(--theme-border, rgba(230, 224, 248, 0.85));
-  border-radius: 12px;
-  background: rgba(253, 252, 255, 0.88);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: 0 2px 10px -2px rgba(71, 56, 128, 0.04);
+  border-color: rgba(255, 255, 255, 0.88);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.84) 0%, rgba(248, 250, 255, 0.68) 100%);
+  box-shadow:
+    0 6px 20px -4px rgba(71, 56, 128, 0.06),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
 }
 
 .task-tree--cards .task-row--module:hover {
   box-shadow:
-    0 6px 18px -3px var(--theme-glow, rgba(89, 67, 170, 0.09)),
-    0 2px 6px -1px rgba(89, 67, 170, 0.03);
+    0 10px 24px -3px var(--theme-glow, rgba(89, 67, 170, 0.10)),
+    0 2px 6px -1px rgba(89, 67, 170, 0.03),
+    inset 0 1px 1.5px rgba(255, 255, 255, 1);
 }
 
-/* Level 3: Task (简洁末级节点) */
+/* Level 3: Task (简洁末级节点 - Liquid Glass) */
 .task-tree--cards .task-row--task {
-  border-color: rgba(238, 234, 250, 0.85);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: 0 1px 6px rgba(71, 56, 128, 0.03);
+  border-color: rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82) 0%, rgba(252, 253, 255, 0.65) 100%);
+  box-shadow:
+    0 4px 16px -3px rgba(71, 56, 128, 0.05),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
 }
 
 .task-tree--cards .task-row--task:hover {
-  border-color: var(--theme-border, rgba(200, 185, 248, 0.9));
+  border-color: rgba(255, 255, 255, 0.95);
   box-shadow:
-    0 4px 14px -1px var(--theme-glow, rgba(71, 56, 128, 0.08)),
-    0 1px 4px rgba(71, 56, 128, 0.03);
+    0 8px 20px -2px var(--theme-glow, rgba(71, 56, 128, 0.09)),
+    0 1px 4px rgba(71, 56, 128, 0.03),
+    inset 0 1px 1.5px rgba(255, 255, 255, 1);
 }
 
 /* Internal Layout & Typography */
@@ -3256,15 +3278,15 @@ a {
   position: absolute;
   left: -4px;
   width: 46px;
-  border-left: 2px solid var(--mindmap-line);
+  border-left: 1.5px solid var(--mindmap-line);
   content: "";
 }
 
 .task-tree--nested > .task-tree-node::before {
   top: 0;
   height: 50%;
-  border-bottom: 2px solid var(--mindmap-line);
-  border-radius: 0 0 0 38px;
+  border-bottom: 1.5px solid var(--mindmap-line);
+  border-radius: 0 0 0 32px;
 }
 
 .task-tree--nested > .task-tree-node::after {
@@ -3275,9 +3297,9 @@ a {
 .task-tree--nested > .task-tree-node:first-child:not(:only-child)::before {
   top: 50%;
   height: 50%;
-  border-top: 2px solid var(--mindmap-line);
+  border-top: 1.5px solid var(--mindmap-line);
   border-bottom: 0;
-  border-radius: 38px 0 0;
+  border-radius: 32px 0 0;
 }
 
 .task-tree--nested > .task-tree-node:first-child:not(:only-child)::after {
@@ -3287,7 +3309,7 @@ a {
 .task-tree--nested > .task-tree-node:only-child::before {
   top: calc(50% - 1px);
   height: 0;
-  border-top: 2px solid var(--mindmap-line);
+  border-top: 1.5px solid var(--mindmap-line);
   border-bottom: 0;
   border-left: 0;
   border-radius: 0;
@@ -3313,14 +3335,22 @@ a {
   min-height: 124px;
   flex: 0 0 320px;
   align-items: stretch;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.85);
   border-radius: 16px;
-  background: #fff;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.85) 0%, rgba(248, 250, 255, 0.68) 100%);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow:
+    0 8px 24px -5px rgba(85, 70, 150, 0.07),
+    0 2px 5px rgba(85, 70, 150, 0.02),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -1px 1.5px rgba(130, 110, 210, 0.04);
   user-select: none;
   transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms ease;
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    background 160ms ease;
 }
 
 .task-mind-branch--expanded > .task-row::after {
@@ -3329,9 +3359,10 @@ a {
   top: 50%;
   right: -74px;
   width: 66px;
-  height: 2px;
+  height: 1.5px;
   border-radius: 999px;
-  background: var(--mindmap-line);
+  background: linear-gradient(90deg, rgba(160, 145, 225, 0.75), rgba(185, 170, 240, 0.45));
+  box-shadow: 0 0 3px rgba(160, 145, 225, 0.25);
   content: "";
   transform: translateY(-50%);
 }
@@ -3347,8 +3378,11 @@ a {
 
 .task-row:hover,
 .task-row--selected {
-  border-color: #c4b8fa;
-  box-shadow: 0 10px 28px rgb(96 76 200 / 10%);
+  border-color: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 12px 32px -4px rgba(100, 80, 200, 0.12),
+    0 4px 10px -2px rgba(100, 80, 200, 0.04),
+    inset 0 1px 1.5px rgba(255, 255, 255, 1);
 }
 
 .task-row--dragging {
@@ -3362,43 +3396,101 @@ a {
 }
 
 .task-row--project {
-  border-color: #d7d0f8;
-  background: #faf9ff;
+  border-color: rgba(255, 255, 255, 0.92);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.88) 0%, rgba(245, 242, 255, 0.72) 100%);
 }
 
 .task-row--module {
-  background: #fdfcff;
+  border-color: rgba(255, 255, 255, 0.88);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.84) 0%, rgba(248, 250, 255, 0.68) 100%);
+}
+
+.task-row--done {
+  background: linear-gradient(145deg, rgba(240, 253, 248, 0.86) 0%, rgba(228, 250, 242, 0.70) 100%) !important;
+  border-color: rgba(47, 191, 143, 0.45) !important;
+  box-shadow:
+    0 8px 24px -5px rgba(47, 191, 143, 0.12),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.95) !important;
+}
+
+.task-row--done .task-row__name strong {
+  color: #4a5568 !important;
+  text-decoration: line-through rgba(47, 191, 143, 0.55) 1.5px;
+}
+
+.task-row__done-mark {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: rgba(47, 191, 143, 0.16);
+  border: 1px solid rgba(47, 191, 143, 0.35);
+  color: #0d8459;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(47, 191, 143, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+  z-index: 6;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.task-row__done-svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 3;
 }
 
 .task-tree--mindmap > .task-tree-node > .task-mind-branch > .task-row--project {
-  width: 226px;
+  width: 236px;
   min-height: 116px;
-  flex-basis: 226px;
-  border: 1px solid #e4def6;
-  border-radius: 14px;
-  background: rgb(255 255 255 / 96%);
+  flex-basis: 236px;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.88) 0%, rgba(245, 242, 255, 0.72) 100%);
   color: var(--ink);
-  box-shadow: 0 8px 22px rgb(72 58 126 / 7%);
+  backdrop-filter: blur(16px) saturate(1.45);
+  -webkit-backdrop-filter: blur(16px) saturate(1.45);
+  box-shadow:
+    0 10px 30px -6px rgba(85, 70, 150, 0.08),
+    0 2px 6px rgba(85, 70, 150, 0.03),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.95),
+    inset 0 -1px 2px rgba(130, 110, 210, 0.06);
 }
 
 .task-tree--mindmap .task-row--module {
-  width: 226px;
+  width: 236px;
   min-height: 112px;
-  flex-basis: 226px;
-  border-color: #e7e2f5;
-  border-radius: 14px;
-  background: rgb(255 255 255 / 97%);
-  box-shadow: 0 7px 20px rgb(72 58 126 / 6%);
+  flex-basis: 236px;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.84) 0%, rgba(248, 250, 255, 0.68) 100%);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow:
+    0 8px 24px -5px rgba(85, 70, 150, 0.07),
+    0 2px 5px rgba(85, 70, 150, 0.02),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    inset 0 -1px 1.5px rgba(130, 110, 210, 0.04);
 }
 
 .task-tree--mindmap .task-row--task {
-  width: 226px;
+  width: 236px;
   min-height: 108px;
-  flex-basis: 226px;
-  border-color: #ebe7f5;
-  border-radius: 14px;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 6px 18px rgb(72 58 126 / 5%);
+  flex-basis: 236px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82) 0%, rgba(252, 253, 255, 0.65) 100%);
+  backdrop-filter: blur(16px) saturate(1.35);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  box-shadow:
+    0 6px 20px -4px rgba(85, 70, 150, 0.06),
+    0 2px 4px rgba(85, 70, 150, 0.02),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
 }
 
 .task-tree--mindmap .task-row--project::before,
@@ -3407,13 +3499,25 @@ a {
   content: none;
 }
 
+.task-tree--mindmap .task-row--project:hover,
 .task-tree--mindmap .task-row--module:hover,
+.task-tree--mindmap .task-row--task:hover {
+  border-color: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 14px 36px -6px rgba(100, 80, 200, 0.13),
+    0 4px 10px -2px rgba(100, 80, 200, 0.05),
+    inset 0 1px 2px rgba(255, 255, 255, 1);
+  transform: translate(2px, -1px);
+}
+
+.task-tree--mindmap .task-row--project.task-row--selected,
 .task-tree--mindmap .task-row--module.task-row--selected,
-.task-tree--mindmap .task-row--task:hover,
 .task-tree--mindmap .task-row--task.task-row--selected {
-  border-color: color-mix(in srgb, var(--mindmap-accent) 52%, #fff);
-  box-shadow: 0 12px 28px rgb(91 73 164 / 10%);
-  transform: translateX(2px);
+  border-color: rgba(124, 92, 252, 0.7);
+  box-shadow:
+    0 0 0 3px rgba(124, 92, 252, 0.18),
+    0 14px 36px -6px rgba(100, 80, 200, 0.15),
+    inset 0 1px 2px rgba(255, 255, 255, 1);
 }
 
 .task-tree--mindmap > .task-tree-node > .task-mind-branch > .task-row--project .task-row__main {
@@ -4512,9 +4616,8 @@ body.task-editor-modal-open {
   max-width: 520px;
   min-width: 0;
   min-height: 0;
-  aspect-ratio: 1;
   justify-self: start;
-  padding: 22px;
+  padding: 22px 24px;
   border: 1px solid rgb(124 92 252 / 16%);
   border-radius: 22px;
   background: #fff;
@@ -4589,10 +4692,11 @@ body.task-editor-modal-open {
 
 .activity-calendar__summary {
   justify-content: space-between;
-  margin: 15px 0 12px;
-  padding: 9px 11px;
+  margin: 14px 0 14px;
+  padding: 10px 14px;
   border-radius: 12px;
-  background: #faf9ff;
+  background: rgba(250, 249, 255, 0.9);
+  border: 1px solid rgba(230, 225, 250, 0.7);
 }
 
 .activity-calendar__summary strong {
@@ -4608,19 +4712,19 @@ body.task-editor-modal-open {
 .activity-calendar__grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 5px;
+  gap: 6px;
 }
 
 .activity-calendar__weekdays {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   text-align: center;
 }
 
 .activity-calendar__grid {
-  min-height: 180px;
+  min-height: auto;
   align-content: start;
   transition: opacity 160ms ease;
 }
@@ -4631,11 +4735,12 @@ body.task-editor-modal-open {
 
 .activity-calendar__blank,
 .activity-calendar__day {
-  width: min(36px, 100%);
+  width: 100%;
+  max-width: 38px;
   min-height: 0;
   aspect-ratio: 1;
   justify-self: center;
-  border-radius: 50%;
+  border-radius: 9px;
 }
 
 .activity-calendar__day {
@@ -4643,64 +4748,71 @@ body.task-editor-modal-open {
   position: relative;
   place-items: center;
   border: 1px solid transparent;
-  color: #746f8f;
-  font-size: 10px;
+  color: #6a6486;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
-  font-weight: 800;
+  font-weight: 750;
   transition:
     background 160ms ease,
-    transform 160ms ease;
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .activity-calendar__day:hover {
   z-index: 1;
   transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(124, 92, 252, 0.15);
 }
 
 .activity-calendar__day.heat-0 {
-  border-color: #efecfa;
+  border-color: #f0ecfa;
   background: #faf9ff;
 }
 
 .activity-calendar__day.heat-1,
 .activity-calendar__legend .heat-1 {
   background: #eeeaff;
+  color: #5544a8;
 }
 
 .activity-calendar__day.heat-2,
 .activity-calendar__legend .heat-2 {
-  background: #d9d0ff;
+  background: #d8cdff;
+  color: #402f92;
 }
 
 .activity-calendar__day.heat-3,
 .activity-calendar__legend .heat-3 {
-  background: #b9a7ff;
-  color: #38256f;
+  background: #b6a2ff;
+  color: #2b1c6d;
+  font-weight: 800;
 }
 
 .activity-calendar__day.heat-4,
 .activity-calendar__legend .heat-4 {
   background: #8969f2;
   color: #fff;
+  font-weight: 800;
 }
 
 .activity-calendar__day.heat-5,
 .activity-calendar__legend .heat-5 {
   background: #5d35cf;
   color: #fff;
+  font-weight: 800;
 }
 
 .activity-calendar__day.is-today {
-  border-color: #39207c;
-  box-shadow: 0 0 0 2px rgb(124 92 252 / 18%);
+  border-color: #5b3df5;
+  box-shadow: 0 0 0 2px rgb(124 92 252 / 24%);
 }
 
 .activity-calendar__footer {
   justify-content: space-between;
   gap: 12px;
-  margin-top: 10px;
+  margin-top: 14px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .activity-calendar__error {
@@ -4718,9 +4830,9 @@ body.task-editor-modal-open {
 }
 
 .activity-calendar__legend i {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+  width: 11px;
+  height: 11px;
+  border-radius: 4px;
 }
 
 .today-checklist {
@@ -6973,8 +7085,39 @@ body.task-editor-modal-open {
     grid-template-columns: 1fr;
   }
 
+  .today-page {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .today-heading {
+    order: -3;
+  }
+
+  .today-page > .form-message,
+  .today-page > .sync-banner {
+    order: -2;
+  }
+
   .today-focus-grid {
-    grid-template-columns: 1fr;
+    display: contents;
+  }
+
+  .focus-timer {
+    order: 1;
+    margin-bottom: 0;
+  }
+
+  .today-checklist {
+    order: 2;
+    margin-bottom: 0;
+  }
+
+  .activity-calendar {
+    order: 3;
+    margin-bottom: 0;
+    max-width: none;
   }
 
   .today-add-card {

@@ -791,11 +791,17 @@ async function addItem(): Promise<void> {
 }
 
 async function toggleDone(item: DailyPlanItem): Promise<void> {
-  await runAction(() =>
-    daily.updateItem(item.id, {
-      status: item.status === 'DONE' ? 'TODO' : 'DONE',
-    }),
-  )
+  const newStatus = item.status === 'DONE' ? 'TODO' : 'DONE'
+  await runAction(async () => {
+    await daily.updateItem(item.id, {
+      status: newStatus,
+    })
+    if (item.task_id && tasks.items.some((task) => task.id === item.task_id)) {
+      await tasks.update(item.task_id, {
+        status: newStatus,
+      })
+    }
+  })
 }
 
 async function startItem(item: DailyPlanItem): Promise<void> {
@@ -847,7 +853,12 @@ async function finish(): Promise<void> {
   await runAction(async () => {
     await timer.finish()
     daily.setActiveItem(null)
-    if (item) await daily.applyFinishedTimer(item.id, actualSeconds)
+    if (item) {
+      await daily.applyFinishedTimer(item.id, actualSeconds)
+      if (item.task_id && tasks.items.some((task) => task.id === item.task_id)) {
+        await tasks.update(item.task_id, { status: 'DONE' })
+      }
+    }
   })
   if (calendarMonth.value === todayDate.value.slice(0, 7)) {
     await loadCalendarMonth()
