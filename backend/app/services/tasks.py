@@ -443,17 +443,15 @@ async def validate_parent(
         )
 
     parent = await get_owned_task(db, owner_id, parent_id)
-    expected_parent_type = {
-        TaskNodeType.MODULE: TaskNodeType.PROJECT,
-        TaskNodeType.TASK: TaskNodeType.MODULE,
-    }[node_type]
-    if parent.node_type != expected_parent_type:
+    if node_type == TaskNodeType.MODULE and parent.node_type != TaskNodeType.PROJECT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"{node_type.value.title()} nodes must be placed under "
-                f"{expected_parent_type.value.lower()} nodes"
-            ),
+            detail="Module nodes must be placed under project nodes",
+        )
+    if node_type == TaskNodeType.TASK and parent.node_type not in (TaskNodeType.PROJECT, TaskNodeType.MODULE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Task nodes must be placed under project or module nodes",
         )
     if task_id is None:
         return parent

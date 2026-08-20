@@ -330,7 +330,7 @@ const canAcceptDrop = computed(() => {
   const moving = props.draggingTask
   if (!moving || moving.id === props.task.id) return false
   return (
-    (props.task.node_type === 'PROJECT' && moving.node_type === 'MODULE')
+    (props.task.node_type === 'PROJECT' && (moving.node_type === 'MODULE' || moving.node_type === 'TASK'))
     || (props.task.node_type === 'MODULE' && moving.node_type === 'TASK')
   )
 })
