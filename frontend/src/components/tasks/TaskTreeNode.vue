@@ -15,6 +15,7 @@
             'task-row--selected': editorTaskId === task.id || creatingChildForId === task.id,
             'task-row--dragging': draggingTask?.id === task.id,
             'task-row--drop-target': dragTarget && canAcceptDrop,
+            'task-row--done': task.node_type === 'TASK' && task.status === 'DONE',
           },
         ]"
         :data-task-id="task.id"
@@ -25,6 +26,23 @@
         @dragleave="leaveDrag"
         @drop.stop.prevent="dropOnTask"
       >
+      <div
+        v-if="task.node_type === 'TASK' && task.status === 'DONE'"
+        class="task-row__done-mark"
+        aria-hidden="true"
+        title="已完成"
+      >
+        <svg viewBox="0 0 24 24" class="task-row__done-svg">
+          <path
+            d="m4.5 12.75 5 5 10-10.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
       <button
         class="task-drag-handle"
         type="button"
@@ -312,7 +330,7 @@ const canAcceptDrop = computed(() => {
   const moving = props.draggingTask
   if (!moving || moving.id === props.task.id) return false
   return (
-    (props.task.node_type === 'PROJECT' && moving.node_type === 'MODULE')
+    (props.task.node_type === 'PROJECT' && (moving.node_type === 'MODULE' || moving.node_type === 'TASK'))
     || (props.task.node_type === 'MODULE' && moving.node_type === 'TASK')
   )
 })
