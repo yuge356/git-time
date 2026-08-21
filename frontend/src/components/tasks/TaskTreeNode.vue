@@ -3,7 +3,7 @@
     <div
       :class="[
         'task-mind-branch',
-        { 'task-mind-branch--expanded': isContainer && expanded && task.children.length },
+        { 'task-mind-branch--expanded': expanded && task.children.length > 0 },
       ]"
       :style="themeVars"
     >
@@ -11,12 +11,13 @@
         :class="[
           'task-row',
           `task-row--${task.node_type.toLowerCase()}`,
-          {
-            'task-row--selected': editorTaskId === task.id || creatingChildForId === task.id,
-            'task-row--dragging': draggingTask?.id === task.id,
-            'task-row--drop-target': dragTarget && canAcceptDrop,
-            'task-row--done': task.node_type === 'TASK' && task.status === 'DONE',
-          },
+        {
+          'task-row--selected': editorTaskId === task.id || creatingChildForId === task.id,
+          'task-row--dragging': draggingTask?.id === task.id,
+          'task-row--drop-target': dragTarget && canAcceptDrop,
+          'task-row--done': task.node_type === 'TASK' && task.status === 'DONE',
+          'task-row--menu-open': actionMenuOpen,
+        },
         ]"
         :data-task-id="task.id"
         :aria-label="rowAriaLabel"
@@ -191,7 +192,7 @@
       </div>
       </article>
 
-      <ul v-if="isContainer && expanded && task.children.length" class="task-tree task-tree--nested">
+      <ul v-if="expanded && task.children.length" class="task-tree task-tree--nested">
         <TaskTreeNode
           v-for="child in task.children"
           :key="child.id"

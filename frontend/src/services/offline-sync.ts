@@ -14,7 +14,10 @@ import type { Task } from '@/types/task'
 export function isNetworkError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) return false
   if (!error.response) return true
-  return [408, 425, 429, 500, 502, 503, 504].includes(error.response.status)
+  // Bare 500s are excluded on purpose: the server answered, so the request
+  // reached application logic. Treating app-level rejections as outages made
+  // every retry flap the "saved locally" banner while quarantining nothing.
+  return [408, 425, 429, 502, 503, 504].includes(error.response.status)
 }
 
 function isNonExecutableTaskConflict(error: unknown): boolean {

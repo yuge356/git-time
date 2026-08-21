@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import CurrentUser, DatabaseSession
 from app.models.daily_plan import DailyPlan, DailyPlanItem
@@ -34,6 +35,21 @@ from app.services.tasks import (
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+def hierarchy_database_rejection(exc: IntegrityError) -> HTTPException:
+    """Translate a hierarchy-trigger violation into a replayable 400.
+
+    Offline replays and pre-migration databases can reject a write at the
+    trigger level after service validation passed. Returning 400 (instead of
+    an unhandled 500) lets clients quarantine the operation instead of
+    mistaking it for a server outage.
+    """
+
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Task hierarchy was rejected by the database; run pending migrations",
+    )
 
 
 async def next_sort_order(
@@ -153,7 +169,11 @@ async def create_task(
         sort_order=await next_sort_order(db, current_user.id, payload.parent_id),
     )
     db.add(task)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise hierarchy_database_rejection(exc) from exc
     await replace_task_dependencies(
         db,
         current_user.id,
@@ -275,7 +295,11 @@ async def update_task(
             )
         )
 
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise hierarchy_database_rejection(exc) from exc
     await db.refresh(task)
     responses = await build_owned_task_responses(db, current_user.id)
     response = next(item for item in responses if item.id == task.id)

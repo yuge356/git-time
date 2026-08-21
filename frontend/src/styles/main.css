@@ -3336,6 +3336,13 @@ a {
   opacity: 0.45;
 }
 
+/* An open action menu must paint above every sibling row: each row creates
+ * its own stacking context, so the panel's own z-index cannot escape it. */
+.task-row.task-row--menu-open,
+.task-tree--mindmap .task-row--menu-open {
+  z-index: 60;
+}
+
 .task-row--drop-target {
   border-color: var(--focus);
   background: var(--primary-soft);
