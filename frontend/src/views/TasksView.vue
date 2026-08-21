@@ -69,7 +69,7 @@
               <header class="task-mindmap-toolbar">
                 <div>
                   <strong>任务结构</strong>
-                  <span>通过整个网页滚动查看导图，点击节点查看详情</span>
+                  <span>在面板内滚动或缩放查看导图，点击节点查看详情</span>
                 </div>
                 <div class="task-mindmap-toolbar__controls" aria-label="导图缩放控制">
                   <button class="icon-button" type="button" aria-label="缩小导图" @click="changeMapZoom(-0.1)">−</button>
@@ -101,6 +101,7 @@
                       :has-active-timer="Boolean(timer.active)"
                       :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
                       :timer-busy="timer.busy"
+                      :parent-node-type="null"
                       @edit="openEdit"
                       @add-child="openCreateChild"
                       @apply-defaults="applyDefaults"
@@ -142,6 +143,7 @@
                   :has-active-timer="Boolean(timer.active)"
                   :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
                   :timer-busy="timer.busy"
+                  :parent-node-type="null"
                   @edit="openEdit"
                   @add-child="openCreateChild"
                   @apply-defaults="applyDefaults"
@@ -190,6 +192,14 @@
                     @click="openCreateChild(selectedTask, 'TASK')"
                   >
                     新建任务
+                  </button>
+                  <button
+                    v-if="canAddChildTo(selectedTask)"
+                    class="button button--quiet button--small"
+                    type="button"
+                    @click="openCreateChild(selectedTask, 'TASK')"
+                  >
+                    新建子任务
                   </button>
                   <button
                     v-if="selectedTask.node_type !== 'TASK'"
@@ -317,6 +327,7 @@ const mapTree = ref<HTMLElement | null>(null)
 const mapZoom = ref(1)
 const mapNaturalSize = ref({ width: 1114, height: 260 })
 let resizeObserver: ResizeObserver | null = null
+let viewportObserver: ResizeObserver | null = null
 let layoutFrame = 0
 let initialLoadFinished = false
 
@@ -338,7 +349,7 @@ const selectedTaskTypeLabel = computed(() => {
   return '任务'
 })
 const taskViewHelpText = computed(() => taskViewMode.value === 'MINDMAP'
-  ? '每个项目只保留一个主节点，右侧用连线展开模块与任务。导图随内容撑开页面，通过网页滚动查看全部节点。'
+  ? '每个项目只保留一个主节点，右侧用连线展开模块与任务。导图固定在面板内滚动查看，调整窗口大小时自动缩放适配。'
   : '项目、模块与任务按大纲层级纵向排列。点击名称查看设置，使用左侧拖动手柄调整任务层级。')
 const editorDialogOpen = computed(() => Boolean(
   creating.value || selectedTask.value || creatingChildParentId.value,
@@ -386,7 +397,7 @@ watch(
     task.progress_ratio,
     task.due_date,
   ]),
-  scheduleMapLayout,
+  () => scheduleMapLayout(),
   { deep: true },
 )
 
@@ -413,21 +424,29 @@ function setTaskViewMode(mode: TaskViewMode): void {
   if (taskViewMode.value === mode) return
   resizeObserver?.disconnect()
   resizeObserver = null
+  viewportObserver?.disconnect()
+  viewportObserver = null
   taskViewMode.value = mode
   try {
     localStorage.setItem(TASK_VIEW_MODE_STORAGE_KEY, mode)
   } catch {
     // The selected view remains active for this page even if storage is unavailable.
   }
-  if (mode === 'MINDMAP') scheduleMapLayout()
+  if (mode === 'MINDMAP') {
+    void nextTick(() => {
+      observeMapViewport()
+      scheduleMapLayout(fitMap)
+    })
+  }
 }
 
-function scheduleMapLayout(): void {
+function scheduleMapLayout(afterLayout?: () => void): void {
   void nextTick(() => {
     if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
     layoutFrame = window.requestAnimationFrame(() => {
       layoutFrame = 0
       syncMapLayout()
+      afterLayout?.()
     })
   })
 }
@@ -437,13 +456,25 @@ function syncMapLayout(): void {
   const canvas = mapCanvas.value
   if (!tree || !canvas) return
   if (!resizeObserver) {
-    resizeObserver = new ResizeObserver(scheduleMapLayout)
+    resizeObserver = new ResizeObserver(() => scheduleMapLayout())
     resizeObserver.observe(tree)
   }
   mapNaturalSize.value = {
     width: Math.max(960, Math.ceil(tree.scrollWidth)),
     height: Math.max(180, Math.ceil(tree.scrollHeight)),
   }
+}
+
+function observeMapViewport(): void {
+  const viewport = mapViewport.value
+  if (!viewport || viewportObserver) return
+  // Window and panel resizes re-fit the zoom so the whole tree stays inside
+  // the framed viewport instead of spilling out of the page layout.
+  viewportObserver = new ResizeObserver(() => {
+    if (taskViewMode.value !== 'MINDMAP') return
+    window.requestAnimationFrame(() => fitMap())
+  })
+  viewportObserver.observe(viewport)
 }
 
 function setMapZoom(nextZoom: number): void {
@@ -466,12 +497,17 @@ function zoomMapAtPointer(event: WheelEvent): void {
 function fitMap(): void {
   const viewport = mapViewport.value
   if (!viewport) return
-  const availableWidth = Math.max(320, document.documentElement.clientWidth - 196)
-  const horizontalScale = availableWidth / mapNaturalSize.value.width
-  mapZoom.value = Math.min(1, Math.max(0.4, horizontalScale))
-  mapZoom.value = Math.round(mapZoom.value * 10) / 10
+  const availableWidth = Math.max(320, viewport.clientWidth - 28)
+  const availableHeight = Math.max(240, viewport.clientHeight - 28)
+  const fitScale = Math.min(
+    availableWidth / mapNaturalSize.value.width,
+    availableHeight / mapNaturalSize.value.height,
+    1,
+  )
+  const nextZoom = Math.min(1, Math.max(0.4, Math.round(fitScale * 20) / 20))
+  if (nextZoom === mapZoom.value) return
+  mapZoom.value = nextZoom
   void nextTick(() => {
-    viewport.scrollIntoView({ block: 'start', inline: 'start', behavior: 'smooth' })
     scheduleMapLayout()
   })
 }
@@ -487,16 +523,18 @@ onMounted(async () => {
   } finally {
     await nextTick()
     if (mapTree.value) {
-      resizeObserver = new ResizeObserver(scheduleMapLayout)
+      resizeObserver = new ResizeObserver(() => scheduleMapLayout())
       resizeObserver.observe(mapTree.value)
     }
-    scheduleMapLayout()
+    observeMapViewport()
+    scheduleMapLayout(fitMap)
     initialLoadFinished = true
   }
 })
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
+  viewportObserver?.disconnect()
   if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
   document.body.classList.remove('task-editor-modal-open')
 })
@@ -511,15 +549,18 @@ onActivated(async () => {
   }
   await nextTick()
   if (mapTree.value && !resizeObserver) {
-    resizeObserver = new ResizeObserver(scheduleMapLayout)
+    resizeObserver = new ResizeObserver(() => scheduleMapLayout())
     resizeObserver.observe(mapTree.value)
   }
-  scheduleMapLayout()
+  observeMapViewport()
+  scheduleMapLayout(fitMap)
 })
 
 onDeactivated(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
+  viewportObserver?.disconnect()
+  viewportObserver = null
   if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
 })
 
@@ -544,7 +585,10 @@ function openEdit(task: Task): void {
 }
 
 function openCreateChild(parent: Task, nodeType: TaskNodeType): void {
-  if (parent.node_type === 'TASK') return
+  if (parent.node_type === 'TASK') {
+    const parentType = tasks.items.find((item) => item.id === parent.parent_id)?.node_type ?? null
+    if (parentType === 'TASK') return
+  }
   creating.value = false
   selectedTask.value = null
   creatingChildParentId.value = parent.id
@@ -595,16 +639,27 @@ function finishDrag(): void {
   draggingTask.value = null
 }
 
+function canAddChildTo(task: Task): boolean {
+  if (task.node_type !== 'TASK') return false
+  const parentType = tasks.items.find((item) => item.id === task.parent_id)?.node_type ?? null
+  return parentType !== 'TASK'
+}
+
 async function moveTask(parent: Task): Promise<void> {
   const moving = draggingTask.value
   if (!moving || moving.parent_id === parent.id) return
   const valid = (
     moving.node_type === 'MODULE' && parent.node_type === 'PROJECT'
   ) || (
-    moving.node_type === 'TASK' && parent.node_type === 'MODULE'
+    moving.node_type === 'TASK'
+    && (
+      parent.node_type === 'MODULE'
+      || parent.node_type === 'PROJECT'
+      || (parent.node_type === 'TASK' && canAddChildTo(parent))
+    )
   )
   if (!valid) {
-    loadError.value = '模块只能放在项目下，任务只能放在模块下。'
+    loadError.value = '模块只能放在项目下，任务可以放在项目、模块或任务（仅一层子任务）下。'
     return
   }
   try {
@@ -639,6 +694,11 @@ async function applyDefaults(container: Task): Promise<void> {
 
 async function startTask(task: Task): Promise<void> {
   if (task.node_type !== 'TASK') return
+  const childCount = tasks.items.filter((item) => item.parent_id === task.id).length
+  if (childCount > 0) {
+    loadError.value = '含子任务的任务不能直接计时，请从子任务中选择。'
+    return
+  }
   loadError.value = ''
   actionMessage.value = ''
   const availableSeconds = task.estimated_seconds - task.direct_actual_seconds

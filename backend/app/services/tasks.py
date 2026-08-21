@@ -391,28 +391,35 @@ async def get_owned_executable_task(
 ) -> Task:
     """Return an owned leaf node and reject containers that still have children.
 
-    Explicit ``TASK`` nodes are always leaves in the structured hierarchy. An
-    empty project or module is also directly actionable: this keeps the simple
-    "create a project, add it to today" workflow useful without weakening the
-    roll-up behavior once child tasks are added.
+    Explicit ``TASK`` nodes stay actionable while they have no children; once
+    subtasks are added they act as containers and can no longer be timed or
+    planned directly. An empty project or module is also directly actionable:
+    this keeps the simple "create a project, add it to today" workflow useful
+    without weakening the roll-up behavior once child tasks are added.
     """
 
     task = await get_owned_task(db, owner_id, task_id)
-    child_id = await db.scalar(
-        select(Task.id)
-        .where(
-            Task.owner_id == owner_id,
-            Task.parent_id == task.id,
-            Task.deleted_at.is_(None),
-        )
-        .limit(1)
-    )
-    if child_id is not None:
+    if await has_active_children(db, owner_id, task.id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only executable tasks can be timed or added to a daily plan",
         )
     return task
+
+
+async def has_active_children(db: AsyncSession, owner_id: UUID, task_id: UUID) -> bool:
+    """Whether the task still owns at least one non-deleted child node."""
+
+    child_id = await db.scalar(
+        select(Task.id)
+        .where(
+            Task.owner_id == owner_id,
+            Task.parent_id == task_id,
+            Task.deleted_at.is_(None),
+        )
+        .limit(1)
+    )
+    return child_id is not None
 
 
 async def validate_parent(
@@ -422,7 +429,7 @@ async def validate_parent(
     node_type: TaskNodeType,
     task_id: UUID | None = None,
 ) -> Task | None:
-    """Enforce PROJECT -> MODULE -> TASK and prevent hierarchy cycles."""
+    """Enforce PROJECT -> MODULE -> TASK (+ one subtask level) and prevent cycles."""
 
     if node_type == TaskNodeType.PROJECT:
         if parent_id is not None:
@@ -448,11 +455,31 @@ async def validate_parent(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Module nodes must be placed under project nodes",
         )
-    if node_type == TaskNodeType.TASK and parent.node_type not in (TaskNodeType.PROJECT, TaskNodeType.MODULE):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Task nodes must be placed under project or module nodes",
-        )
+    if node_type == TaskNodeType.TASK:
+        if parent.node_type not in (TaskNodeType.PROJECT, TaskNodeType.MODULE, TaskNodeType.TASK):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Task nodes must be placed under project, module or task nodes",
+            )
+        if parent.node_type == TaskNodeType.TASK:
+            # Subtasks are allowed for exactly one extra level: the parent
+            # task must itself sit directly under a project or module.
+            if parent.parent_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Existing task hierarchy is invalid",
+                )
+            grandparent = await get_owned_task(db, owner_id, parent.parent_id)
+            if grandparent.node_type == TaskNodeType.TASK:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Subtasks cannot contain further subtasks",
+                )
+            if task_id is not None and await has_active_children(db, owner_id, task_id):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Only leaf tasks can become subtasks",
+                )
     if task_id is None:
         return parent
 

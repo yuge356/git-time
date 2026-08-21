@@ -6,8 +6,8 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.dependencies import CurrentUser, DatabaseSession
-from app.schemas.analytics import AnalyticsDashboard, AnalyticsSummary
-from app.services.analytics import build_analytics_summary
+from app.schemas.analytics import AnalyticsDashboard, AnalyticsSummary, HourlyFocusResponse
+from app.services.analytics import build_analytics_summary, build_hourly_focus
 from app.services.daily_plans import build_check_in
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -57,4 +57,20 @@ async def read_analytics_summary(
         current_user.profile.timezone,
         date_from,
         date_to,
+    )
+
+
+@router.get("/hourly-focus", response_model=HourlyFocusResponse)
+async def read_hourly_focus(
+    db: DatabaseSession,
+    current_user: CurrentUser,
+    day: Annotated[date, Query()],
+) -> HourlyFocusResponse:
+    """Return the hour-by-hour focus distribution for one local date."""
+
+    return await build_hourly_focus(
+        db,
+        current_user.id,
+        current_user.profile.timezone,
+        day,
     )

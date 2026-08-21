@@ -1,6 +1,6 @@
 """Date-range learning analytics API tests."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import uuid4
 
 from httpx import AsyncClient
@@ -191,3 +191,56 @@ async def test_analytics_validates_range_and_isolates_owners(
     assert isolated.json()["total_learning_seconds"] == 0
     assert isolated.json()["project_history"] == []
     assert reversed_range.status_code == 422
+
+
+async def test_hourly_focus_buckets_sessions_by_start_hour(
+    client: AsyncClient,
+) -> None:
+    from zoneinfo import ZoneInfo
+
+    token, _ = await register_user(client, "hourly")
+    today = date.today()
+    task_id = await create_task(client, token, "Hourly lesson")
+
+    # New profiles default to Asia/Shanghai; build sessions on that local day.
+    local_tz = ZoneInfo("Asia/Shanghai")
+    morning = datetime.combine(today, time(9, 0), tzinfo=local_tz).astimezone(UTC)
+    evening = datetime.combine(today, time(21, 30), tzinfo=local_tz).astimezone(UTC)
+    for started, duration in ((morning, 1_200), (evening, 1_800)):
+        response = await client.put(
+            f"/api/v1/sessions/{uuid4()}",
+            headers=auth_header(token),
+            json=snapshot(
+                task_id,
+                str(uuid4()),
+                "COMPLETED",
+                started,
+                started + timedelta(seconds=duration),
+                duration,
+                ended_at=started + timedelta(seconds=duration),
+            ),
+        )
+        assert response.status_code == 200
+
+    hourly = await client.get(
+        "/api/v1/analytics/hourly-focus",
+        headers=auth_header(token),
+        params={"day": today.isoformat()},
+    )
+    assert hourly.status_code == 200
+    data = hourly.json()
+    assert data["date"] == today.isoformat()
+    assert data["total_seconds"] == 3_000
+    hours = {point["hour"]: point["seconds"] for point in data["hours"]}
+    assert len(hours) == 24
+    assert hours[9] == 1_200
+    assert hours[21] == 1_800
+    assert sum(hours.values()) == data["total_seconds"]
+
+    empty = await client.get(
+        "/api/v1/analytics/hourly-focus",
+        headers=auth_header(token),
+        params={"day": (today - timedelta(days=1)).isoformat()},
+    )
+    assert empty.status_code == 200
+    assert empty.json()["total_seconds"] == 0

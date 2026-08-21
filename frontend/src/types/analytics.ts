@@ -11,6 +11,17 @@ export interface DailyTrendPoint {
   completed_items: number
 }
 
+export interface HourlyFocusPoint {
+  hour: number
+  seconds: number
+}
+
+export interface HourlyFocusDistribution {
+  date: string
+  total_seconds: number
+  hours: HourlyFocusPoint[]
+}
+
 export interface BudgetComparison {
   task_id: string
   title: string

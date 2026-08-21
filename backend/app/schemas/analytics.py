@@ -25,6 +25,21 @@ class DailyTrendPoint(BaseModel):
     completed_items: int
 
 
+class HourlyFocusPoint(BaseModel):
+    """Learning time recorded during one clock hour of a single date."""
+
+    hour: int
+    seconds: int
+
+
+class HourlyFocusResponse(BaseModel):
+    """Hour-by-hour focus distribution for one calendar date."""
+
+    date: date
+    total_seconds: int
+    hours: list[HourlyFocusPoint]
+
+
 class BudgetComparison(BaseModel):
     """Configured task budget compared with period study time."""
 

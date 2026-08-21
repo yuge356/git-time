@@ -14,6 +14,8 @@ from app.schemas.analytics import (
     AnalyticsSummary,
     BudgetComparison,
     DailyTrendPoint,
+    HourlyFocusPoint,
+    HourlyFocusResponse,
     ProjectTimeHistory,
     TaskTimeSlice,
 )
@@ -31,6 +33,50 @@ def resolve_timezone(timezone_name: str) -> ZoneInfo:
         return ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError:
         return ZoneInfo("UTC")
+
+
+async def build_hourly_focus(
+    db: AsyncSession,
+    owner_id: UUID,
+    timezone_name: str,
+    day: date,
+) -> HourlyFocusResponse:
+    """Bucket one local date's session time into 24 clock hours.
+
+    Sessions are attributed to the clock hour in which they started, matching
+    how ``daily_trend`` attributes whole sessions to their start date.
+    """
+
+    timezone = resolve_timezone(timezone_name)
+    start_at = datetime.combine(day, time.min, tzinfo=timezone).astimezone(UTC)
+    end_at = datetime.combine(day + timedelta(days=1), time.min, tzinfo=timezone).astimezone(UTC)
+    sessions = list(
+        (
+            await db.scalars(
+                select(Session).where(
+                    Session.owner_id == owner_id,
+                    Session.started_at >= start_at,
+                    Session.started_at < end_at,
+                    Session.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    )
+    hourly_seconds = [0] * 24
+    for session in sessions:
+        seconds = effective_session_duration(session)
+        if seconds <= 0:
+            continue
+        hour = normalize_utc(session.started_at).astimezone(timezone).hour
+        hourly_seconds[hour] += seconds
+    return HourlyFocusResponse(
+        date=day,
+        total_seconds=sum(hourly_seconds),
+        hours=[
+            HourlyFocusPoint(hour=hour, seconds=seconds)
+            for hour, seconds in enumerate(hourly_seconds)
+        ],
+    )
 
 
 async def build_analytics_summary(

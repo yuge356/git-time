@@ -318,6 +318,117 @@ async def test_task_recurrence_and_daily_reminder_are_persisted(
     assert updated.json()["daily_reminder_time"] is None
 
 
+async def test_subtasks_allow_exactly_one_extra_level(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "subtasks")
+    _, _, task = await create_structured_task(client, token, "练习 1")
+
+    subtask = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "练习 1 · 步骤 A",
+            "node_type": "TASK",
+            "parent_id": task["id"],
+            "estimated_seconds": 900,
+        },
+    )
+    assert subtask.status_code == 201
+    assert subtask.json()["parent_id"] == task["id"]
+
+    deeper = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "过深层级",
+            "node_type": "TASK",
+            "parent_id": subtask.json()["id"],
+            "estimated_seconds": 600,
+        },
+    )
+    assert deeper.status_code == 400
+    assert deeper.json()["detail"] == "Subtasks cannot contain further subtasks"
+
+    listed = await client.get("/api/v1/tasks", headers=auth_header(token))
+    by_id = {item["id"]: item for item in listed.json()}
+    assert by_id[task["id"]]["is_leaf"] is False
+    assert by_id[subtask.json()["id"]]["is_leaf"] is True
+
+
+async def test_parent_task_with_subtasks_stops_being_executable(
+    client: AsyncClient,
+) -> None:
+    from uuid import uuid4
+
+    token, _ = await register_user(client, "parent_executable")
+    _, _, task = await create_structured_task(client, token, "练习 2")
+    subtask = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "练习 2 · 步骤 B",
+            "node_type": "TASK",
+            "parent_id": task["id"],
+            "estimated_seconds": 600,
+        },
+    )
+    assert subtask.status_code == 201
+
+    now = "2026-08-21T08:00:00+00:00"
+    session = await client.put(
+        f"/api/v1/sessions/{uuid4()}",
+        headers=auth_header(token),
+        json={
+            "task_id": task["id"],
+            "client_id": str(uuid4()),
+            "status": "RUNNING",
+            "started_at": now,
+            "ended_at": None,
+            "duration_seconds": 0,
+            "last_resumed_at": now,
+            "client_updated_at": now,
+        },
+    )
+    assert session.status_code == 409
+    assert session.json()["detail"] == (
+        "Only executable tasks can be timed or added to a daily plan"
+    )
+
+
+async def test_only_leaf_tasks_can_become_subtasks(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "leaf_move")
+    _, module, first = await create_structured_task(client, token, "任务 A")
+    child_of_first = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "任务 A · 步骤",
+            "node_type": "TASK",
+            "parent_id": first["id"],
+            "estimated_seconds": 600,
+        },
+    )
+    assert child_of_first.status_code == 201
+    second = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "任务 B",
+            "node_type": "TASK",
+            "parent_id": module["id"],
+            "estimated_seconds": 1_800,
+        },
+    )
+    assert second.status_code == 201
+
+    moved = await client.patch(
+        f"/api/v1/tasks/{first['id']}",
+        headers=auth_header(token),
+        json={"parent_id": second.json()["id"]},
+    )
+    assert moved.status_code == 400
+    assert moved.json()["detail"] == "Only leaf tasks can become subtasks"
+
+
 async def test_task_hierarchy_rejects_cycles(client: AsyncClient) -> None:
     token, _ = await register_user(client)
     root = await client.post(

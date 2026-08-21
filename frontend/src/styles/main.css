@@ -3063,13 +3063,18 @@ a {
 
 .task-mindmap {
   position: relative;
-  width: max-content;
-  min-width: 100%;
-  height: auto;
-  overflow: visible;
+  width: 100%;
+  min-width: 0;
+  height: clamp(420px, 62vh, 680px);
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: 0;
-  border: 0;
-  background: transparent;
+  border: 1px solid rgba(233, 228, 250, 0.9);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 18% 22%, rgb(124 92 252 / 5%), transparent 44%),
+    radial-gradient(circle at 82% 78%, rgb(96 76 200 / 4%), transparent 40%),
+    #fbfaff;
   touch-action: auto;
 }
 
@@ -4442,14 +4447,20 @@ body.task-editor-modal-open {
 
 .today-focus-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.18fr);
+  grid-template-columns: minmax(320px, 0.86fr) minmax(0, 1.14fr);
   gap: 18px;
   align-items: stretch;
   margin-bottom: 18px;
 }
 
+.today-bottom-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+
 .focus-timer {
-  order: 2;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
@@ -4531,12 +4542,9 @@ body.task-editor-modal-open {
 }
 
 .activity-calendar {
-  order: 1;
   width: 100%;
-  max-width: 520px;
   min-width: 0;
   min-height: 0;
-  justify-self: start;
   padding: 22px 24px;
   border: 1px solid rgb(124 92 252 / 16%);
   border-radius: 22px;
@@ -4753,6 +4761,125 @@ body.task-editor-modal-open {
   width: 11px;
   height: 11px;
   border-radius: 4px;
+}
+
+.focus-distribution {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 14px;
+  min-width: 0;
+  padding: 22px 24px;
+  border: 1px solid rgb(124 92 252 / 16%);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+
+.focus-distribution__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.focus-distribution__header h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.focus-distribution__summary {
+  display: grid;
+  gap: 2px;
+  padding: 8px 14px;
+  border: 1px solid rgba(230, 225, 250, 0.7);
+  border-radius: 12px;
+  background: rgba(250, 249, 255, 0.9);
+  text-align: right;
+}
+
+.focus-distribution__summary strong {
+  font-size: 13px;
+}
+
+.focus-distribution__summary span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.focus-distribution__chart {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  align-self: center;
+  width: 100%;
+  min-height: 150px;
+  padding: 10px 2px 0;
+  border-bottom: 1px solid #e5e0fa;
+  transition: opacity 160ms ease;
+}
+
+.focus-distribution__chart.is-loading {
+  opacity: 0.45;
+}
+
+.focus-distribution__slot {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
+.focus-distribution__bar-track {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 96px;
+  padding: 0 1px;
+}
+
+.focus-distribution__bar {
+  width: 100%;
+  max-width: 18px;
+  min-height: 0;
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(180deg, #8a6cf0 0%, #6d47dd 100%);
+  transition: height 220ms ease;
+}
+
+.focus-distribution__bar.is-empty {
+  background: #efecfb;
+}
+
+.focus-distribution__bar.is-current {
+  box-shadow: 0 0 0 2px rgb(124 92 252 / 28%);
+}
+
+.focus-distribution__hour {
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  text-align: center;
+}
+
+.focus-distribution__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.focus-distribution__error {
+  overflow: hidden;
+  color: var(--danger);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .today-checklist {
@@ -7020,24 +7147,13 @@ body.task-editor-modal-open {
     order: -2;
   }
 
-  .today-focus-grid {
-    display: contents;
+  .today-focus-grid,
+  .today-bottom-grid {
+    grid-template-columns: 1fr;
   }
 
   .focus-timer {
-    order: 1;
-    margin-bottom: 0;
-  }
-
-  .today-checklist {
-    order: 2;
-    margin-bottom: 0;
-  }
-
-  .activity-calendar {
-    order: 3;
-    margin-bottom: 0;
-    max-width: none;
+    min-height: 0;
   }
 
   .today-add-card {
@@ -7200,6 +7316,19 @@ body.task-editor-modal-open {
   .activity-calendar {
     min-height: 0;
     padding: 20px;
+  }
+
+  .focus-distribution {
+    padding: 20px;
+  }
+
+  .focus-distribution__chart {
+    gap: 2px;
+    min-height: 120px;
+  }
+
+  .focus-distribution__bar-track {
+    min-height: 72px;
   }
 
   .today-checklist {
@@ -7410,10 +7539,9 @@ body.task-editor-modal-open {
   }
 
   .task-mindmap {
-    height: 520px;
+    height: clamp(360px, 68vh, 520px);
     margin: 0;
     padding: 0;
-    border-radius: 18px;
   }
 
   .task-mindmap-toolbar {
@@ -7540,6 +7668,15 @@ body.task-editor-modal-open {
     align-self: flex-start;
   }
 
+  .focus-distribution__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .focus-distribution__summary {
+    text-align: left;
+  }
+
   .daily-item-usage,
   .daily-item-actions {
     grid-column: 2;
@@ -7583,6 +7720,7 @@ body.task-editor-modal-open {
 .focus-timer,
 .activity-calendar,
 .today-checklist,
+.focus-distribution,
 .analytics-card {
   border-color: var(--glass-border);
   background: var(--surface);

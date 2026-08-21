@@ -97,7 +97,9 @@ export const useTaskStore = defineStore('tasks', {
       sortTree(roots)
       const summarize = (node: TaskNode): { estimated: number; actual: number; count: number; done: number } => {
         if (node.node_type === 'TASK') {
-          node.is_leaf = true
+          // A task that owns subtasks acts as a container even though its
+          // budget and completion still describe its own execution.
+          node.is_leaf = node.children.length === 0
           node.planned_seconds = node.estimated_seconds
           node.children_estimated_seconds = 0
           node.task_count = 1

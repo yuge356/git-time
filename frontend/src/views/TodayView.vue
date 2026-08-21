@@ -56,7 +56,7 @@
                 · 剩余 {{ formatDuration(timerRemainingSeconds) }}
               </template>
             </p>
-            <p v-else>从下方今日任务中选择一项，然后开始计时。</p>
+            <p v-else>从右侧今日任务中选择一项，然后开始计时。</p>
             <p v-if="timer.targetNotice" class="focus-timer__notice" role="status">
               <strong>时间提醒：</strong>{{ timer.targetNotice }}
             </p>
@@ -98,6 +98,147 @@
           </div>
         </section>
 
+        <section class="today-checklist">
+          <header class="today-checklist__header">
+            <div>
+              <h2>今日任务</h2>
+              <p>点击任务即可选中；色块表示已使用的计划时间。</p>
+            </div>
+            <div class="today-summary" aria-label="今日投入概览">
+              <span><strong>{{ formatDuration(displayLearningSeconds) }}</strong> 已投入</span>
+              <span><strong>{{ daily.checkIn?.completed_items ?? 0 }}/{{ daily.checkIn?.total_items ?? 0 }}</strong> 已完成</span>
+              <span><strong>{{ daily.checkIn?.streak_days ?? 0 }} 天</strong> 连续打卡</span>
+            </div>
+          </header>
+
+          <p v-if="daily.loading" class="empty-state">正在读取计划…</p>
+          <div v-else-if="daily.plan?.items.length === 0" class="today-empty">
+            <strong>今天还没有任务</strong>
+            <span>从项目中挑一项任务，或添加一个临时事项。</span>
+          </div>
+
+          <TransitionGroup v-else tag="ol" name="daily-list" class="daily-item-list">
+            <li
+              v-for="item in orderedDailyItems"
+              :key="item.id"
+              :class="{
+                'daily-item--selected': selectedItemId === item.id,
+                'daily-item--timing': isTiming(item),
+                'daily-item--overrun': isOverrun(item),
+                'daily-item--done': item.status === 'DONE',
+              }"
+              :style="progressStyle(item)"
+            >
+              <button
+                class="daily-check"
+                :class="{ 'daily-check--done': item.status === 'DONE' }"
+                type="button"
+                :aria-label="item.status === 'DONE' ? `将${item.title}标为未完成` : `完成${item.title}`"
+                :disabled="daily.saving || isTiming(item)"
+                @click="toggleDone(item)"
+              >
+                {{ item.status === 'DONE' ? '✓' : '' }}
+              </button>
+
+              <button
+                class="daily-item-main"
+                type="button"
+                :aria-pressed="selectedItemId === item.id"
+                :disabled="item.status === 'DONE'"
+                @click="selectedItemId = item.id"
+              >
+                <strong :class="{ 'is-complete': item.status === 'DONE' }">{{ item.title }}</strong>
+                <span>
+                  {{ item.status === 'DONE' ? '已完成' : statusLabel(item) }}
+                  <template v-if="item.estimated_seconds > 0">
+                    · 计划 {{ formatDuration(item.estimated_seconds) }}
+                  </template>
+                </span>
+              </button>
+
+              <div class="daily-item-usage">
+                <strong>{{ isTiming(item) ? formatTimer(timer.displaySeconds) : formatDuration(displayActual(item)) }}</strong>
+                <span v-if="isOverrun(item)" class="daily-overrun">⚠ 已超时 {{ formatDuration(overrunSeconds(item)) }}</span>
+                <span v-else>{{ progressPercent(item) }}% 用时</span>
+              </div>
+
+              <div class="daily-item-actions">
+                <template v-if="isTiming(item)">
+                  <button
+                    v-if="timer.active?.snapshot.status === 'RUNNING'"
+                    class="button button--quiet button--small"
+                    type="button"
+                    :disabled="timer.busy"
+                    @click="pause"
+                  >
+                    暂停
+                  </button>
+                  <button
+                    v-else
+                    class="button button--primary button--small"
+                    type="button"
+                    :disabled="timer.busy"
+                    @click="resume"
+                  >
+                    继续
+                  </button>
+                  <button class="button button--finish button--small" type="button" :disabled="timer.busy" @click="finish">
+                    结束
+                  </button>
+                </template>
+                <button
+                  v-else
+                  class="button button--small"
+                  :class="selectedItemId === item.id ? 'button--primary' : 'button--quiet'"
+                  type="button"
+                  :disabled="startItemDisabled(item)"
+                  :title="startItemTitle(item)"
+                  @click="startItem(item)"
+                >
+                  {{ startItemLabel(item) }}
+                </button>
+                <button
+                  class="daily-remove"
+                  type="button"
+                  :aria-label="`从今日计划移除${item.title}`"
+                  :disabled="daily.saving || isTiming(item)"
+                  @click="removeItem(item)"
+                >
+                  ×
+                </button>
+              </div>
+            </li>
+          </TransitionGroup>
+
+          <details class="quick-add">
+            <summary>+ 添加今日任务</summary>
+            <div class="quick-add__body">
+              <div class="quick-add__tabs" role="group" aria-label="任务类型">
+                <button type="button" :class="{ active: itemKind === 'task' }" @click="itemKind = 'task'">项目任务</button>
+                <button type="button" :class="{ active: itemKind === 'adhoc' }" @click="itemKind = 'adhoc'">临时事项</button>
+              </div>
+              <form class="quick-add__form" @submit.prevent="addItem">
+                <select v-if="itemKind === 'task'" v-model="planTaskId" class="quick-add__select" required aria-label="选择项目任务">
+                  <option value="">选择项目任务…</option>
+                  <option v-for="task in availableTasks" :key="task.id" :value="task.id">
+                    {{ projectPrefixedTaskTitle(task, tasks.items) }}
+                  </option>
+                </select>
+                <input v-else v-model.trim="adHocTitle" class="quick-add__input" maxlength="200" placeholder="输入临时事项…" required aria-label="临时事项名称" />
+                <label class="quick-add__duration">
+                  <input v-model.number="estimatedMinutes" type="number" min="0" max="5256000" class="quick-add__minutes" aria-label="计划分钟数" />
+                  <span>分钟</span>
+                </label>
+                <button class="button button--primary button--small" type="submit" :disabled="daily.saving || !canAdd">
+                  {{ daily.saving ? '添加中…' : '添加' }}
+                </button>
+              </form>
+            </div>
+          </details>
+        </section>
+      </div>
+
+      <div class="today-bottom-grid">
         <section class="activity-calendar" aria-labelledby="activity-calendar-title">
           <header class="activity-calendar__header">
             <div>
@@ -167,146 +308,47 @@
             </div>
           </footer>
         </section>
-      </div>
 
-      <section class="today-checklist">
-        <header class="today-checklist__header">
-          <div>
-            <h2>今日任务</h2>
-            <p>点击任务即可选中；色块表示已使用的计划时间。</p>
-          </div>
-          <div class="today-summary" aria-label="今日投入概览">
-            <span><strong>{{ formatDuration(displayLearningSeconds) }}</strong> 已投入</span>
-            <span><strong>{{ daily.checkIn?.completed_items ?? 0 }}/{{ daily.checkIn?.total_items ?? 0 }}</strong> 已完成</span>
-            <span><strong>{{ daily.checkIn?.streak_days ?? 0 }} 天</strong> 连续打卡</span>
-          </div>
-        </header>
+        <section class="focus-distribution" aria-labelledby="focus-distribution-title">
+          <header class="focus-distribution__header">
+            <div>
+              <p class="eyebrow">今日专注分布</p>
+              <h2 id="focus-distribution-title">小时分布</h2>
+            </div>
+            <div class="focus-distribution__summary">
+              <strong>{{ formatCalendarDuration(distributionTotalSeconds) }}</strong>
+              <span>今日累计专注</span>
+            </div>
+          </header>
 
-        <p v-if="daily.loading" class="empty-state">正在读取计划…</p>
-        <div v-else-if="daily.plan?.items.length === 0" class="today-empty">
-          <strong>今天还没有任务</strong>
-          <span>从项目中挑一项任务，或添加一个临时事项。</span>
-        </div>
-
-        <TransitionGroup v-else tag="ol" name="daily-list" class="daily-item-list">
-          <li
-            v-for="item in orderedDailyItems"
-            :key="item.id"
-            :class="{
-              'daily-item--selected': selectedItemId === item.id,
-              'daily-item--timing': isTiming(item),
-              'daily-item--overrun': isOverrun(item),
-              'daily-item--done': item.status === 'DONE',
-            }"
-            :style="progressStyle(item)"
+          <div
+            class="focus-distribution__chart"
+            :class="{ 'is-loading': distributionLoading }"
+            role="img"
+            :aria-label="distributionAriaLabel"
           >
-            <button
-              class="daily-check"
-              :class="{ 'daily-check--done': item.status === 'DONE' }"
-              type="button"
-              :aria-label="item.status === 'DONE' ? `将${item.title}标为未完成` : `完成${item.title}`"
-              :disabled="daily.saving || isTiming(item)"
-              @click="toggleDone(item)"
-            >
-              {{ item.status === 'DONE' ? '✓' : '' }}
-            </button>
-
-            <button
-              class="daily-item-main"
-              type="button"
-              :aria-pressed="selectedItemId === item.id"
-              :disabled="item.status === 'DONE'"
-              @click="selectedItemId = item.id"
-            >
-              <strong :class="{ 'is-complete': item.status === 'DONE' }">{{ item.title }}</strong>
-              <span>
-                {{ item.status === 'DONE' ? '已完成' : statusLabel(item) }}
-                <template v-if="item.estimated_seconds > 0">
-                  · 计划 {{ formatDuration(item.estimated_seconds) }}
-                </template>
-              </span>
-            </button>
-
-            <div class="daily-item-usage">
-              <strong>{{ isTiming(item) ? formatTimer(timer.displaySeconds) : formatDuration(displayActual(item)) }}</strong>
-              <span v-if="isOverrun(item)" class="daily-overrun">⚠ 已超时 {{ formatDuration(overrunSeconds(item)) }}</span>
-              <span v-else>{{ progressPercent(item) }}% 用时</span>
-            </div>
-
-            <div class="daily-item-actions">
-              <template v-if="isTiming(item)">
-                <button
-                  v-if="timer.active?.snapshot.status === 'RUNNING'"
-                  class="button button--quiet button--small"
-                  type="button"
-                  :disabled="timer.busy"
-                  @click="pause"
-                >
-                  暂停
-                </button>
-                <button
-                  v-else
-                  class="button button--primary button--small"
-                  type="button"
-                  :disabled="timer.busy"
-                  @click="resume"
-                >
-                  继续
-                </button>
-                <button class="button button--finish button--small" type="button" :disabled="timer.busy" @click="finish">
-                  结束
-                </button>
-              </template>
-              <button
-                v-else
-                class="button button--small"
-                :class="selectedItemId === item.id ? 'button--primary' : 'button--quiet'"
-                type="button"
-                :disabled="startItemDisabled(item)"
-                :title="startItemTitle(item)"
-                @click="startItem(item)"
+            <div v-for="point in distributionHours" :key="point.hour" class="focus-distribution__slot">
+              <span v-if="point.seconds > 0" class="sr-only">{{ point.label }}</span>
+              <div
+                class="focus-distribution__bar-track"
+                :title="point.label"
               >
-                {{ startItemLabel(item) }}
-              </button>
-              <button
-                class="daily-remove"
-                type="button"
-                :aria-label="`从今日计划移除${item.title}`"
-                :disabled="daily.saving || isTiming(item)"
-                @click="removeItem(item)"
-              >
-                ×
-              </button>
+                <div
+                  class="focus-distribution__bar"
+                  :class="{ 'is-current': point.isCurrentHour, 'is-empty': point.seconds <= 0 }"
+                  :style="{ height: `${distributionBarHeight(point.seconds)}%` }"
+                ></div>
+              </div>
+              <span class="focus-distribution__hour">{{ hourTick(point.hour) }}</span>
             </div>
-          </li>
-        </TransitionGroup>
-
-        <details class="quick-add">
-          <summary>+ 添加今日任务</summary>
-          <div class="quick-add__body">
-            <div class="quick-add__tabs" role="group" aria-label="任务类型">
-              <button type="button" :class="{ active: itemKind === 'task' }" @click="itemKind = 'task'">项目任务</button>
-              <button type="button" :class="{ active: itemKind === 'adhoc' }" @click="itemKind = 'adhoc'">临时事项</button>
-            </div>
-            <form class="quick-add__form" @submit.prevent="addItem">
-              <select v-if="itemKind === 'task'" v-model="planTaskId" class="quick-add__select" required aria-label="选择项目任务">
-                <option value="">选择项目任务…</option>
-                <option v-for="task in availableTasks" :key="task.id" :value="task.id">
-                  {{ projectPrefixedTaskTitle(task, tasks.items) }}
-                </option>
-              </select>
-              <input v-else v-model.trim="adHocTitle" class="quick-add__input" maxlength="200" placeholder="输入临时事项…" required aria-label="临时事项名称" />
-              <label class="quick-add__duration">
-                <input v-model.number="estimatedMinutes" type="number" min="0" max="5256000" class="quick-add__minutes" aria-label="计划分钟数" />
-                <span>分钟</span>
-              </label>
-              <button class="button button--primary button--small" type="submit" :disabled="daily.saving || !canAdd">
-                {{ daily.saving ? '添加中…' : '添加' }}
-              </button>
-            </form>
           </div>
-        </details>
-      </section>
+
+          <footer class="focus-distribution__footer">
+            <span v-if="distributionError" class="focus-distribution__error">{{ distributionError }}</span>
+            <span v-else>按计时开始的小时统计，正在计时的时间实时计入当前小时。</span>
+          </footer>
+        </section>
+      </div>
     </main>
   </AppShell>
 </template>
@@ -321,7 +363,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useDailyPlanStore } from '@/stores/daily-plans'
 import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
-import type { DailyTrendPoint } from '@/types/analytics'
+import type { DailyTrendPoint, HourlyFocusDistribution } from '@/types/analytics'
 import type { DailyPlanItem } from '@/types/daily-plan'
 import { getApiErrorMessage } from '@/utils/api-error'
 import { projectPrefixedTaskTitle } from '@/utils/task-title'
@@ -339,6 +381,9 @@ const calendarMonth = ref(todayDate.value.slice(0, 7))
 const calendarTrend = ref<DailyTrendPoint[]>([])
 const calendarLoading = ref(false)
 const calendarError = ref('')
+const hourlyTrend = ref<HourlyFocusDistribution | null>(null)
+const distributionLoading = ref(false)
+const distributionError = ref('')
 const itemKind = ref<'task' | 'adhoc'>('task')
 const planTaskId = ref('')
 const adHocTitle = ref('')
@@ -347,6 +392,7 @@ const selectedItemId = ref('')
 const errorMessage = ref('')
 let initialLoadFinished = false
 let calendarRequestId = 0
+let distributionRequestId = 0
 let lastActivationRefreshAt = 0
 const ACTIVATION_REFRESH_INTERVAL_MS = 60_000
 
@@ -418,6 +464,38 @@ const calendarTotalSeconds = computed(() =>
 )
 const calendarActiveDays = computed(() =>
   calendarDays.value.filter((day) => day.seconds > 0).length,
+)
+const currentHour = computed(() => {
+  const [year, month, day] = todayDate.value.split('-').map(Number)
+  const now = new Date()
+  const isToday = now.getFullYear() === year
+    && now.getMonth() + 1 === month
+    && now.getDate() === day
+  return isToday ? now.getHours() : -1
+})
+const distributionHours = computed(() => {
+  const base = hourlyTrend.value?.hours ?? []
+  return Array.from({ length: 24 }, (_, hour) => {
+    const recorded = base.find((point) => point.hour === hour)?.seconds ?? 0
+    const seconds = hour === currentHour.value
+      ? recorded + liveTimerExtra.value
+      : recorded
+    return {
+      hour,
+      seconds,
+      isCurrentHour: hour === currentHour.value,
+      label: `${hour}:00–${hour + 1}:00，${seconds > 0 ? `专注 ${formatDuration(seconds)}` : '无专注记录'}`,
+    }
+  })
+})
+const distributionTotalSeconds = computed(() =>
+  distributionHours.value.reduce((total, point) => total + point.seconds, 0),
+)
+const distributionPeakSeconds = computed(() =>
+  Math.max(...distributionHours.value.map((point) => point.seconds), 0),
+)
+const distributionAriaLabel = computed(() =>
+  `今日专注小时分布，共 ${formatCalendarDuration(distributionTotalSeconds.value)}`,
 )
 const plannedTaskIds = computed(
   () => new Set(daily.plan?.items.flatMap((item) => (item.task_id ? [item.task_id] : []))),
@@ -593,6 +671,36 @@ async function loadCalendarMonth(): Promise<void> {
   }
 }
 
+async function loadHourlyFocus(): Promise<void> {
+  const requestId = ++distributionRequestId
+  distributionLoading.value = true
+  distributionError.value = ''
+  try {
+    const distribution = await analyticsService.hourlyFocus(todayDate.value)
+    if (requestId === distributionRequestId) {
+      hourlyTrend.value = distribution
+    }
+  } catch (error) {
+    if (requestId === distributionRequestId) {
+      hourlyTrend.value = null
+      distributionError.value = getApiErrorMessage(error)
+    }
+  } finally {
+    if (requestId === distributionRequestId) {
+      distributionLoading.value = false
+    }
+  }
+}
+
+function hourTick(hour: number): string {
+  return hour % 3 === 0 ? String(hour) : ''
+}
+
+function distributionBarHeight(seconds: number): number {
+  if (seconds <= 0 || distributionPeakSeconds.value <= 0) return 0
+  return Math.max(6, Math.round((seconds / distributionPeakSeconds.value) * 100))
+}
+
 onMounted(async () => {
   const ownerId = auth.user?.profile.id
   if (!ownerId) return
@@ -611,10 +719,11 @@ onMounted(async () => {
           ? daily.initialize(ownerId, todayDate.value, activeItemId)
           : Promise.resolve(daily.setActiveItem(activeItemId)),
         loadCalendarMonth(),
+        loadHourlyFocus(),
       ])
     } else {
       daily.setActiveItem(activeItemId)
-      await loadCalendarMonth()
+      await Promise.all([loadCalendarMonth(), loadHourlyFocus()])
     }
     await restoreMissingActiveItem()
   })
@@ -633,6 +742,7 @@ onActivated(() => {
     todayDate.value = realToday
     selectedItemId.value = ''
     if (calendarMonth.value === realToday.slice(0, 7)) void loadCalendarMonth()
+    void loadHourlyFocus()
   }
 
   // Returning to a cached route should be instant. Refresh only after a
@@ -825,6 +935,7 @@ async function pause(): Promise<void> {
   if (calendarMonth.value === todayDate.value.slice(0, 7)) {
     await loadCalendarMonth()
   }
+  void loadHourlyFocus()
 }
 
 async function resume(): Promise<void> {
@@ -847,6 +958,7 @@ async function finish(): Promise<void> {
   if (calendarMonth.value === todayDate.value.slice(0, 7)) {
     await loadCalendarMonth()
   }
+  void loadHourlyFocus()
 }
 
 async function removeItem(item: DailyPlanItem): Promise<void> {

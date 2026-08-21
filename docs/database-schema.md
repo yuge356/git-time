@@ -77,9 +77,10 @@ FastAPI 使用的 `postgres` Session Pooler 身份只被允许显式 `SET ROLE d
 | `created_at` | TIMESTAMPTZ | 创建时间 |
 | `updated_at` | TIMESTAMPTZ | 更新时间 |
 
-层级固定为 `PROJECT → MODULE → TASK`。项目必须位于顶层，模块只能属于项目，任务只能属于模块；
-只有 `TASK` 可以完成、重复、提醒、计时或加入今日计划。触发器同时阻止层级循环和非法父子类型，
-`(id, owner_id)` 唯一约束保证父子节点属于同一用户。
+层级为 `PROJECT → MODULE → TASK`，且任务下允许再有一层子任务：项目必须位于顶层，模块只能属于项目，
+任务可以属于项目、模块或任务；作为父级的任务必须自身直接挂在项目或模块下，且只有叶子任务能被移动成
+子任务。只有没有子任务的 `TASK` 可以完成、重复、提醒、计时或加入今日计划。触发器同时阻止层级循环和
+非法父子类型，`(id, owner_id)` 唯一约束保证父子节点属于同一用户。
 
 ## `task_dependencies`
 
