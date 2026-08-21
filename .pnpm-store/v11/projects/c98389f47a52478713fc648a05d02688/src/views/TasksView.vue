@@ -112,36 +112,12 @@
                       @layout-change="scheduleMapLayout"
                     />
                   </ul>
-
-                  <svg
-                    v-if="dependencyPaths.length"
-                    class="task-dependency-layer"
-                    :width="mapNaturalSize.width"
-                    :height="mapNaturalSize.height"
-                    :viewBox="`0 0 ${mapNaturalSize.width} ${mapNaturalSize.height}`"
-                    aria-label="任务依赖关系"
-                  >
-                    <defs>
-                      <marker id="task-dependency-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                        <path d="M 0 0 L 8 4 L 0 8 z" />
-                      </marker>
-                    </defs>
-                    <path
-                      v-for="edge in dependencyPaths"
-                      :key="edge.id"
-                      class="task-dependency-line"
-                      :d="edge.path"
-                      marker-end="url(#task-dependency-arrow)"
-                    >
-                      <title>{{ edge.label }}</title>
-                    </path>
-                  </svg>
                 </div>
               </div>
             </div>
 
               <p class="task-mindmap-hint">
-                实线表示上下级关系，带箭头的虚线表示前置依赖；按住 Ctrl 滚动鼠标滚轮也可缩放。
+                实线表示上下级关系；按住 Ctrl 滚动鼠标滚轮也可缩放。
               </p>
             </section>
 
@@ -242,42 +218,6 @@
                     </div>
                   </div>
 
-              <section v-if="selectedTask?.node_type === 'TASK'" class="task-dependency-editor">
-                <div class="task-dependency-editor__heading">
-                  <div>
-                    <span class="eyebrow">任务依赖</span>
-                    <h3>设置前置任务</h3>
-                  </div>
-                  <span>{{ dependencyDraft.length }} 项依赖</span>
-                </div>
-                <p>被勾选的任务需要先完成，导图中会以带箭头的虚线连接到当前任务。</p>
-                <div v-if="dependencyOptions.length" class="task-dependency-options">
-                  <label v-for="option in dependencyOptions" :key="option.id">
-                    <input v-model="dependencyDraft" type="checkbox" :value="option.id" />
-                    <span>{{ option.label }}</span>
-                  </label>
-                </div>
-                <p v-else class="field-help">还没有其他可设置为前置依赖的任务。</p>
-                <div class="task-dependency-editor__actions">
-                  <button
-                    class="button button--quiet button--small"
-                    type="button"
-                    :disabled="!dependencyChanged || tasks.saving"
-                    @click="resetDependencyDraft"
-                  >
-                    撤销
-                  </button>
-                  <button
-                    class="button button--primary button--small"
-                    type="button"
-                    :disabled="!dependencyChanged || tasks.saving"
-                    @click="saveDependencies"
-                  >
-                    保存依赖
-                  </button>
-                </div>
-              </section>
-
                   <TaskEditor
                     v-if="selectedTask"
                     :task="selectedTask"
@@ -376,17 +316,9 @@ const mapCanvas = ref<HTMLElement | null>(null)
 const mapTree = ref<HTMLElement | null>(null)
 const mapZoom = ref(1)
 const mapNaturalSize = ref({ width: 1114, height: 260 })
-const dependencyDraft = ref<string[]>([])
-const dependencyPaths = ref<DependencyPath[]>([])
 let resizeObserver: ResizeObserver | null = null
 let layoutFrame = 0
 let initialLoadFinished = false
-
-interface DependencyPath {
-  id: string
-  path: string
-  label: string
-}
 
 const projectCount = computed(() => tasks.items.filter((task) => task.node_type === 'PROJECT').length)
 const executableTaskCount = computed(() => tasks.items.filter((task) => task.node_type === 'TASK').length)
@@ -414,19 +346,6 @@ const editorDialogOpen = computed(() => Boolean(
 const creatingChildParent = computed<Task | null>(() =>
   tasks.items.find((task) => task.id === creatingChildParentId.value) ?? null,
 )
-const dependencyOptions = computed(() => tasks.items
-  .filter((task) => task.node_type === 'TASK' && task.id !== selectedTask.value?.id)
-  .map((task) => ({
-    id: task.id,
-    label: projectPrefixedTaskTitle(task, tasks.items),
-  }))
-  .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN')))
-const dependencyChanged = computed(() => {
-  const current = [...(selectedTask.value?.dependency_ids ?? [])].sort()
-  const draft = [...dependencyDraft.value].sort()
-  return current.length !== draft.length
-    || current.some((item, index) => item !== draft[index])
-})
 const pendingChildNodeType = computed<TaskNodeType>(() =>
   creatingChildNodeType.value
     ?? (creatingChildParent.value?.node_type === 'PROJECT' ? 'MODULE' : 'TASK'),
@@ -454,12 +373,6 @@ const inheritedDefaultReminderTime = computed<string | null>(() =>
 )
 
 watch(
-  () => selectedTask.value?.id,
-  resetDependencyDraft,
-  { immediate: true },
-)
-
-watch(
   editorDialogOpen,
   (open) => document.body.classList.toggle('task-editor-modal-open', open),
   { immediate: true },
@@ -472,7 +385,6 @@ watch(
     task.status,
     task.progress_ratio,
     task.due_date,
-    (task.dependency_ids ?? []).join(','),
   ]),
   scheduleMapLayout,
   { deep: true },
@@ -510,28 +422,6 @@ function setTaskViewMode(mode: TaskViewMode): void {
   if (mode === 'MINDMAP') scheduleMapLayout()
 }
 
-function resetDependencyDraft(): void {
-  dependencyDraft.value = [...(selectedTask.value?.dependency_ids ?? [])]
-}
-
-async function saveDependencies(): Promise<void> {
-  const task = selectedTask.value
-  if (!task || task.node_type !== 'TASK' || !dependencyChanged.value) return
-  editorError.value = ''
-  actionMessage.value = ''
-  try {
-    const updated = await tasks.update(task.id, {
-      dependency_ids: [...dependencyDraft.value],
-    })
-    selectedTask.value = updated
-    resetDependencyDraft()
-    actionMessage.value = `已更新“${updated.title}”的前置依赖。`
-    scheduleMapLayout()
-  } catch (error) {
-    editorError.value = getApiErrorMessage(error)
-  }
-}
-
 function scheduleMapLayout(): void {
   void nextTick(() => {
     if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
@@ -554,58 +444,6 @@ function syncMapLayout(): void {
     width: Math.max(960, Math.ceil(tree.scrollWidth)),
     height: Math.max(180, Math.ceil(tree.scrollHeight)),
   }
-  updateDependencyPaths()
-}
-
-function updateDependencyPaths(): void {
-  const canvas = mapCanvas.value
-  if (!canvas) {
-    dependencyPaths.value = []
-    return
-  }
-  const canvasRect = canvas.getBoundingClientRect()
-  const zoom = mapZoom.value
-  const taskById = new Map(tasks.items.map((task) => [task.id, task]))
-  const edges: DependencyPath[] = []
-  tasks.items.forEach((targetTask) => {
-    ;(targetTask.dependency_ids ?? []).forEach((sourceId, index) => {
-      const sourceTask = taskById.get(sourceId)
-      const source = canvas.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(sourceId)}"]`)
-      const target = canvas.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(targetTask.id)}"]`)
-      if (!sourceTask || !source || !target) return
-      const sourceRect = source.getBoundingClientRect()
-      const targetRect = target.getBoundingClientRect()
-      const sourceCenterX = (sourceRect.left + sourceRect.right) / 2
-      const targetCenterX = (targetRect.left + targetRect.right) / 2
-      const movesRight = sourceCenterX <= targetCenterX
-      const startX = (
-        (movesRight ? sourceRect.right + 8 * zoom : sourceRect.left - 8 * zoom)
-        - canvasRect.left
-      ) / zoom
-      const endX = (
-        (movesRight ? targetRect.left - 12 * zoom : targetRect.right + 12 * zoom)
-        - canvasRect.left
-      ) / zoom
-      const startY = ((sourceRect.top + sourceRect.bottom) / 2 - canvasRect.top) / zoom
-      const endY = ((targetRect.top + targetRect.bottom) / 2 - canvasRect.top) / zoom
-      const direction = movesRight ? 1 : -1
-      const curve = Math.max(52, Math.abs(endX - startX) * 0.42)
-      const laneOffset = (index % 4) * 8
-      const controlY = startY <= endY ? -laneOffset : laneOffset
-      const round = (value: number): number => Math.round(value * 10) / 10
-      edges.push({
-        id: `${sourceId}-${targetTask.id}`,
-        path: [
-          `M ${round(startX)} ${round(startY)}`,
-          `C ${round(startX + direction * curve)} ${round(startY + controlY)},`,
-          `${round(endX - direction * curve)} ${round(endY - controlY)},`,
-          `${round(endX)} ${round(endY)}`,
-        ].join(' '),
-        label: `${sourceTask.title} → ${targetTask.title}`,
-      })
-    })
-  })
-  dependencyPaths.value = edges
 }
 
 function setMapZoom(nextZoom: number): void {
@@ -726,31 +564,7 @@ function closeEditor(): void {
 async function createTask(payload: TaskCreatePayload): Promise<void> {
   editorError.value = ''
   try {
-    let targetPayload = payload
-    const requestedParent = payload.parent_id
-      ? tasks.items.find((task) => task.id === payload.parent_id)
-      : null
-    if (payload.node_type === 'TASK' && requestedParent?.node_type === 'PROJECT') {
-      let uncategorizedModule = tasks.items.find(
-        (task) =>
-          task.node_type === 'MODULE'
-          && task.parent_id === requestedParent.id
-          && task.title === '未分类',
-      )
-      if (!uncategorizedModule) {
-        uncategorizedModule = await tasks.create({
-          title: '未分类',
-          parent_id: requestedParent.id,
-          node_type: 'MODULE',
-          estimated_seconds: 0,
-          budget_mode: 'ROLLUP',
-          repeat_rule: 'NONE',
-          daily_reminder_time: null,
-        })
-      }
-      targetPayload = { ...payload, parent_id: uncategorizedModule.id }
-    }
-    const createdTask = await tasks.create(targetPayload)
+    const createdTask = await tasks.create(payload)
     closeEditor()
     actionMessage.value = `已创建“${createdTask.title}”。`
   } catch (error) {
