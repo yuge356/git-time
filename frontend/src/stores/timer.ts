@@ -36,6 +36,8 @@ interface TimerState {
   tickerId: number | null
   retryTimerId: number | null
   onlineListenerBound: boolean
+  observedLocalDate: string
+  rolloverPausePending: boolean
 }
 
 interface PendingExitPause {
@@ -185,9 +187,21 @@ async function restorePendingExitPause(ownerId: string): Promise<void> {
   clearPendingExitPause(ownerId)
 }
 
-function nextTimestamp(previous: string | null = null): string {
+function localDateString(date = new Date()): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function startOfLocalDate(dateText: string): Date {
+  const [year, month, day] = dateText.split('-').map(Number)
+  return new Date(year!, month! - 1, day!)
+}
+
+function nextTimestamp(previous: string | null = null, minimumTime = Date.now()): string {
   const previousTime = previous ? Date.parse(previous) : 0
-  return new Date(Math.max(Date.now(), previousTime + 1)).toISOString()
+  return new Date(Math.max(minimumTime, previousTime + 1)).toISOString()
 }
 
 async function recoverInterruptedRunningTimer(
@@ -309,12 +323,21 @@ export const useTimerStore = defineStore('timer', {
     tickerId: null,
     retryTimerId: null,
     onlineListenerBound: false,
+    observedLocalDate: localDateString(),
+    rolloverPausePending: false,
   }),
 
   actions: {
     startTicker(): void {
       if (this.tickerId !== null) return
       this.tickerId = window.setInterval(() => {
+        const currentDate = localDateString()
+        if (currentDate !== this.observedLocalDate) {
+          this.observedLocalDate = currentDate
+          void this.pauseForDayRollover().catch(() => {
+            this.syncError = '跨天计时已暂停在本机，服务恢复后将自动同步。'
+          })
+        }
         if (this.active) {
           this.displaySeconds = snapshotDuration(this.active.snapshot)
           this.maybeNotifyTargetReached()
@@ -341,6 +364,7 @@ export const useTimerStore = defineStore('timer', {
       this.displaySeconds = this.active ? snapshotDuration(this.active.snapshot) : 0
       this.targetNotice = ''
       this.notifiedSessionId = null
+      this.observedLocalDate = localDateString()
       this.startTicker()
 
       if (!this.onlineListenerBound) {
@@ -687,10 +711,18 @@ export const useTimerStore = defineStore('timer', {
     },
 
     async pause(): Promise<void> {
+      await this.pauseAt(new Date())
+    },
+
+    /** Pause a running session at a precise boundary, including midnight. */
+    async pauseAt(pauseTime: Date): Promise<void> {
       if (!this.active || this.active.snapshot.status !== 'RUNNING') return
       this.busy = true
       try {
-        const now = nextTimestamp(this.active.snapshot.client_updated_at)
+        const now = nextTimestamp(
+          this.active.snapshot.client_updated_at,
+          pauseTime.getTime(),
+        )
         const snapshot: SessionSnapshot = {
           ...this.active.snapshot,
           status: 'PAUSED',
@@ -703,6 +735,21 @@ export const useTimerStore = defineStore('timer', {
         await this.syncLatestOrKeepOffline(this.active.session_id)
       } finally {
         this.busy = false
+      }
+    },
+
+    /**
+     * A running session must not silently carry into a fresh daily plan. This
+     * runs from the global timer ticker, so switching routes does not affect
+     * the midnight pause rule.
+     */
+    async pauseForDayRollover(): Promise<void> {
+      if (this.rolloverPausePending || this.active?.snapshot.status !== 'RUNNING') return
+      this.rolloverPausePending = true
+      try {
+        await this.pauseAt(startOfLocalDate(this.observedLocalDate))
+      } finally {
+        this.rolloverPausePending = false
       }
     },
 

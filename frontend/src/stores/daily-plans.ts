@@ -37,6 +37,8 @@ interface DailyPlanState {
   failedCount: number
   activeItemId: string | null
   listenerBound: boolean
+  rolloverDate: string
+  rolloverTimerId: number | null
 }
 
 function localDateString(date = new Date()): string {
@@ -108,6 +110,8 @@ export const useDailyPlanStore = defineStore('daily-plans', {
     failedCount: 0,
     activeItemId: null,
     listenerBound: false,
+    rolloverDate: localDateString(),
+    rolloverTimerId: null,
   }),
 
   actions: {
@@ -121,8 +125,10 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       if (!this.listenerBound) {
         const retryPending = (): void => {
           if (navigator.onLine && this.ownerId) {
-            void this.load(this.selectedDate, { silent: true }).catch(() => {
-              // load() already records the visible error/offline state.
+            void this.refreshForCurrentDate().then((dateChanged) => {
+              if (!dateChanged) return this.load(this.selectedDate, { silent: true })
+            }).catch(() => {
+              // The next focus, network restore, or scheduled retry will try again.
             })
           }
         }
@@ -137,9 +143,28 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible') retryPending()
         })
+        this.rolloverDate = localDateString()
+        this.rolloverTimerId = window.setInterval(() => {
+          void this.refreshForCurrentDate().catch(() => {
+            // Keeping the previous daily plan locally is safer than clearing it
+            // when the network changes exactly at midnight.
+          })
+        }, 30_000)
         this.listenerBound = true
       }
       await this.load(planDate)
+    },
+
+    /**
+     * Daily plans are date snapshots. Keep the refresh watcher in the store
+     * rather than in TodayView so midnight works while the user is elsewhere.
+     */
+    async refreshForCurrentDate(): Promise<boolean> {
+      const today = localDateString()
+      if (today === this.rolloverDate) return false
+      this.rolloverDate = today
+      await this.load(today, { silent: true })
+      return true
     },
 
     setActiveItem(activeItemId: string | null): void {
@@ -486,66 +511,19 @@ export const useDailyPlanStore = defineStore('daily-plans', {
           items: [...this.plan.items, item],
         })
         await saveCachedDailyPlan(this.plan)
-
-        const pendingPlanCreates = await getPendingOperations(this.ownerId, 'daily_plan')
-        const planCreatePending = pendingPlanCreates.some(
-          (operation) => operation.entity_id === this.plan?.id,
-        )
-        if (navigator.onLine && !planCreatePending) {
-          let savedItem: DailyPlanItem | null = null
-          try {
-            savedItem = await dailyPlanService.addItem(this.plan.id, {
-              ...payload,
-              id,
-            })
-          } catch (error) {
-            if (isNetworkError(error)) {
-              this.online = false
-            } else if (
-              axios.isAxiosError(error) &&
-              [404, 409].includes(error.response?.status ?? 0)
-            ) {
-              // The local plan or the linked task has not reached the server
-              // yet. Keep the item and let the ordered offline queue deliver
-              // it instead of rolling the user's addition back.
-              await this.ensurePlanCreateQueued()
-            } else {
-              this.plan = recalculatePlan({
-                ...this.plan,
-                items: this.plan.items.filter((candidate) => candidate.id !== id),
-              })
-              await saveCachedDailyPlan(this.plan)
-              await this.buildLocalCheckIn()
-              throw error
-            }
-          }
-
-          if (savedItem) {
-            this.plan = recalculatePlan({
-              ...this.plan,
-              items: this.plan.items.map((candidate) =>
-                candidate.id === id ? savedItem : candidate,
-              ),
-            })
-            await saveCachedDailyPlan(this.plan)
-            try {
-              this.checkIn = await dailyPlanService.checkIn(this.selectedDate)
-            } catch (error) {
-              if (!isNetworkError(error)) throw error
-              this.online = false
-              await this.buildLocalCheckIn()
-            }
-            return
-          }
-        }
-
         await enqueueSyncOperation(this.ownerId, 'daily_plan_item', id, 'create', {
           ...payload,
           id,
           daily_plan_id: this.plan.id,
         })
         await this.buildLocalCheckIn()
-        await this.flushAndRefresh()
+        this.pendingCount = await pendingSyncCount(this.ownerId)
+        // Adding a task is cache-first. The shared outbox serializes the
+        // identical server write in the background, avoiding a visible wait
+        // for both the item request and a second check-in request.
+        void this.flushAndRefresh().catch(async () => {
+          this.failedCount = await getFailedSyncCount(this.ownerId!)
+        })
       } finally {
         this.saving = false
       }

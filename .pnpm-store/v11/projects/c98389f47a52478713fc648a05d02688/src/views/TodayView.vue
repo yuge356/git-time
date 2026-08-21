@@ -312,7 +312,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
@@ -345,44 +345,10 @@ const adHocTitle = ref('')
 const estimatedMinutes = ref(30)
 const selectedItemId = ref('')
 const errorMessage = ref('')
-let dayRolloverTimer: number | null = null
 let initialLoadFinished = false
-let lastRealDate = ''
 let calendarRequestId = 0
-
-/**
- * The Today page always follows the real local date. Crossing midnight loads
- * the new day's plan without exposing a second historical-date selector.
- */
-function startDayRolloverWatch(): void {
-  if (dayRolloverTimer !== null) return
-  lastRealDate = localDateString()
-  dayRolloverTimer = window.setInterval(() => {
-    const today = localDateString()
-    if (today === lastRealDate) return
-    lastRealDate = today
-    todayDate.value = today
-    void runAction(async () => {
-      // A running segment belongs to the day on which it was started. Pause
-      // it before switching plans so yesterday's item cannot be restored or
-      // silently carried into the new day's list.
-      if (timer.active?.snapshot.status === 'RUNNING') {
-        const previousItem = activeTimerItem.value
-        const previousActualSeconds = previousItem ? displayActual(previousItem) : 0
-        await timer.pause()
-        if (previousItem) {
-          await daily.applyStoppedTimer(previousItem.id, previousActualSeconds)
-        }
-      }
-      daily.setActiveItem(null)
-      selectedItemId.value = ''
-      await daily.load(today)
-    })
-    if (calendarMonth.value === today.slice(0, 7)) {
-      void loadCalendarMonth()
-    }
-  }, 30_000)
-}
+let lastActivationRefreshAt = 0
+const ACTIVATION_REFRESH_INTERVAL_MS = 60_000
 
 const displayDate = computed(() =>
   new Date(`${todayDate.value}T00:00:00`).toLocaleDateString('zh-CN', {
@@ -628,41 +594,59 @@ async function loadCalendarMonth(): Promise<void> {
 }
 
 onMounted(async () => {
-  startDayRolloverWatch()
   const ownerId = auth.user?.profile.id
   if (!ownerId) return
   await runAction(async () => {
     await timer.initialize(ownerId)
     const activeItemId = timer.active?.snapshot.daily_plan_item_id ?? null
-    await Promise.all([
-      tasks.initialize(ownerId),
-      daily.initialize(ownerId, todayDate.value, activeItemId),
-      loadCalendarMonth(),
-    ])
+    const requiresTaskLoad = tasks.ownerId !== ownerId || tasks.items.length === 0
+    const requiresDailyLoad =
+      daily.ownerId !== ownerId ||
+      daily.selectedDate !== todayDate.value ||
+      !daily.plan
+    if (requiresTaskLoad || requiresDailyLoad) {
+      await Promise.all([
+        requiresTaskLoad ? tasks.initialize(ownerId) : Promise.resolve(),
+        requiresDailyLoad
+          ? daily.initialize(ownerId, todayDate.value, activeItemId)
+          : Promise.resolve(daily.setActiveItem(activeItemId)),
+        loadCalendarMonth(),
+      ])
+    } else {
+      daily.setActiveItem(activeItemId)
+      await loadCalendarMonth()
+    }
     await restoreMissingActiveItem()
   })
   initialLoadFinished = true
-})
-
-onBeforeUnmount(() => {
-  if (dayRolloverTimer !== null) {
-    window.clearInterval(dayRolloverTimer)
-    dayRolloverTimer = null
-  }
+  lastActivationRefreshAt = Date.now()
 })
 
 onActivated(() => {
-  startDayRolloverWatch()
   if (!initialLoadFinished) return
   const ownerId = auth.user?.profile.id
-  if (ownerId) {
-    tasks.flush().catch(() => {
-      /* silent background sync */
-    })
-    void daily.load(todayDate.value).catch(() => {
-      /* silent background sync */
-    })
+  if (!ownerId) return
+
+  const realToday = localDateString()
+  const dateChanged = todayDate.value !== realToday
+  if (dateChanged) {
+    todayDate.value = realToday
+    selectedItemId.value = ''
+    if (calendarMonth.value === realToday.slice(0, 7)) void loadCalendarMonth()
   }
+
+  // Returning to a cached route should be instant. Refresh only after a
+  // short interval (or after midnight), and keep all network work outside
+  // the navigation path.
+  const now = Date.now()
+  if (!dateChanged && now - lastActivationRefreshAt < ACTIVATION_REFRESH_INTERVAL_MS) return
+  lastActivationRefreshAt = now
+  tasks.load({ silent: true }).catch(() => {
+    /* local cache remains visible */
+  })
+  void daily.load(todayDate.value, { silent: true }).catch(() => {
+    /* local cache remains visible */
+  })
 })
 
 function liveExtra(item: DailyPlanItem): number {
