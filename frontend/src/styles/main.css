@@ -3061,11 +3061,69 @@ a {
   text-align: center;
 }
 
+/* One independent canvas board per project. */
+.task-mindmap-board {
+  display: grid;
+  gap: 18px;
+}
+
+.task-mindmap-project {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow:
+    0 12px 36px -8px rgba(85, 70, 160, 0.05),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95);
+}
+
+.task-mindmap-project__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.task-mindmap-project__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.task-mindmap-project__title strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-mindmap-project__dot {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: 4px;
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 55%);
+}
+
+.task-mindmap-project__meta {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .task-mindmap {
   position: relative;
   width: 100%;
   min-width: 0;
-  height: clamp(420px, 62vh, 680px);
+  height: clamp(360px, 56vh, 560px);
   overflow: auto;
   overscroll-behavior: contain;
   padding: 0;
@@ -3107,9 +3165,14 @@ a {
 }
 
 .task-tree--mindmap {
+  /* Connector geometry: indent = distance from parent row to child column,
+   * stub = half of it so parent stub and child stub meet exactly on the spine. */
   --mindmap-line: #a797e8;
+  --mindmap-gap: 20px;
+  --mindmap-indent: 72px;
+  --mindmap-stub: calc(var(--mindmap-indent) / 2);
   width: max-content;
-  min-width: max(100%, 1114px);
+  min-width: 100%;
   gap: 0;
 }
 
@@ -3119,21 +3182,11 @@ a {
   position: relative;
   width: max-content;
   min-width: 100%;
-  padding: 44px 42px;
+  padding: 26px 30px;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-
-.task-tree--mindmap > .task-tree-node:not(:first-of-type)::before {
-  position: absolute;
-  top: 0;
-  right: 42px;
-  left: 42px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #ebe7f8 10%, #ebe7f8 90%, transparent);
-  content: "";
 }
 
 .task-project-settings {
@@ -3162,94 +3215,65 @@ a {
   z-index: 5;
 }
 
-.task-tree--nested {
+/*
+ * Mind-map connectors.
+ *
+ * Every child draws two flat 2px segments instead of bordered elbows:
+ *  - ::before = horizontal stub from the spine to the node at its own center
+ *  - ::after  = its share of the vertical spine, sized so consecutive
+ *               children's segments join with zero gap and zero overhang
+ * ("跑出来的线头" came from rounded border elbows whose corners curved away
+ * from the straight spine bridges; flat bars meet flush by construction).
+ */
+.task-tree--mindmap .task-tree--nested {
   position: relative;
   flex: 0 0 auto;
-  gap: 20px;
-  margin: 0 0 0 72px;
+  gap: var(--mindmap-gap);
+  margin: 0 0 0 var(--mindmap-indent);
   padding: 0;
 }
 
-.task-tree--nested > .task-tree-node {
+.task-tree--mindmap .task-tree--nested > .task-tree-node {
   position: relative;
   padding-left: 0;
 }
 
-.task-tree--nested > .task-tree-node::before,
-.task-tree--nested > .task-tree-node::after {
+.task-tree--mindmap .task-tree--nested > .task-tree-node::before,
+.task-tree--mindmap .task-tree--nested > .task-tree-node::after {
   position: absolute;
   z-index: 1;
+  border: 0;
+  border-radius: 0;
+  background: var(--mindmap-line);
   content: "";
 }
 
-.task-tree--nested > .task-tree-node:only-child::before {
-  left: -36px;
+/* Horizontal stub: spine → node left edge, always at the node's center. */
+.task-tree--mindmap .task-tree--nested > .task-tree-node::before {
+  left: calc(-1 * var(--mindmap-stub));
   top: 50%;
-  width: 36px;
+  width: var(--mindmap-stub);
   height: 2px;
-  background: var(--mindmap-line);
-  border: 0;
-  border-radius: 0;
   transform: translateY(-50%);
 }
 
-.task-tree--nested > .task-tree-node:only-child::after {
-  display: none;
-}
-
-.task-tree--nested > .task-tree-node:first-child:not(:only-child)::before {
-  left: -36px;
-  top: 50%;
-  width: 36px;
-  height: 50%;
-  border-top: 2px solid var(--mindmap-line);
-  border-left: 2px solid var(--mindmap-line);
-  border-bottom: 0;
-  border-right: 0;
-  border-radius: 16px 0 0 0;
-}
-
-.task-tree--nested > .task-tree-node:first-child:not(:only-child)::after {
-  left: -36px;
-  top: 50%;
-  bottom: -20px;
-  width: 0;
-  border-left: 2px solid var(--mindmap-line);
-}
-
-.task-tree--nested > .task-tree-node:not(:first-child):not(:last-child)::before {
-  left: -36px;
+/* Vertical spine share; -gap bottom bridges the flex gap to the next sibling. */
+.task-tree--mindmap .task-tree--nested > .task-tree-node::after {
+  left: calc(-1 * var(--mindmap-stub));
   top: 0;
-  width: 36px;
-  height: 50%;
-  border-bottom: 2px solid var(--mindmap-line);
-  border-left: 2px solid var(--mindmap-line);
-  border-top: 0;
-  border-right: 0;
-  border-radius: 0 0 0 16px;
+  bottom: calc(-1 * var(--mindmap-gap));
+  width: 2px;
 }
 
-.task-tree--nested > .task-tree-node:not(:first-child):not(:last-child)::after {
-  left: -36px;
+.task-tree--mindmap .task-tree--nested > .task-tree-node:first-child::after {
   top: 50%;
-  bottom: -20px;
-  width: 0;
-  border-left: 2px solid var(--mindmap-line);
 }
 
-.task-tree--nested > .task-tree-node:last-child:not(:only-child)::before {
-  left: -36px;
-  top: 0;
-  width: 36px;
-  height: 50%;
-  border-bottom: 2px solid var(--mindmap-line);
-  border-left: 2px solid var(--mindmap-line);
-  border-top: 0;
-  border-right: 0;
-  border-radius: 0 0 0 16px;
+.task-tree--mindmap .task-tree--nested > .task-tree-node:last-child::after {
+  bottom: 50%;
 }
 
-.task-tree--nested > .task-tree-node:last-child:not(:only-child)::after {
+.task-tree--mindmap .task-tree--nested > .task-tree-node:only-child::after {
   display: none;
 }
 
@@ -3291,10 +3315,10 @@ a {
   position: absolute;
   z-index: 1;
   top: 50%;
-  right: -36px;
-  width: 36px;
+  right: calc(-1 * var(--mindmap-stub, 36px));
+  width: var(--mindmap-stub, 36px);
   height: 2px;
-  background: var(--mindmap-line);
+  background: var(--mindmap-line, #a797e8);
   content: "";
   transform: translateY(-50%);
 }
@@ -7539,9 +7563,13 @@ body.task-editor-modal-open {
   }
 
   .task-mindmap {
-    height: clamp(360px, 68vh, 520px);
+    height: clamp(320px, 62vh, 480px);
     margin: 0;
     padding: 0;
+  }
+
+  .task-mindmap-project {
+    padding: 12px 12px 14px;
   }
 
   .task-mindmap-toolbar {
@@ -7554,7 +7582,8 @@ body.task-editor-modal-open {
   }
 
   .task-tree--mindmap {
-    min-width: 886px;
+    --mindmap-indent: 56px;
+    --mindmap-gap: 16px;
   }
 
   .task-mind-branch > .task-row {
@@ -7579,26 +7608,7 @@ body.task-editor-modal-open {
   }
 
   .task-tree--mindmap > .task-tree-node {
-    padding: 34px 22px;
-  }
-
-  .task-tree--nested {
-    margin-left: 56px;
-    padding-left: 0;
-  }
-
-  .task-tree--nested > .task-tree-node {
-    padding-left: 40px;
-  }
-
-  .task-tree--nested > .task-tree-node::before,
-  .task-tree--nested > .task-tree-node::after {
-    width: 34px;
-  }
-
-  .task-mind-branch--expanded > .task-row::after {
-    right: -60px;
-    width: 52px;
+    padding: 18px 16px;
   }
 
   .task-row__title-line {
