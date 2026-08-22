@@ -63,6 +63,9 @@ function updateWasApplied(task: Task, payload: TaskUpdatePayload): boolean {
   })
 }
 
+const FLUSH_DEBOUNCE_MS = 600
+const flushTimers = new Map<string, number>()
+
 export const useTaskStore = defineStore('tasks', {
   state: (): TaskState => ({
     ownerId: null,
@@ -263,16 +266,16 @@ export const useTaskStore = defineStore('tasks', {
       }
     },
 
-    async reconcileTask(taskId: string): Promise<Task | null> {
-      if (!navigator.onLine) return null
-      try {
-        const serverItems = await taskService.list()
-        this.items = await this.mergeServerItems(serverItems)
-        this.pendingCount = await pendingSyncCount(this.ownerId ?? '')
-        return this.items.find((item) => item.id === taskId) ?? null
-      } catch {
-        return null
-      }
+    scheduleFlush(): void {
+      if (!this.ownerId) return
+      const ownerId = this.ownerId
+      const existing = flushTimers.get(ownerId)
+      if (existing !== undefined) window.clearTimeout(existing)
+      const timerId = window.setTimeout(() => {
+        flushTimers.delete(ownerId)
+        this.flush().catch(() => {})
+      }, FLUSH_DEBOUNCE_MS)
+      flushTimers.set(ownerId, timerId)
     },
 
     async create(payload: TaskCreatePayload): Promise<Task> {
@@ -333,9 +336,7 @@ export const useTaskStore = defineStore('tasks', {
           id,
         })
         this.pendingCount = await pendingSyncCount(this.ownerId)
-        this.flush().catch(() => {
-          void this.reconcileTask(id)
-        })
+        this.scheduleFlush()
         return this.items.find((item) => item.id === id) ?? task
       } finally {
         this.saving = false
@@ -365,9 +366,7 @@ export const useTaskStore = defineStore('tasks', {
           ...payload,
         })
         this.pendingCount = await pendingSyncCount(this.ownerId)
-        this.flush().catch(() => {
-          void this.reconcileTask(taskId)
-        })
+        this.scheduleFlush()
         return this.items.find((item) => item.id === taskId) ?? updated
       } finally {
         this.saving = false
@@ -401,9 +400,7 @@ export const useTaskStore = defineStore('tasks', {
         await saveCachedTasks(this.items)
         await enqueueSyncOperation(this.ownerId, 'task', taskId, 'delete', {})
         this.pendingCount = await pendingSyncCount(this.ownerId)
-        this.flush().catch(() => {
-          /* reconciliation happens on next load */
-        })
+        this.scheduleFlush()
       } finally {
         this.saving = false
       }

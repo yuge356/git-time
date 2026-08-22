@@ -223,43 +223,70 @@
           </header>
 
           <p v-if="!hasDailyActivity" class="empty-state">所选日期内还没有计时记录。</p>
-          <div v-else class="weekly-chart" role="img" :aria-label="`${trendCopy.title}柱状图`">
+          <div v-else class="weekly-chart" role="img" :aria-label="`${trendCopy.title}折线图`">
             <div
               class="weekly-chart__body"
-              :style="{ '--weekly-min-width': `${Math.max(trendPoints.length, 5) * 60 + 42}px` }"
+              :style="{ '--weekly-min-width': `${Math.max(trendPoints.length, 5) * 64 + 46}px` }"
             >
-              <div class="weekly-chart__axis" aria-hidden="true">
-                <span v-for="tick in trendAxisTicks" :key="tick">{{ axisDuration(tick) }}</span>
-              </div>
-              <div class="weekly-chart__plot">
-                <div class="weekly-chart__grid" aria-hidden="true">
-                  <span v-for="tick in trendAxisTicks" :key="tick" />
-                </div>
-                <div
-                  class="weekly-chart__bars"
-                  :class="{ 'is-dense': trendPoints.length > 7 }"
+              <div class="trend-line-axis" aria-hidden="true">
+                <span
+                  v-for="(tick, index) in trendAxisTicks"
+                  :key="`tick-${tick}`"
+                  :style="{ top: `${trendTickY(index)}px` }"
                 >
+                  {{ axisDuration(tick) }}
+                </span>
+              </div>
+              <div class="trend-line-main">
+                <div class="trend-line-plot">
+                  <svg
+                    class="trend-line-plot__svg"
+                    :viewBox="`0 0 100 ${TREND_PLOT_HEIGHT}`"
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                  >
+                    <line
+                      v-for="(tick, index) in trendAxisTicks"
+                      :key="`grid-${tick}`"
+                      class="trend-line-plot__gridline"
+                      x1="0"
+                      :x2="100"
+                      :y1="trendTickY(index)"
+                      :y2="trendTickY(index)"
+                    />
+                    <polyline class="trend-line-plot__line" :points="trendPolylinePoints" />
+                  </svg>
+                  <button
+                    v-for="(point, index) in trendPoints"
+                    :key="point.key"
+                    type="button"
+                    class="trend-line-plot__dot"
+                    :class="{
+                      'is-zero': point.seconds <= 0,
+                      'is-flipped': trendPointY(point.seconds) < TREND_TOOLTIP_FLIP_Y,
+                    }"
+                    :style="{
+                      left: `${trendPointX(index)}%`,
+                      top: `${trendPointY(point.seconds)}px`,
+                    }"
+                    :aria-label="`${point.label}，投入 ${readableDuration(point.seconds)}，完成 ${point.completedItems} 项`"
+                  >
+                    <span class="trend-line-plot__value">{{ compactDuration(point.seconds) }}</span>
+                    <span class="trend-line-plot__tooltip" aria-hidden="true">
+                      <strong>{{ point.label }}</strong>
+                      <span>投入 {{ readableDuration(point.seconds) }}</span>
+                      <span>完成 {{ point.completedItems }} 项</span>
+                    </span>
+                  </button>
+                </div>
+                <div class="trend-line-labels" aria-hidden="true">
                   <div
                     v-for="point in trendPoints"
-                    :key="point.key"
-                    class="weekly-column"
-                    :style="{ '--weekly-fill': `${trendBarHeight(point.seconds)}%` }"
-                    :aria-label="`${point.label}，投入 ${readableDuration(point.seconds)}，完成 ${point.completedItems} 项`"
-                    tabindex="0"
+                    :key="`label-${point.key}`"
+                    class="trend-line-labels__item"
                   >
-                    <div class="weekly-column__track">
-                      <div class="weekly-column__bar" />
-                      <span class="weekly-column__value">{{ compactDuration(point.seconds) }}</span>
-                      <div class="weekly-column__tooltip" aria-hidden="true">
-                        <strong>{{ point.label }}</strong>
-                        <span>投入 {{ readableDuration(point.seconds) }}</span>
-                        <span>完成 {{ point.completedItems }} 项</span>
-                      </div>
-                    </div>
-                    <div class="weekly-column__label">
-                      <strong>{{ point.label }}</strong>
-                      <small>{{ point.range }}</small>
-                    </div>
+                    <strong>{{ point.label }}</strong>
+                    <small>{{ point.range }}</small>
                   </div>
                 </div>
               </div>
@@ -385,7 +412,11 @@ import FormMessage from '@/components/FormMessage.vue'
 import { analyticsService } from '@/services/analytics'
 import { useAuthStore } from '@/stores/auth'
 import { useTimerStore } from '@/stores/timer'
-import type { AnalyticsSummary, DailyTrendPoint } from '@/types/analytics'
+import type {
+  AnalyticsDashboard,
+  AnalyticsSummary,
+  DailyTrendPoint,
+} from '@/types/analytics'
 import type { CheckIn } from '@/types/daily-plan'
 import { getApiErrorMessage } from '@/utils/api-error'
 
@@ -499,6 +530,37 @@ const trendAxisMaxSeconds = computed(() => {
 const trendAxisTicks = computed(() =>
   [1, 0.75, 0.5, 0.25, 0].map((ratio) => Math.round(trendAxisMaxSeconds.value * ratio)),
 )
+
+const TREND_PLOT_HEIGHT = 250
+const TREND_TOP_RESERVE = 44
+const TREND_BOTTOM_PAD = 10
+const TREND_TOOLTIP_FLIP_Y = 125
+
+function trendTickY(index: number): number {
+  const ratio = [1, 0.75, 0.5, 0.25, 0][index] ?? 0
+  return Math.round(
+    TREND_TOP_RESERVE
+      + (1 - ratio) * (TREND_PLOT_HEIGHT - TREND_TOP_RESERVE - TREND_BOTTOM_PAD),
+  )
+}
+
+function trendPointX(index: number): number {
+  return ((index + 0.5) / Math.max(trendPoints.value.length, 1)) * 100
+}
+
+function trendPointY(seconds: number): number {
+  const ratio = Math.min(1, Math.max(0, seconds / trendAxisMaxSeconds.value))
+  return Math.round(
+    TREND_TOP_RESERVE
+      + (1 - ratio) * (TREND_PLOT_HEIGHT - TREND_TOP_RESERVE - TREND_BOTTOM_PAD),
+  )
+}
+
+const trendPolylinePoints = computed(() =>
+  trendPoints.value
+    .map((point, index) => `${trendPointX(index)},${trendPointY(point.seconds)}`)
+    .join(' '),
+)
 const trendCopy = computed(() => {
   const copy: Record<TrendGranularity, { title: string }> = {
     day: { title: '每日投入时间' },
@@ -601,25 +663,44 @@ async function applyDateRange(): Promise<void> {
 async function load(): Promise<void> {
   errorMessage.value = ''
   loading.value = true
+  const ownerId = auth.user?.profile.id
+  const syncPromise = ownerId ? ensureTimerSynced(ownerId) : Promise.resolve()
   try {
-    const ownerId = auth.user?.profile.id
-    if (ownerId) {
-      if (!timer.initialized || timer.ownerId !== ownerId) {
-        await timer.initialize(ownerId)
-      } else {
-        await timer.syncPending()
-      }
-    }
-    const todayString = localDateString(new Date())
-    const dashboard = await analyticsService.dashboard(dateFrom.value, dateTo.value, todayString)
-    summary.value = dashboard.range_summary
-    todaySummary.value = dashboard.today_summary
-    todayCheckIn.value = dashboard.today_check_in
+    await fetchDashboard()
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)
   } finally {
     loading.value = false
   }
+  void syncPromise.then(() => {
+    if (errorMessage.value) return
+    void fetchDashboard().catch(() => {})
+  })
+}
+
+async function ensureTimerSynced(ownerId: string): Promise<void> {
+  try {
+    if (!timer.initialized || timer.ownerId !== ownerId) {
+      await timer.initialize(ownerId)
+    } else {
+      await timer.syncPending()
+    }
+  } catch {
+    return
+  }
+}
+
+function applyDashboard(dashboard: AnalyticsDashboard): void {
+  summary.value = dashboard.range_summary
+  todaySummary.value = dashboard.today_summary
+  todayCheckIn.value = dashboard.today_check_in
+}
+
+async function fetchDashboard(): Promise<void> {
+  const todayString = localDateString(new Date())
+  applyDashboard(
+    await analyticsService.dashboard(dateFrom.value, dateTo.value, todayString),
+  )
 }
 
 function aggregateTrend(
@@ -702,10 +783,6 @@ function compactDuration(seconds: number): string {
 function signedDuration(seconds: number): string {
   const prefix = seconds > 0 ? '+' : seconds < 0 ? '−' : ''
   return `${prefix}${readableDuration(Math.abs(seconds))}`
-}
-
-function trendBarHeight(seconds: number): number {
-  return Math.max(seconds > 0 ? 4 : 0, (seconds / trendAxisMaxSeconds.value) * 100)
 }
 
 function axisDuration(seconds: number): string {

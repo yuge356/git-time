@@ -3,7 +3,7 @@
     <div
       :class="[
         'task-mind-branch',
-        { 'task-mind-branch--expanded': isContainer && expanded && task.children.length },
+        { 'task-mind-branch--expanded': expanded && task.children.length > 0 },
       ]"
       :style="themeVars"
     >
@@ -11,12 +11,13 @@
         :class="[
           'task-row',
           `task-row--${task.node_type.toLowerCase()}`,
-          {
-            'task-row--selected': editorTaskId === task.id || creatingChildForId === task.id,
-            'task-row--dragging': draggingTask?.id === task.id,
-            'task-row--drop-target': dragTarget && canAcceptDrop,
-            'task-row--done': task.node_type === 'TASK' && task.status === 'DONE',
-          },
+        {
+          'task-row--selected': editorTaskId === task.id || creatingChildForId === task.id,
+          'task-row--dragging': draggingTask?.id === task.id,
+          'task-row--drop-target': dragTarget && canAcceptDrop,
+          'task-row--done': task.node_type === 'TASK' && task.status === 'DONE',
+          'task-row--menu-open': actionMenuOpen,
+        },
         ]"
         :data-task-id="task.id"
         :aria-label="rowAriaLabel"
@@ -60,7 +61,7 @@
         <span class="task-row__title-line">
           <span class="task-row__title">
             <button
-              v-if="isContainer"
+              v-if="isExpandable"
               class="task-disclosure"
               type="button"
               :aria-label="`${expanded ? '收起' : '展开'}${task.title}`"
@@ -170,7 +171,7 @@
               新建任务
             </button>
             <button
-              v-if="isContainer"
+              v-if="canHaveChildren"
               type="button"
               role="menuitem"
               @click="addChildTask(childNodeType)"
@@ -191,7 +192,7 @@
       </div>
       </article>
 
-      <ul v-if="isContainer && expanded && task.children.length" class="task-tree task-tree--nested">
+      <ul v-if="expanded && task.children.length" class="task-tree task-tree--nested">
         <TaskTreeNode
           v-for="child in task.children"
           :key="child.id"
@@ -205,6 +206,7 @@
           :has-active-timer="hasActiveTimer"
           :active-timer-paused="activeTimerPaused"
           :timer-busy="timerBusy"
+          :parent-node-type="task.node_type"
           @edit="$emit('edit', $event)"
           @add-child="(parent, nodeType) => $emit('add-child', parent, nodeType)"
           @apply-defaults="$emit('apply-defaults', $event)"
@@ -239,8 +241,10 @@ const props = withDefaults(defineProps<{
   activeTimerPaused: boolean
   timerBusy: boolean
   projectTheme?: ProjectTheme
+  parentNodeType?: TaskNodeType | null
 }>(), {
   presentation: 'mindmap',
+  parentNodeType: null,
 })
 
 const emit = defineEmits<{
@@ -256,12 +260,19 @@ const emit = defineEmits<{
 }>()
 
 const expanded = ref(
-  props.task.node_type !== 'TASK' && props.presentation !== 'outline',
+  props.presentation !== 'outline'
+  && (props.task.node_type !== 'TASK' || props.task.children.length > 0),
 )
 const dragTarget = ref(false)
 const actionMenuOpen = ref(false)
 const actionMenuId = computed(() => `task-actions-${props.task.id}`)
 const isContainer = computed(() => props.task.node_type !== 'TASK')
+// Executable tasks may own exactly one extra subtask level: a task whose
+// parent is already a task cannot gain further children.
+const canHaveChildren = computed(() =>
+  isContainer.value || props.parentNodeType !== 'TASK',
+)
+const isExpandable = computed(() => isContainer.value || props.task.children.length > 0)
 
 const theme = computed<ProjectTheme>(() =>
   props.projectTheme ?? getProjectTheme(props.task.node_type === 'PROJECT' ? props.task.id : (props.task.parent_id ?? props.task.id)),
@@ -288,7 +299,9 @@ const typeLabels: Record<TaskNodeType, string> = {
   TASK: '任务',
 }
 const nodeTypeLabel = computed(() => typeLabels[props.task.node_type])
-const childTypeLabel = computed(() => typeLabels[childNodeType.value])
+const childTypeLabel = computed(() =>
+  props.task.node_type === 'TASK' ? '子任务' : typeLabels[childNodeType.value],
+)
 const progressRatio = computed(() => {
   if (props.task.node_type !== 'TASK') return props.task.progress_ratio ?? 0
   if (props.task.status === 'DONE') return 1
@@ -332,6 +345,7 @@ const canAcceptDrop = computed(() => {
   return (
     (props.task.node_type === 'PROJECT' && (moving.node_type === 'MODULE' || moving.node_type === 'TASK'))
     || (props.task.node_type === 'MODULE' && moving.node_type === 'TASK')
+    || (props.task.node_type === 'TASK' && moving.node_type === 'TASK' && canHaveChildren.value)
   )
 })
 const repeatLabels = {
@@ -343,14 +357,18 @@ const repeatLabels = {
 const repeatLabel = computed(() =>
   props.task.repeat_rule === 'NONE' ? '' : repeatLabels[props.task.repeat_rule],
 )
+const hasChildren = computed(() => props.task.children.length > 0)
 const startDisabled = computed(() =>
-  props.timerBusy || (props.hasActiveTimer && !props.activeTimerPaused),
+  props.timerBusy
+  || (props.hasActiveTimer && !props.activeTimerPaused)
+  || (props.task.node_type === 'TASK' && hasChildren.value),
 )
 const startButtonLabel = computed(() => {
   if (props.timerBusy) return '处理中…'
   if (props.activeTaskId === props.task.id) {
     return props.activeTimerPaused ? '继续' : '计时中'
   }
+  if (props.task.node_type === 'TASK' && hasChildren.value) return '含子任务'
   if (props.activeTimerPaused) return '切换并开始'
   if (props.hasActiveTimer) return '请先暂停'
   return '开始'
@@ -359,6 +377,9 @@ const startButtonTitle = computed(() => {
   if (props.timerBusy) return '正在处理计时状态'
   if (props.activeTaskId === props.task.id) {
     return props.activeTimerPaused ? '继续该任务的计时' : '该任务正在计时'
+  }
+  if (props.task.node_type === 'TASK' && hasChildren.value) {
+    return '含子任务的任务不能直接计时，请从子任务中选择'
   }
   if (props.activeTimerPaused) return '保存当前已暂停的计时，然后开始该任务'
   if (props.hasActiveTimer) return '请先暂停当前计时，再切换任务'

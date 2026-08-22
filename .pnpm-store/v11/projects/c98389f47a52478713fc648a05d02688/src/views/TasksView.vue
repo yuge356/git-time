@@ -69,55 +69,78 @@
               <header class="task-mindmap-toolbar">
                 <div>
                   <strong>任务结构</strong>
-                  <span>通过整个网页滚动查看导图，点击节点查看详情</span>
+                  <span>每个项目一块独立画布；节点保持固定大小，超出画布的内容滚动查看</span>
                 </div>
                 <div class="task-mindmap-toolbar__controls" aria-label="导图缩放控制">
                   <button class="icon-button" type="button" aria-label="缩小导图" @click="changeMapZoom(-0.1)">−</button>
                   <output aria-live="polite">{{ mapZoomPercent }}%</output>
                   <button class="icon-button" type="button" aria-label="放大导图" @click="changeMapZoom(0.1)">＋</button>
-                  <button class="button button--quiet button--small" type="button" @click="fitMap">适合页面</button>
                 </div>
               </header>
 
-            <div
-              ref="mapViewport"
-              class="task-mindmap"
-              aria-label="项目与任务导图"
-              @wheel.ctrl.prevent="zoomMapAtPointer"
-            >
-              <div class="task-mindmap__surface" :style="mapSurfaceStyle">
-                <div ref="mapCanvas" class="task-mindmap__canvas" :style="mapCanvasStyle">
-                  <ul ref="mapTree" class="task-tree task-tree--mindmap">
-                    <TaskTreeNode
-                      v-for="task in tasks.tree"
-                      :key="`mindmap-${task.id}`"
-                      :task="task"
-                      presentation="mindmap"
-                      :project-theme="getProjectTheme(task.id)"
-                      :editor-task-id="selectedTask?.id ?? null"
-                      :creating-child-for-id="creatingChildParentId"
-                      :dragging-task="draggingTask"
-                      :active-task-id="timer.active?.snapshot.task_id ?? null"
-                      :has-active-timer="Boolean(timer.active)"
-                      :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
-                      :timer-busy="timer.busy"
-                      @edit="openEdit"
-                      @add-child="openCreateChild"
-                      @apply-defaults="applyDefaults"
-                      @start-task="startTask"
-                      @remove="removeTask"
-                      @drag-start="startDrag"
-                      @drag-end="finishDrag"
-                      @drop-on="moveUnderTask"
-                      @layout-change="scheduleMapLayout"
-                    />
-                  </ul>
-                </div>
+              <div class="task-mindmap-board">
+                <article
+                  v-for="project in tasks.tree"
+                  :key="`mindmap-board-${project.id}`"
+                  class="task-mindmap-project"
+                >
+                  <header class="task-mindmap-project__header">
+                    <div class="task-mindmap-project__title">
+                      <i
+                        class="task-mindmap-project__dot"
+                        aria-hidden="true"
+                        :style="{ background: getProjectTheme(project.id).primary }"
+                      ></i>
+                      <strong>{{ project.title }}</strong>
+                    </div>
+                    <span class="task-mindmap-project__meta">
+                      已完成 {{ project.completed_task_count ?? 0 }} / {{ project.task_count ?? 0 }} 个任务
+                    </span>
+                  </header>
+                  <div
+                    class="task-mindmap"
+                    role="group"
+                    :aria-label="`${project.title}的导图画布`"
+                    @wheel.ctrl.prevent="zoomMapAtPointer"
+                  >
+                    <div class="task-mindmap__surface" :style="mapSurfaceStyle(project.id)">
+                      <div class="task-mindmap__canvas" :style="mapCanvasStyle(project.id)">
+                        <ul
+                          :ref="(element) => registerMapTree(project.id, element)"
+                          class="task-tree task-tree--mindmap"
+                        >
+                          <TaskTreeNode
+                            :key="`mindmap-${project.id}`"
+                            :task="project"
+                            presentation="mindmap"
+                            :project-theme="getProjectTheme(project.id)"
+                            :editor-task-id="selectedTask?.id ?? null"
+                            :creating-child-for-id="creatingChildParentId"
+                            :dragging-task="draggingTask"
+                            :active-task-id="timer.active?.snapshot.task_id ?? null"
+                            :has-active-timer="Boolean(timer.active)"
+                            :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
+                            :timer-busy="timer.busy"
+                            :parent-node-type="null"
+                            @edit="openEdit"
+                            @add-child="openCreateChild"
+                            @apply-defaults="applyDefaults"
+                            @start-task="startTask"
+                            @remove="removeTask"
+                            @drag-start="startDrag"
+                            @drag-end="finishDrag"
+                            @drop-on="moveUnderTask"
+                            @layout-change="scheduleMapLayout"
+                          />
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </article>
               </div>
-            </div>
 
               <p class="task-mindmap-hint">
-                实线表示上下级关系；按住 Ctrl 滚动鼠标滚轮也可缩放。
+                实线表示上下级关系；调整窗口大小时节点大小不变，被遮住的部分通过画布滚动查看。
               </p>
             </section>
 
@@ -142,6 +165,7 @@
                   :has-active-timer="Boolean(timer.active)"
                   :active-timer-paused="timer.active?.snapshot.status === 'PAUSED'"
                   :timer-busy="timer.busy"
+                  :parent-node-type="null"
                   @edit="openEdit"
                   @add-child="openCreateChild"
                   @apply-defaults="applyDefaults"
@@ -190,6 +214,14 @@
                     @click="openCreateChild(selectedTask, 'TASK')"
                   >
                     新建任务
+                  </button>
+                  <button
+                    v-if="canAddChildTo(selectedTask)"
+                    class="button button--quiet button--small"
+                    type="button"
+                    @click="openCreateChild(selectedTask, 'TASK')"
+                  >
+                    新建子任务
                   </button>
                   <button
                     v-if="selectedTask.node_type !== 'TASK'"
@@ -311,34 +343,48 @@ const storedTaskViewMode = (() => {
   }
 })()
 const taskViewMode = ref<TaskViewMode>(storedTaskViewMode)
-const mapViewport = ref<HTMLElement | null>(null)
-const mapCanvas = ref<HTMLElement | null>(null)
-const mapTree = ref<HTMLElement | null>(null)
 const mapZoom = ref(1)
-const mapNaturalSize = ref({ width: 1114, height: 260 })
-let resizeObserver: ResizeObserver | null = null
+interface MapSize {
+  width: number
+  height: number
+}
+const mapSizes = ref<Record<string, MapSize>>({})
+// Non-reactive registries: template function refs and ResizeObserver targets.
+const mapTrees = new Map<string, HTMLElement>()
+const observedTrees = new WeakSet<HTMLElement>()
+let treeResizeObserver: ResizeObserver | null = null
 let layoutFrame = 0
 let initialLoadFinished = false
 
 const projectCount = computed(() => tasks.items.filter((task) => task.node_type === 'PROJECT').length)
 const executableTaskCount = computed(() => tasks.items.filter((task) => task.node_type === 'TASK').length)
 const mapZoomPercent = computed(() => Math.round(mapZoom.value * 100))
-const mapSurfaceStyle = computed<CSSProperties>(() => ({
-  width: `${Math.ceil(mapNaturalSize.value.width * mapZoom.value)}px`,
-  height: `${Math.ceil(mapNaturalSize.value.height * mapZoom.value)}px`,
-}))
-const mapCanvasStyle = computed<CSSProperties>(() => ({
-  width: `${mapNaturalSize.value.width}px`,
-  minHeight: `${mapNaturalSize.value.height}px`,
-  transform: `scale(${mapZoom.value})`,
-}))
+
+function mapSurfaceStyle(projectId: string): CSSProperties {
+  const size = mapSizes.value[projectId]
+  if (!size) return { width: '100%' }
+  return {
+    width: `${Math.ceil(size.width * mapZoom.value)}px`,
+    height: `${Math.ceil(size.height * mapZoom.value)}px`,
+  }
+}
+
+function mapCanvasStyle(projectId: string): CSSProperties {
+  const size = mapSizes.value[projectId]
+  return {
+    width: size ? `${size.width}px` : 'max-content',
+    minHeight: size ? `${size.height}px` : '260px',
+    transformOrigin: '0 0',
+    transform: `scale(${mapZoom.value})`,
+  }
+}
 const selectedTaskTypeLabel = computed(() => {
   if (selectedTask.value?.node_type === 'PROJECT') return '项目'
   if (selectedTask.value?.node_type === 'MODULE') return '模块'
   return '任务'
 })
 const taskViewHelpText = computed(() => taskViewMode.value === 'MINDMAP'
-  ? '每个项目只保留一个主节点，右侧用连线展开模块与任务。导图随内容撑开页面，通过网页滚动查看全部节点。'
+  ? '每个项目只保留一个主节点，右侧用连线展开模块与任务。每个项目拥有独立画布，节点保持固定大小，窗口变化时只裁剪滚动、不缩放内容。'
   : '项目、模块与任务按大纲层级纵向排列。点击名称查看设置，使用左侧拖动手柄调整任务层级。')
 const editorDialogOpen = computed(() => Boolean(
   creating.value || selectedTask.value || creatingChildParentId.value,
@@ -386,7 +432,7 @@ watch(
     task.progress_ratio,
     task.due_date,
   ]),
-  scheduleMapLayout,
+  () => scheduleMapLayout(),
   { deep: true },
 )
 
@@ -411,8 +457,9 @@ function resolveInheritedDefault<K extends ContainerDefaultKey>(key: K): Task[K]
 
 function setTaskViewMode(mode: TaskViewMode): void {
   if (taskViewMode.value === mode) return
-  resizeObserver?.disconnect()
-  resizeObserver = null
+  treeResizeObserver?.disconnect()
+  treeResizeObserver = null
+  mapTrees.clear()
   taskViewMode.value = mode
   try {
     localStorage.setItem(TASK_VIEW_MODE_STORAGE_KEY, mode)
@@ -420,6 +467,14 @@ function setTaskViewMode(mode: TaskViewMode): void {
     // The selected view remains active for this page even if storage is unavailable.
   }
   if (mode === 'MINDMAP') scheduleMapLayout()
+}
+
+function registerMapTree(projectId: string, element: unknown): void {
+  if (element instanceof HTMLElement) {
+    mapTrees.set(projectId, element)
+  } else {
+    mapTrees.delete(projectId)
+  }
 }
 
 function scheduleMapLayout(): void {
@@ -433,26 +488,30 @@ function scheduleMapLayout(): void {
 }
 
 function syncMapLayout(): void {
-  const tree = mapTree.value
-  const canvas = mapCanvas.value
-  if (!tree || !canvas) return
-  if (!resizeObserver) {
-    resizeObserver = new ResizeObserver(scheduleMapLayout)
-    resizeObserver.observe(tree)
+  if (mapTrees.size === 0) return
+  if (!treeResizeObserver) {
+    // Only re-measures natural content size; window resizes never rescale
+    // the nodes — the canvas simply clips and scrolls instead.
+    treeResizeObserver = new ResizeObserver(() => scheduleMapLayout())
   }
-  mapNaturalSize.value = {
-    width: Math.max(960, Math.ceil(tree.scrollWidth)),
-    height: Math.max(180, Math.ceil(tree.scrollHeight)),
-  }
+  const nextSizes: Record<string, MapSize> = {}
+  mapTrees.forEach((tree, projectId) => {
+    if (!observedTrees.has(tree)) {
+      treeResizeObserver?.observe(tree)
+      observedTrees.add(tree)
+    }
+    nextSizes[projectId] = {
+      width: Math.max(320, Math.ceil(tree.scrollWidth)),
+      height: Math.max(220, Math.ceil(tree.scrollHeight)),
+    }
+  })
+  mapSizes.value = nextSizes
 }
 
 function setMapZoom(nextZoom: number): void {
   const next = Math.min(1.6, Math.max(0.4, Math.round(nextZoom * 10) / 10))
   if (next === mapZoom.value) return
   mapZoom.value = next
-  void nextTick(() => {
-    scheduleMapLayout()
-  })
 }
 
 function changeMapZoom(delta: number): void {
@@ -461,19 +520,6 @@ function changeMapZoom(delta: number): void {
 
 function zoomMapAtPointer(event: WheelEvent): void {
   setMapZoom(mapZoom.value + (event.deltaY < 0 ? 0.1 : -0.1))
-}
-
-function fitMap(): void {
-  const viewport = mapViewport.value
-  if (!viewport) return
-  const availableWidth = Math.max(320, document.documentElement.clientWidth - 196)
-  const horizontalScale = availableWidth / mapNaturalSize.value.width
-  mapZoom.value = Math.min(1, Math.max(0.4, horizontalScale))
-  mapZoom.value = Math.round(mapZoom.value * 10) / 10
-  void nextTick(() => {
-    viewport.scrollIntoView({ block: 'start', inline: 'start', behavior: 'smooth' })
-    scheduleMapLayout()
-  })
 }
 
 onMounted(async () => {
@@ -486,17 +532,13 @@ onMounted(async () => {
     loadError.value = getApiErrorMessage(error)
   } finally {
     await nextTick()
-    if (mapTree.value) {
-      resizeObserver = new ResizeObserver(scheduleMapLayout)
-      resizeObserver.observe(mapTree.value)
-    }
     scheduleMapLayout()
     initialLoadFinished = true
   }
 })
 
 onBeforeUnmount(() => {
-  resizeObserver?.disconnect()
+  treeResizeObserver?.disconnect()
   if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
   document.body.classList.remove('task-editor-modal-open')
 })
@@ -510,16 +552,13 @@ onActivated(async () => {
     })
   }
   await nextTick()
-  if (mapTree.value && !resizeObserver) {
-    resizeObserver = new ResizeObserver(scheduleMapLayout)
-    resizeObserver.observe(mapTree.value)
-  }
   scheduleMapLayout()
 })
 
 onDeactivated(() => {
-  resizeObserver?.disconnect()
-  resizeObserver = null
+  treeResizeObserver?.disconnect()
+  treeResizeObserver = null
+  mapTrees.clear()
   if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
 })
 
@@ -544,7 +583,10 @@ function openEdit(task: Task): void {
 }
 
 function openCreateChild(parent: Task, nodeType: TaskNodeType): void {
-  if (parent.node_type === 'TASK') return
+  if (parent.node_type === 'TASK') {
+    const parentType = tasks.items.find((item) => item.id === parent.parent_id)?.node_type ?? null
+    if (parentType === 'TASK') return
+  }
   creating.value = false
   selectedTask.value = null
   creatingChildParentId.value = parent.id
@@ -595,16 +637,27 @@ function finishDrag(): void {
   draggingTask.value = null
 }
 
+function canAddChildTo(task: Task): boolean {
+  if (task.node_type !== 'TASK') return false
+  const parentType = tasks.items.find((item) => item.id === task.parent_id)?.node_type ?? null
+  return parentType !== 'TASK'
+}
+
 async function moveTask(parent: Task): Promise<void> {
   const moving = draggingTask.value
   if (!moving || moving.parent_id === parent.id) return
   const valid = (
     moving.node_type === 'MODULE' && parent.node_type === 'PROJECT'
   ) || (
-    moving.node_type === 'TASK' && parent.node_type === 'MODULE'
+    moving.node_type === 'TASK'
+    && (
+      parent.node_type === 'MODULE'
+      || parent.node_type === 'PROJECT'
+      || (parent.node_type === 'TASK' && canAddChildTo(parent))
+    )
   )
   if (!valid) {
-    loadError.value = '模块只能放在项目下，任务只能放在模块下。'
+    loadError.value = '模块只能放在项目下，任务可以放在项目、模块或任务（仅一层子任务）下。'
     return
   }
   try {
@@ -639,6 +692,11 @@ async function applyDefaults(container: Task): Promise<void> {
 
 async function startTask(task: Task): Promise<void> {
   if (task.node_type !== 'TASK') return
+  const childCount = tasks.items.filter((item) => item.parent_id === task.id).length
+  if (childCount > 0) {
+    loadError.value = '含子任务的任务不能直接计时，请从子任务中选择。'
+    return
+  }
   loadError.value = ''
   actionMessage.value = ''
   const availableSeconds = task.estimated_seconds - task.direct_actual_seconds

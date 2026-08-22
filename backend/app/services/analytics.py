@@ -1,5 +1,6 @@
 """Aggregate existing tasks, sessions and daily-plan completions."""
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -79,16 +80,15 @@ async def build_hourly_focus(
     )
 
 
-async def build_analytics_summary(
+async def _load_analytics_rows(
     db: AsyncSession,
     owner_id: UUID,
-    timezone_name: str,
+    timezone: ZoneInfo,
     date_from: date,
     date_to: date,
-) -> AnalyticsSummary:
-    """Build a bounded, owner-filtered analytics snapshot."""
+) -> tuple[list[Task], list[Session], list[DailyPlanItem], list[DailyPlan]]:
+    """Load every raw row one summary pass may need for a local date range."""
 
-    timezone = resolve_timezone(timezone_name)
     start_at = datetime.combine(date_from, time.min, tzinfo=timezone).astimezone(UTC)
     end_at = datetime.combine(
         date_to + timedelta(days=1),
@@ -105,8 +105,6 @@ async def build_analytics_summary(
             )
         ).all()
     )
-    tasks = [task for task in all_tasks if task.deleted_at is None]
-    executable_tasks = [task for task in tasks if task.node_type == TaskNodeType.TASK]
     sessions = list(
         (
             await db.scalars(
@@ -146,6 +144,31 @@ async def build_analytics_summary(
             )
         ).all()
     )
+    return all_tasks, sessions, items, plans
+
+
+def _summarize_analytics_rows(
+    timezone_name: str,
+    date_from: date,
+    date_to: date,
+    all_tasks: Sequence[Task],
+    range_sessions: Sequence[Session],
+    range_items: Sequence[DailyPlanItem],
+    range_plans: Sequence[DailyPlan],
+) -> AnalyticsSummary:
+    """Aggregate pre-loaded rows into one bounded analytics snapshot.
+
+    Callers must pre-filter ``range_sessions``, ``range_items`` and
+    ``range_plans`` to the requested inclusive local-date window; only
+    ``all_tasks`` may span wider ranges.
+    """
+
+    timezone = resolve_timezone(timezone_name)
+    tasks = [task for task in all_tasks if task.deleted_at is None]
+    executable_tasks = [task for task in tasks if task.node_type == TaskNodeType.TASK]
+    sessions = list(range_sessions)
+    items = list(range_items)
+    plans = list(range_plans)
 
     session_durations = {
         session.id: effective_session_duration(session) for session in sessions
@@ -307,3 +330,101 @@ async def build_analytics_summary(
         budget_comparison=budget_comparison,
         project_history=project_history,
     )
+
+
+async def build_analytics_summary(
+    db: AsyncSession,
+    owner_id: UUID,
+    timezone_name: str,
+    date_from: date,
+    date_to: date,
+) -> AnalyticsSummary:
+    """Build a bounded, owner-filtered analytics snapshot."""
+
+    timezone = resolve_timezone(timezone_name)
+    all_tasks, sessions, items, plans = await _load_analytics_rows(
+        db,
+        owner_id,
+        timezone,
+        date_from,
+        date_to,
+    )
+    return _summarize_analytics_rows(
+        timezone_name,
+        date_from,
+        date_to,
+        all_tasks,
+        sessions,
+        items,
+        plans,
+    )
+
+
+async def build_dashboard_summaries(
+    db: AsyncSession,
+    owner_id: UUID,
+    timezone_name: str,
+    date_from: date,
+    date_to: date,
+    today: date,
+) -> tuple[AnalyticsSummary, AnalyticsSummary]:
+    """Derive the range and today summaries from one shared row load.
+
+    The dashboard previously ran ``build_analytics_summary`` twice, doubling
+    the task/session/plan queries. Loading the union range once and slicing
+    the rows per summary halves the database work without changing results.
+    """
+
+    timezone = resolve_timezone(timezone_name)
+    union_from = min(date_from, today)
+    union_to = max(date_to, today)
+    all_tasks, sessions, items, plans = await _load_analytics_rows(
+        db,
+        owner_id,
+        timezone,
+        union_from,
+        union_to,
+    )
+
+    def local_session_date(value: datetime) -> date:
+        return normalize_utc(value).astimezone(timezone).date()
+
+    plan_dates_by_id = {plan.id: plan.plan_date for plan in plans}
+
+    def slice_window(window_from: date, window_to: date) -> tuple[
+        list[Session],
+        list[DailyPlanItem],
+        list[DailyPlan],
+    ]:
+        window_sessions = [
+            session
+            for session in sessions
+            if window_from <= local_session_date(session.started_at) <= window_to
+        ]
+        window_items = [
+            item
+            for item in items
+            if window_from <= plan_dates_by_id[item.daily_plan_id] <= window_to
+        ]
+        window_plans = [
+            plan for plan in plans if window_from <= plan.plan_date <= window_to
+        ]
+        return window_sessions, window_items, window_plans
+
+    range_rows = slice_window(date_from, date_to)
+    today_rows = slice_window(today, today)
+    range_summary = _summarize_analytics_rows(
+        timezone_name,
+        date_from,
+        date_to,
+        all_tasks,
+        *range_rows,
+    )
+    today_summary = _summarize_analytics_rows(
+        timezone_name,
+        today,
+        today,
+        all_tasks,
+        *today_rows,
+    )
+    return range_summary, today_summary

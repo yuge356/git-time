@@ -47,6 +47,7 @@ if (await portIsOccupied()) {
 
 const child = spawn('corepack', ['pnpm', '--dir', 'frontend', 'dev'], {
   stdio: 'inherit',
+  shell: process.platform === 'win32',
 })
 
 child.once('error', (error) => {

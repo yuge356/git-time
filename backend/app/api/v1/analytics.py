@@ -7,7 +7,11 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.api.dependencies import CurrentUser, DatabaseSession
 from app.schemas.analytics import AnalyticsDashboard, AnalyticsSummary, HourlyFocusResponse
-from app.services.analytics import build_analytics_summary, build_hourly_focus
+from app.services.analytics import (
+    build_analytics_summary,
+    build_dashboard_summaries,
+    build_hourly_focus,
+)
 from app.services.daily_plans import build_check_in
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -31,8 +35,14 @@ async def read_analytics_dashboard(
     """Return all analytics-page data through one auth and HTTP round trip."""
     validate_range(date_from, date_to)
     timezone = current_user.profile.timezone
-    range_summary = await build_analytics_summary(db, current_user.id, timezone, date_from, date_to)
-    today_summary = await build_analytics_summary(db, current_user.id, timezone, today, today)
+    range_summary, today_summary = await build_dashboard_summaries(
+        db,
+        current_user.id,
+        timezone,
+        date_from,
+        date_to,
+        today,
+    )
     today_check_in = await build_check_in(db, current_user.id, today, timezone)
     return AnalyticsDashboard(
         range_summary=range_summary,
