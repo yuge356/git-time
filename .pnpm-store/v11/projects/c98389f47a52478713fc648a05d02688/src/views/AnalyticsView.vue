@@ -245,6 +245,13 @@
                     preserveAspectRatio="none"
                     aria-hidden="true"
                   >
+                    <defs>
+                      <linearGradient id="trend-area-gradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#7559f5" stop-opacity="0.34" />
+                        <stop offset="55%" stop-color="#7559f5" stop-opacity="0.12" />
+                        <stop offset="100%" stop-color="#7559f5" stop-opacity="0" />
+                      </linearGradient>
+                    </defs>
                     <line
                       v-for="(tick, index) in trendAxisTicks"
                       :key="`grid-${tick}`"
@@ -254,24 +261,25 @@
                       :y1="trendTickY(index)"
                       :y2="trendTickY(index)"
                     />
-                    <polyline class="trend-line-plot__line" :points="trendPolylinePoints" />
+                    <path
+                      class="trend-line-plot__area"
+                      :d="trendAreaPath"
+                      fill="url(#trend-area-gradient)"
+                    />
+                    <path class="trend-line-plot__line" :d="trendLinePath" />
                   </svg>
                   <button
                     v-for="(point, index) in trendPoints"
                     :key="point.key"
                     type="button"
                     class="trend-line-plot__dot"
-                    :class="{
-                      'is-zero': point.seconds <= 0,
-                      'is-flipped': trendPointY(point.seconds) < TREND_TOOLTIP_FLIP_Y,
-                    }"
+                    :class="{ 'is-flipped': trendPointY(point.seconds) < TREND_TOOLTIP_FLIP_Y }"
                     :style="{
                       left: `${trendPointX(index)}%`,
                       top: `${trendPointY(point.seconds)}px`,
                     }"
                     :aria-label="`${point.label}，投入 ${readableDuration(point.seconds)}，完成 ${point.completedItems} 项`"
                   >
-                    <span class="trend-line-plot__value">{{ compactDuration(point.seconds) }}</span>
                     <span class="trend-line-plot__tooltip" aria-hidden="true">
                       <strong>{{ point.label }}</strong>
                       <span>投入 {{ readableDuration(point.seconds) }}</span>
@@ -411,6 +419,7 @@ import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
 import { analyticsService } from '@/services/analytics'
 import { useAuthStore } from '@/stores/auth'
+import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
 import type {
   AnalyticsDashboard,
@@ -489,6 +498,7 @@ const todaySummary = ref<AnalyticsSummary | null>(null)
 const todayCheckIn = ref<CheckIn | null>(null)
 const auth = useAuthStore()
 const timer = useTimerStore()
+const tasksStore = useTaskStore()
 const loading = ref(false)
 const errorMessage = ref('')
 let rolloverTimer: number | null = null
@@ -556,11 +566,45 @@ function trendPointY(seconds: number): number {
   )
 }
 
-const trendPolylinePoints = computed(() =>
-  trendPoints.value
-    .map((point, index) => `${trendPointX(index)},${trendPointY(point.seconds)}`)
-    .join(' '),
+interface TrendCoord {
+  x: number
+  y: number
+}
+
+const trendPointCoords = computed<TrendCoord[]>(() =>
+  trendPoints.value.map((point, index) => ({
+    x: trendPointX(index),
+    y: trendPointY(point.seconds),
+  })),
 )
+
+function buildSmoothPath(coords: TrendCoord[]): string {
+  if (coords.length === 0) return ''
+  if (coords.length === 1) return `M ${coords[0]!.x} ${coords[0]!.y}`
+  let d = `M ${coords[0]!.x} ${coords[0]!.y}`
+  for (let i = 0; i < coords.length - 1; i += 1) {
+    const p0 = coords[Math.max(0, i - 1)]!
+    const p1 = coords[i]!
+    const p2 = coords[i + 1]!
+    const p3 = coords[Math.min(coords.length - 1, i + 2)]!
+    const cp1x = (p1.x + (p2.x - p0.x) / 6).toFixed(2)
+    const cp1y = (p1.y + (p2.y - p0.y) / 6).toFixed(2)
+    const cp2x = (p2.x - (p3.x - p1.x) / 6).toFixed(2)
+    const cp2y = (p2.y - (p3.y - p1.y) / 6).toFixed(2)
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+  }
+  return d
+}
+
+const trendLinePath = computed(() => buildSmoothPath(trendPointCoords.value))
+
+const trendAreaPath = computed(() => {
+  const coords = trendPointCoords.value
+  const line = buildSmoothPath(coords)
+  if (!line || coords.length < 2) return ''
+  const baseline = TREND_PLOT_HEIGHT - TREND_BOTTOM_PAD
+  return `${line} L ${coords[coords.length - 1]!.x} ${baseline} L ${coords[0]!.x} ${baseline} Z`
+})
 const trendCopy = computed(() => {
   const copy: Record<TrendGranularity, { title: string }> = {
     day: { title: '每日投入时间' },
@@ -662,10 +706,15 @@ async function applyDateRange(): Promise<void> {
 
 async function load(): Promise<void> {
   errorMessage.value = ''
-  loading.value = true
   const ownerId = auth.user?.profile.id
+  const wasInitialized = Boolean(ownerId && timer.initialized && timer.ownerId === ownerId)
+  const pendingBefore = timer.pendingCount + tasksStore.pendingCount
   const syncPromise = ownerId ? ensureTimerSynced(ownerId) : Promise.resolve()
   try {
+    const cached =
+      ownerId && !summary.value ? analyticsService.peekDashboard(dashboardCacheKey()) : null
+    if (cached) applyDashboard(cached)
+    if (!summary.value) loading.value = true
     await fetchDashboard()
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)
@@ -674,6 +723,7 @@ async function load(): Promise<void> {
   }
   void syncPromise.then(() => {
     if (errorMessage.value) return
+    if (wasInitialized && pendingBefore === 0) return
     void fetchDashboard().catch(() => {})
   })
 }
@@ -696,11 +746,16 @@ function applyDashboard(dashboard: AnalyticsDashboard): void {
   todayCheckIn.value = dashboard.today_check_in
 }
 
+function dashboardCacheKey(): string {
+  const ownerId = auth.user?.profile.id ?? 'anonymous'
+  return `${ownerId}|${dateFrom.value}|${dateTo.value}|${localDateString(new Date())}`
+}
+
 async function fetchDashboard(): Promise<void> {
   const todayString = localDateString(new Date())
-  applyDashboard(
-    await analyticsService.dashboard(dateFrom.value, dateTo.value, todayString),
-  )
+  const data = await analyticsService.dashboard(dateFrom.value, dateTo.value, todayString)
+  analyticsService.storeDashboard(dashboardCacheKey(), data)
+  applyDashboard(data)
 }
 
 function aggregateTrend(
@@ -749,7 +804,7 @@ function trendAnchor(date: Date, granularity: TrendGranularity): Date {
 }
 
 function trendLabel(date: Date, granularity: TrendGranularity): string {
-  if (granularity === 'week') return `${date.getMonth() + 1}/${date.getDate()} 周`
+  if (granularity === 'week') return `${date.getMonth() + 1}.${date.getDate()} 周`
   if (granularity === 'month') return `${date.getFullYear()}年${date.getMonth() + 1}月`
   if (granularity === 'year') return `${date.getFullYear()}年`
   return shortDate(localDateString(date))
@@ -818,9 +873,7 @@ function formatHistoryDate(value: string): string {
 }
 
 function shortDate(value: string): string {
-  return parseLocalDate(value).toLocaleDateString('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-  })
+  const parsed = parseLocalDate(value)
+  return `${parsed.getMonth() + 1}.${parsed.getDate()}`
 }
 </script>

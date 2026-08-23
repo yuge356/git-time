@@ -5,7 +5,15 @@ import type {
   HourlyFocusDistribution,
 } from '@/types/analytics'
 
+const dashboardCache = new Map<string, AnalyticsDashboard>()
+
 export const analyticsService = {
+  peekDashboard(key: string): AnalyticsDashboard | null {
+    return dashboardCache.get(key) ?? null
+  },
+  storeDashboard(key: string, data: AnalyticsDashboard): void {
+    dashboardCache.set(key, data)
+  },
   async summary(dateFrom: string, dateTo: string): Promise<AnalyticsSummary> {
     const { data } = await http.get<AnalyticsSummary>('/analytics/summary', {
       params: {

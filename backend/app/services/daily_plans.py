@@ -257,6 +257,8 @@ async def build_check_in(
                     DailyPlanItem.status == DailyPlanItemStatus.DONE,
                 )
                 .distinct()
+                .order_by(DailyPlan.plan_date.desc())
+                .limit(731)
             )
         ).all()
     )

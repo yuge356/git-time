@@ -327,19 +327,29 @@
             role="img"
             :aria-label="distributionAriaLabel"
           >
-            <div v-for="point in distributionHours" :key="point.hour" class="focus-distribution__slot">
-              <span v-if="point.seconds > 0" class="sr-only">{{ point.label }}</span>
+            <div class="focus-distribution__bars">
               <div
+                v-for="point in distributionHours"
+                :key="point.hour"
                 class="focus-distribution__bar-track"
                 :title="point.label"
               >
+                <span v-if="point.seconds > 0" class="sr-only">{{ point.label }}</span>
                 <div
                   class="focus-distribution__bar"
-                  :class="{ 'is-current': point.isCurrentHour, 'is-empty': point.seconds <= 0 }"
+                  :class="{ 'is-empty': point.seconds <= 0 }"
                   :style="{ height: `${distributionBarHeight(point.seconds)}%` }"
                 ></div>
               </div>
-              <span class="focus-distribution__hour">{{ hourTick(point.hour) }}</span>
+            </div>
+            <div class="focus-distribution__hours" aria-hidden="true">
+              <span
+                v-for="point in distributionHours"
+                :key="`hour-${point.hour}`"
+                class="focus-distribution__hour"
+              >
+                {{ hourTick(point.hour) }}
+              </span>
             </div>
           </div>
 
@@ -693,7 +703,7 @@ async function loadHourlyFocus(): Promise<void> {
 }
 
 function hourTick(hour: number): string {
-  return hour % 3 === 0 ? String(hour) : ''
+  return hour % 2 === 0 ? String(hour) : ''
 }
 
 function distributionBarHeight(seconds: number): number {

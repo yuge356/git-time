@@ -92,12 +92,25 @@
                         :style="{ background: getProjectTheme(project.id).primary }"
                       ></i>
                       <strong>{{ project.title }}</strong>
+                      <button
+                        class="task-mindmap-project__toggle"
+                        type="button"
+                        :class="{ 'is-collapsed': collapsedMindmapProjects.has(project.id) }"
+                        :aria-expanded="!collapsedMindmapProjects.has(project.id)"
+                        :aria-label="`${collapsedMindmapProjects.has(project.id) ? '展开' : '折叠'}${project.title}的任务树`"
+                        @click="toggleMindmapProject(project.id)"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
                     </div>
                     <span class="task-mindmap-project__meta">
                       已完成 {{ project.completed_task_count ?? 0 }} / {{ project.task_count ?? 0 }} 个任务
                     </span>
                   </header>
                   <div
+                    v-show="!collapsedMindmapProjects.has(project.id)"
                     class="task-mindmap"
                     role="group"
                     :aria-label="`${project.title}的导图画布`"
@@ -295,7 +308,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
@@ -344,6 +357,16 @@ const storedTaskViewMode = (() => {
 })()
 const taskViewMode = ref<TaskViewMode>(storedTaskViewMode)
 const mapZoom = ref(1)
+const collapsedMindmapProjects = reactive(new Set<string>())
+
+function toggleMindmapProject(projectId: string): void {
+  if (collapsedMindmapProjects.has(projectId)) {
+    collapsedMindmapProjects.delete(projectId)
+  } else {
+    collapsedMindmapProjects.add(projectId)
+  }
+}
+
 interface MapSize {
   width: number
   height: number
