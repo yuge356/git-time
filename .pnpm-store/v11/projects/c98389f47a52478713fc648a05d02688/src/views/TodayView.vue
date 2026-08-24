@@ -239,11 +239,10 @@
       </div>
 
       <div class="today-bottom-grid">
-        <section class="activity-calendar" aria-labelledby="activity-calendar-title">
+        <section class="activity-calendar" aria-label="计时日历">
           <header class="activity-calendar__header">
             <div>
               <p class="eyebrow">月度节奏</p>
-              <h2 id="activity-calendar-title">计时日历</h2>
             </div>
             <div class="activity-calendar__month-control">
               <button type="button" aria-label="上一个月" @click="shiftCalendarMonth(-1)">
@@ -309,11 +308,10 @@
           </footer>
         </section>
 
-        <section class="focus-distribution" aria-labelledby="focus-distribution-title">
+        <section class="focus-distribution" aria-label="今日专注分布">
           <header class="focus-distribution__header">
             <div>
               <p class="eyebrow">今日专注分布</p>
-              <h2 id="focus-distribution-title">小时分布</h2>
             </div>
             <div class="focus-distribution__summary">
               <strong>{{ formatCalendarDuration(distributionTotalSeconds) }}</strong>

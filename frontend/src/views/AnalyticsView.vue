@@ -72,7 +72,6 @@
           <header class="analytics-card__heading">
             <div>
               <p class="eyebrow">任务分布</p>
-              <h2>今日时间投入占比</h2>
             </div>
             <span class="analytics-card__hint">{{ distributionItems.length }} 个圆环</span>
           </header>
@@ -147,7 +146,6 @@
           <header class="analytics-card__heading analytics-card__heading--split">
             <div>
               <p class="eyebrow">时间趋势</p>
-              <h2>{{ trendCopy.title }}</h2>
             </div>
             <div class="trend-controls">
               <div class="trend-granularity" role="group" aria-label="统计时间粒度">
@@ -307,7 +305,6 @@
             <header class="analytics-card__heading analytics-card__heading--split">
               <div>
                 <p class="eyebrow">预算偏差</p>
-                <h2>计划用时与实际投入</h2>
               </div>
               <span class="analytics-card__hint">
                 {{ summary?.budget_comparison.length ?? 0 }} 项任务
@@ -355,7 +352,6 @@
             <header class="analytics-card__heading analytics-card__heading--split">
               <div>
                 <p class="eyebrow">项目历史</p>
-                <h2>投入时间查询</h2>
               </div>
               <span class="analytics-card__hint">
                 {{ summary?.project_history?.length ?? 0 }} 个项目

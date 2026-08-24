@@ -4637,6 +4637,7 @@ body.task-editor-modal-open {
 }
 
 .activity-calendar__header {
+  align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
 }
@@ -5519,6 +5520,11 @@ body.task-editor-modal-open {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.06em;
+}
+
+.analytics-card--distribution .analytics-card__hint {
+  display: inline-block;
+  margin-top: 0.5cm;
 }
 
 .analytics-card--distribution,
