@@ -105,7 +105,19 @@ a {
   font-size: 24px;
   font-weight: 400;
   letter-spacing: 0.04em;
-  line-height: 1;
+}
+
+.brand__logo {
+  display: block;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+}
+
+.brand__logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .brand__copy {
@@ -596,6 +608,12 @@ a {
 .auth-login-intro .brand__mark {
   border: 1px solid rgb(255 255 255 / 30%);
   background: #5b3df5;
+}
+
+.auth-login-intro .brand__logo {
+  padding: 5px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 94%);
 }
 
 .auth-login-welcome {
