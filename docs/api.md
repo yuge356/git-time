@@ -28,7 +28,8 @@
 | 打卡 | `GET /check-ins/{date}` | 时长、完成数、连续天数 |
 | 统计 | `GET /analytics/summary` | 日期范围统计 |
 | 统计 | `GET /analytics/dashboard` | 一次返回统计页范围汇总、今日汇总和打卡数据，减少页面请求与认证往返 |
-| 统计 | `GET /analytics/hourly-focus?day=YYYY-MM-DD` | 单日按小时专注分布（按计时开始的小时归属，使用资料时区） |
+| 统计 | `GET /analytics/hourly-focus?day=YYYY-MM-DD` | 单日按小时专注分布（仅选定日期，按计时开始的小时归属，使用资料时区） |
+| 统计 | `GET /analytics/task-daily?date_from=&date_to=` | 每任务每日学习秒数（今日页计划进度表数据；仅返回有正时长记录的任务） |
 | 搜索 | `GET /users/search?q=` | 搜索可发现用户 |
 | 伙伴 | `GET /partnerships` | 邀请和伙伴列表 |
 | 伙伴 | `POST /partnerships/invitations` | 发出邀请 |
@@ -54,7 +55,12 @@
 366 天。
 
 `GET /analytics/hourly-focus` 必须提供 `day=YYYY-MM-DD`，返回 `date`、`total_seconds` 与
-24 条 `hours[{ hour, seconds }]`；Session 按其开始时刻的资料时区小时归属，正在计时的增量由前端实时叠加。
+48 条 `slots[{ index, seconds }]`；`index` 从午夜起按半小时递增（如 index 18 表示本地 09:00–09:30），
+Session 按其开始时刻的资料时区半小时槽位归属，正在计时的增量由前端实时叠加到当前槽位。
+
+`GET /analytics/task-daily` 必须提供 `date_from=YYYY-MM-DD` 与 `date_to=YYYY-MM-DD`（最多 366 天），
+返回 `tasks[{ task_id, title, total_seconds, daily[{ date, seconds }] }]`；Session 按其开始时刻的
+资料时区日期归属，仅统计关联了项目任务的 Session，无正时长记录的任务不会出现。
 
 Supabase Auth 的客户端调用为 `signUp({ email, password, options.data })`、`signInWithPassword(...)`、
 `updateUser({ data })` 和 `signOut()`；注册元数据中的 `onboarding_completed=false` 标记新账号需要首次使用

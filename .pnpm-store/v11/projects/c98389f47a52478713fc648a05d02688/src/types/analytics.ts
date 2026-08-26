@@ -22,6 +22,33 @@ export interface HourlyFocusDistribution {
   hours: HourlyFocusPoint[]
 }
 
+export interface TaskDailyPoint {
+  date: string
+  seconds: number
+}
+
+export interface TaskDailySeries {
+  task_id: string | null
+  title: string
+  total_seconds: number
+  daily: TaskDailyPoint[]
+}
+
+export interface TaskDailyResponse {
+  date_from: string
+  date_to: string
+  tasks: TaskDailySeries[]
+}
+
+export interface GanttChartRow {
+  id: string
+  title: string
+  totalSeconds: number
+  firstDate: string
+  lastDate: string
+  days: TaskDailyPoint[]
+}
+
 export interface BudgetComparison {
   task_id: string
   title: string

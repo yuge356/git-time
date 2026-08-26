@@ -40,6 +40,34 @@ class HourlyFocusResponse(BaseModel):
     hours: list[HourlyFocusPoint]
 
 
+class TaskDailyPoint(BaseModel):
+    """Learning seconds one task recorded on one local date."""
+
+    date: date
+    seconds: int
+
+
+class TaskDailySeries(BaseModel):
+    """One task's day-by-day learning time for Gantt-style charts."""
+
+    task_id: UUID
+    title: str
+    total_seconds: int
+    daily: list[TaskDailyPoint]
+
+
+class TaskDailyResponse(BaseModel):
+    """Per-task daily learning seconds inside a local date range.
+
+    Only tasks with positive recorded time are included, so read-only
+    visualizations can skip empty rows.
+    """
+
+    date_from: date
+    date_to: date
+    tasks: list[TaskDailySeries]
+
+
 class BudgetComparison(BaseModel):
     """Configured task budget compared with period study time."""
 

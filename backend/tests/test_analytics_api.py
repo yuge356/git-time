@@ -244,3 +244,70 @@ async def test_hourly_focus_buckets_sessions_by_start_hour(
     )
     assert empty.status_code == 200
     assert empty.json()["total_seconds"] == 0
+
+
+async def test_task_daily_series_buckets_seconds_per_task_and_day(
+    client: AsyncClient,
+) -> None:
+    from zoneinfo import ZoneInfo
+
+    token, _ = await register_user(client, "gantt")
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    task_id = await create_task(client, token, "Gantt lesson")
+
+    # New profiles default to Asia/Shanghai; build sessions on local days.
+    local_tz = ZoneInfo("Asia/Shanghai")
+    for day, hour, duration in ((yesterday, 10, 900), (today, 15, 600)):
+        started = datetime.combine(day, time(hour, 0), tzinfo=local_tz).astimezone(UTC)
+        response = await client.put(
+            f"/api/v1/sessions/{uuid4()}",
+            headers=auth_header(token),
+            json=snapshot(
+                task_id,
+                str(uuid4()),
+                "COMPLETED",
+                started,
+                started + timedelta(seconds=duration),
+                duration,
+                ended_at=started + timedelta(seconds=duration),
+            ),
+        )
+        assert response.status_code == 200
+
+    series_response = await client.get(
+        "/api/v1/analytics/task-daily",
+        headers=auth_header(token),
+        params={
+            "date_from": (today - timedelta(days=6)).isoformat(),
+            "date_to": today.isoformat(),
+        },
+    )
+    assert series_response.status_code == 200
+    data = series_response.json()
+    assert data["tasks"] != []
+    series = data["tasks"][0]
+    assert series["task_id"] == task_id
+    assert series["title"] == "Gantt lesson"
+    assert series["total_seconds"] == 1_500
+    daily = {point["date"]: point["seconds"] for point in series["daily"]}
+    assert daily == {
+        yesterday.isoformat(): 900,
+        today.isoformat(): 600,
+    }
+
+    other_token, _ = await register_user(client, "ganttsecond")
+    isolated = await client.get(
+        "/api/v1/analytics/task-daily",
+        headers=auth_header(other_token),
+        params={"date_from": (today - timedelta(days=6)).isoformat(), "date_to": today.isoformat()},
+    )
+    assert isolated.status_code == 200
+    assert isolated.json()["tasks"] == []
+
+    reversed_range = await client.get(
+        "/api/v1/analytics/task-daily",
+        headers=auth_header(token),
+        params={"date_from": today.isoformat(), "date_to": yesterday.isoformat()},
+    )
+    assert reversed_range.status_code == 422

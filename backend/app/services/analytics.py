@@ -18,6 +18,9 @@ from app.schemas.analytics import (
     HourlyFocusPoint,
     HourlyFocusResponse,
     ProjectTimeHistory,
+    TaskDailyPoint,
+    TaskDailyResponse,
+    TaskDailySeries,
     TaskTimeSlice,
 )
 from app.services.tasks import (
@@ -45,7 +48,8 @@ async def build_hourly_focus(
     """Bucket one local date's session time into 24 clock hours.
 
     Sessions are attributed to the clock hour in which they started, matching
-    how ``daily_trend`` attributes whole sessions to their start date.
+    how ``daily_trend`` attributes whole sessions to their start date. Only
+    the selected date is returned, never a multi-day series.
     """
 
     timezone = resolve_timezone(timezone_name)
@@ -78,6 +82,75 @@ async def build_hourly_focus(
             for hour, seconds in enumerate(hourly_seconds)
         ],
     )
+
+
+async def build_task_daily_series(
+    db: AsyncSession,
+    owner_id: UUID,
+    timezone_name: str,
+    date_from: date,
+    date_to: date,
+) -> TaskDailyResponse:
+    """Aggregate per-task daily learning seconds for Gantt-style charts.
+
+    Sessions are attributed to the local date on which they started, the
+    same rule ``daily_trend`` uses. Only tasks with positive recorded time
+    are returned; soft-deleted tasks still surface under their last title so
+    historical spans stay visible.
+    """
+
+    timezone = resolve_timezone(timezone_name)
+    start_at = datetime.combine(date_from, time.min, tzinfo=timezone).astimezone(UTC)
+    end_at = datetime.combine(
+        date_to + timedelta(days=1),
+        time.min,
+        tzinfo=timezone,
+    ).astimezone(UTC)
+
+    tasks = list(
+        (
+            await db.scalars(select(Task).where(Task.owner_id == owner_id))
+        ).all()
+    )
+    titles = {task.id: task.title for task in tasks}
+    sessions = list(
+        (
+            await db.scalars(
+                select(Session).where(
+                    Session.owner_id == owner_id,
+                    Session.started_at >= start_at,
+                    Session.started_at < end_at,
+                    Session.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    )
+
+    daily_seconds: dict[UUID, dict[date, int]] = {}
+    for session in sessions:
+        if session.task_id is None:
+            continue
+        seconds = effective_session_duration(session)
+        if seconds <= 0:
+            continue
+        local_date = normalize_utc(session.started_at).astimezone(timezone).date()
+        per_task = daily_seconds.setdefault(session.task_id, {})
+        per_task[local_date] = per_task.get(local_date, 0) + seconds
+
+    series = [
+        TaskDailySeries(
+            task_id=task_id,
+            title=titles.get(task_id, ""),
+            total_seconds=sum(days.values()),
+            daily=[
+                TaskDailyPoint(date=day, seconds=day_seconds)
+                for day, day_seconds in sorted(days.items())
+            ],
+        )
+        for task_id, days in daily_seconds.items()
+    ]
+    series.sort(key=lambda item: (-item.total_seconds, item.title))
+    return TaskDailyResponse(date_from=date_from, date_to=date_to, tasks=series)
 
 
 async def _load_analytics_rows(

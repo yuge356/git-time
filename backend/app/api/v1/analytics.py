@@ -6,11 +6,17 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.dependencies import CurrentUser, DatabaseSession
-from app.schemas.analytics import AnalyticsDashboard, AnalyticsSummary, HourlyFocusResponse
+from app.schemas.analytics import (
+    AnalyticsDashboard,
+    AnalyticsSummary,
+    HourlyFocusResponse,
+    TaskDailyResponse,
+)
 from app.services.analytics import (
     build_analytics_summary,
     build_dashboard_summaries,
     build_hourly_focus,
+    build_task_daily_series,
 )
 from app.services.daily_plans import build_check_in
 
@@ -83,4 +89,23 @@ async def read_hourly_focus(
         current_user.id,
         current_user.profile.timezone,
         day,
+    )
+
+
+@router.get("/task-daily", response_model=TaskDailyResponse)
+async def read_task_daily_series(
+    db: DatabaseSession,
+    current_user: CurrentUser,
+    date_from: Annotated[date, Query()],
+    date_to: Annotated[date, Query()],
+) -> TaskDailyResponse:
+    """Return per-task daily learning seconds for Gantt visualization."""
+
+    validate_range(date_from, date_to)
+    return await build_task_daily_series(
+        db,
+        current_user.id,
+        current_user.profile.timezone,
+        date_from,
+        date_to,
     )

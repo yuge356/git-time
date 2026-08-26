@@ -308,14 +308,40 @@
           </footer>
         </section>
 
-        <section class="focus-distribution" aria-label="今日专注分布">
+        <section class="focus-distribution" aria-label="当日专注分布">
           <header class="focus-distribution__header">
             <div>
-              <p class="eyebrow">今日专注分布</p>
+              <p class="eyebrow">{{ distributionTitle }}</p>
             </div>
-            <div class="focus-distribution__summary">
-              <strong>{{ formatCalendarDuration(distributionTotalSeconds) }}</strong>
-              <span>今日累计专注</span>
+            <div class="focus-distribution__meta">
+              <div class="focus-distribution__date-control">
+                <button type="button" aria-label="前一天" @click="shiftFocusDate(-1)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5" /></svg>
+                </button>
+                <label>
+                  <span class="sr-only">选择专注分布日期</span>
+                  <input
+                    v-model="focusDate"
+                    type="date"
+                    required
+                    :max="todayDate"
+                    aria-label="选择专注分布日期"
+                    @change="ensureFocusDate"
+                  />
+                </label>
+                <button
+                  type="button"
+                  aria-label="后一天"
+                  :disabled="focusDate >= todayDate"
+                  @click="shiftFocusDate(1)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5" /></svg>
+                </button>
+              </div>
+              <div class="focus-distribution__summary">
+                <strong>{{ formatCalendarDuration(distributionTotalSeconds) }}</strong>
+                <span>{{ focusDate === todayDate ? '今日累计专注' : '当日累计专注' }}</span>
+              </div>
             </div>
           </header>
 
@@ -330,7 +356,9 @@
                 v-for="point in distributionHours"
                 :key="point.hour"
                 class="focus-distribution__bar-track"
-                :title="point.label"
+                @mouseenter="showFocusTooltip(point, $event)"
+                @mousemove="moveFocusTooltip(point, $event)"
+                @mouseleave="hideFocusTooltip"
               >
                 <span v-if="point.seconds > 0" class="sr-only">{{ point.label }}</span>
                 <div
@@ -356,9 +384,28 @@
             <span v-else>按计时开始的小时统计，正在计时的时间实时计入当前小时。</span>
           </footer>
         </section>
+
+        <GanttChart
+          :rows="ganttRows"
+          :today="todayDate"
+          :loading="ganttLoading"
+          :error="ganttError"
+        />
       </div>
     </main>
   </AppShell>
+
+  <Teleport to="body">
+    <div
+      v-if="focusTooltip"
+      class="focus-distribution__tooltip"
+      :style="{ left: `${focusTooltip.x}px`, top: `${focusTooltip.y}px` }"
+      role="tooltip"
+    >
+      <strong>{{ focusTooltip.hour}}:00 – {{ focusTooltip.hour + 1 }}:00</strong>
+      <span>{{ focusTooltip.seconds > 0 ? `该小时累计学习 ${formatDuration(focusTooltip.seconds)}` : '该小时无专注记录' }}</span>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -366,12 +413,18 @@ import { computed, onActivated, onMounted, ref, watch } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
+import GanttChart from '@/components/GanttChart.vue'
 import { analyticsService } from '@/services/analytics'
 import { useAuthStore } from '@/stores/auth'
 import { useDailyPlanStore } from '@/stores/daily-plans'
 import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
-import type { DailyTrendPoint, HourlyFocusDistribution } from '@/types/analytics'
+import type {
+  DailyTrendPoint,
+  GanttChartRow,
+  HourlyFocusDistribution,
+  TaskDailySeries,
+} from '@/types/analytics'
 import type { DailyPlanItem } from '@/types/daily-plan'
 import { getApiErrorMessage } from '@/utils/api-error'
 import { projectPrefixedTaskTitle } from '@/utils/task-title'
@@ -392,6 +445,10 @@ const calendarError = ref('')
 const hourlyTrend = ref<HourlyFocusDistribution | null>(null)
 const distributionLoading = ref(false)
 const distributionError = ref('')
+const focusDate = ref(localDateString())
+const ganttSeries = ref<TaskDailySeries[]>([])
+const ganttLoading = ref(false)
+const ganttError = ref('')
 const itemKind = ref<'task' | 'adhoc'>('task')
 const planTaskId = ref('')
 const adHocTitle = ref('')
@@ -401,8 +458,10 @@ const errorMessage = ref('')
 let initialLoadFinished = false
 let calendarRequestId = 0
 let distributionRequestId = 0
+let ganttRequestId = 0
 let lastActivationRefreshAt = 0
 const ACTIVATION_REFRESH_INTERVAL_MS = 60_000
+const GANTT_RANGE_DAYS = 365
 
 const displayDate = computed(() =>
   new Date(`${todayDate.value}T00:00:00`).toLocaleDateString('zh-CN', {
@@ -485,13 +544,12 @@ const distributionHours = computed(() => {
   const base = hourlyTrend.value?.hours ?? []
   return Array.from({ length: 24 }, (_, hour) => {
     const recorded = base.find((point) => point.hour === hour)?.seconds ?? 0
-    const seconds = hour === currentHour.value
+    const seconds = hour === currentHour.value && focusDate.value === todayDate.value
       ? recorded + liveTimerExtra.value
       : recorded
     return {
       hour,
       seconds,
-      isCurrentHour: hour === currentHour.value,
       label: `${hour}:00–${hour + 1}:00，${seconds > 0 ? `专注 ${formatDuration(seconds)}` : '无专注记录'}`,
     }
   })
@@ -502,9 +560,33 @@ const distributionTotalSeconds = computed(() =>
 const distributionPeakSeconds = computed(() =>
   Math.max(...distributionHours.value.map((point) => point.seconds), 0),
 )
+const distributionTitle = computed(() => {
+  if (focusDate.value === todayDate.value) return '今日专注分布'
+  const [, month, day] = focusDate.value.split('-')
+  return `${Number(month)}月${Number(day)}日专注分布`
+})
 const distributionAriaLabel = computed(() =>
-  `今日专注小时分布，共 ${formatCalendarDuration(distributionTotalSeconds.value)}`,
+  `当日专注小时分布，共 ${formatCalendarDuration(distributionTotalSeconds.value)}`,
 )
+const focusTooltip = ref<{ hour: number; seconds: number; x: number; y: number } | null>(null)
+const ganttRows = computed<GanttChartRow[]>(() => {
+  const rows: GanttChartRow[] = []
+  for (const series of ganttSeries.value) {
+    if (!series.task_id || series.total_seconds <= 0 || series.daily.length === 0) continue
+    const task = tasks.items.find((item) => item.id === series.task_id)
+    const title = task ? projectPrefixedTaskTitle(task, tasks.items) : series.title
+    if (!title) continue
+    rows.push({
+      id: series.task_id,
+      title,
+      totalSeconds: series.total_seconds,
+      firstDate: series.daily[0]!.date,
+      lastDate: series.daily[series.daily.length - 1]!.date,
+      days: series.daily,
+    })
+  }
+  return rows
+})
 const plannedTaskIds = computed(
   () => new Set(daily.plan?.items.flatMap((item) => (item.task_id ? [item.task_id] : []))),
 )
@@ -598,6 +680,10 @@ watch(calendarMonth, () => {
   void loadCalendarMonth()
 })
 
+watch(focusDate, () => {
+  void loadHourlyFocus()
+})
+
 watch(
   [
     () => daily.plan?.items,
@@ -680,11 +766,12 @@ async function loadCalendarMonth(): Promise<void> {
 }
 
 async function loadHourlyFocus(): Promise<void> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(focusDate.value)) return
   const requestId = ++distributionRequestId
   distributionLoading.value = true
   distributionError.value = ''
   try {
-    const distribution = await analyticsService.hourlyFocus(todayDate.value)
+    const distribution = await analyticsService.hourlyFocus(focusDate.value)
     if (requestId === distributionRequestId) {
       hourlyTrend.value = distribution
     }
@@ -696,6 +783,79 @@ async function loadHourlyFocus(): Promise<void> {
   } finally {
     if (requestId === distributionRequestId) {
       distributionLoading.value = false
+    }
+  }
+}
+
+function ensureFocusDate(): void {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(focusDate.value) || focusDate.value > todayDate.value) {
+    focusDate.value = todayDate.value
+  }
+}
+
+function shiftFocusDate(offset: number): void {
+  const date = new Date(`${focusDate.value}T00:00:00`)
+  date.setDate(date.getDate() + offset)
+  const next = localDateString(date)
+  if (next > todayDate.value) return
+  focusDate.value = next
+}
+
+function placeFocusTooltip(
+  point: { hour: number; seconds: number },
+  pointerX: number,
+  pointerY: number,
+): void {
+  let x = pointerX + 14
+  let y = pointerY + 16
+  if (x + 220 > window.innerWidth - 8) x = pointerX - 220 - 14
+  if (y + 120 > window.innerHeight - 8) y = pointerY - 120 - 16
+  focusTooltip.value = {
+    hour: point.hour,
+    seconds: point.seconds,
+    x: Math.max(8, x),
+    y: Math.max(8, y),
+  }
+}
+
+function showFocusTooltip(
+  point: { hour: number; seconds: number },
+  event: MouseEvent,
+): void {
+  placeFocusTooltip(point, event.clientX, event.clientY)
+}
+
+function moveFocusTooltip(
+  point: { hour: number; seconds: number },
+  event: MouseEvent,
+): void {
+  placeFocusTooltip(point, event.clientX, event.clientY)
+}
+
+function hideFocusTooltip(): void {
+  focusTooltip.value = null
+}
+
+async function loadTaskGantt(): Promise<void> {
+  const requestId = ++ganttRequestId
+  const start = new Date(`${todayDate.value}T00:00:00`)
+  start.setDate(start.getDate() - GANTT_RANGE_DAYS)
+  const dateFrom = localDateString(start)
+  ganttLoading.value = true
+  ganttError.value = ''
+  try {
+    const response = await analyticsService.taskDaily(dateFrom, todayDate.value)
+    if (requestId === ganttRequestId) {
+      ganttSeries.value = response.tasks
+    }
+  } catch (error) {
+    if (requestId === ganttRequestId) {
+      ganttSeries.value = []
+      ganttError.value = getApiErrorMessage(error)
+    }
+  } finally {
+    if (requestId === ganttRequestId) {
+      ganttLoading.value = false
     }
   }
 }
@@ -728,10 +888,11 @@ onMounted(async () => {
           : Promise.resolve(daily.setActiveItem(activeItemId)),
         loadCalendarMonth(),
         loadHourlyFocus(),
+        loadTaskGantt(),
       ])
     } else {
       daily.setActiveItem(activeItemId)
-      await Promise.all([loadCalendarMonth(), loadHourlyFocus()])
+      await Promise.all([loadCalendarMonth(), loadHourlyFocus(), loadTaskGantt()])
     }
     await restoreMissingActiveItem()
   })
@@ -747,10 +908,12 @@ onActivated(() => {
   const realToday = localDateString()
   const dateChanged = todayDate.value !== realToday
   if (dateChanged) {
+    const viewingFocusToday = focusDate.value === todayDate.value
     todayDate.value = realToday
     selectedItemId.value = ''
     if (calendarMonth.value === realToday.slice(0, 7)) void loadCalendarMonth()
-    void loadHourlyFocus()
+    if (viewingFocusToday) focusDate.value = realToday
+    void loadTaskGantt()
   }
 
   // Returning to a cached route should be instant. Refresh only after a
@@ -944,6 +1107,7 @@ async function pause(): Promise<void> {
     await loadCalendarMonth()
   }
   void loadHourlyFocus()
+  void loadTaskGantt()
 }
 
 async function resume(): Promise<void> {
@@ -967,6 +1131,7 @@ async function finish(): Promise<void> {
     await loadCalendarMonth()
   }
   void loadHourlyFocus()
+  void loadTaskGantt()
 }
 
 async function removeItem(item: DailyPlanItem): Promise<void> {
