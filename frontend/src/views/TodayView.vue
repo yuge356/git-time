@@ -872,7 +872,7 @@ function distributionBarHeight(seconds: number): number {
 onMounted(async () => {
   const ownerId = auth.user?.profile.id
   if (!ownerId) return
-  await runAction(async () => {
+  try {
     await timer.initialize(ownerId)
     const activeItemId = timer.active?.snapshot.daily_plan_item_id ?? null
     const requiresTaskLoad = tasks.ownerId !== ownerId || tasks.items.length === 0
@@ -896,7 +896,9 @@ onMounted(async () => {
     }
     await restoreMissingActiveItem()
     await daily.syncProjectTasks()
-  })
+  } catch (error) {
+    errorMessage.value = getApiErrorMessage(error)
+  }
   initialLoadFinished = true
   lastActivationRefreshAt = Date.now()
 })

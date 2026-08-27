@@ -234,8 +234,7 @@ export const useTaskStore = defineStore('tasks', {
             const serverItems = await taskService.list()
             this.items = await this.mergeServerItems(serverItems)
             return
-          } catch (error) {
-            if (!isNetworkError(error)) throw error
+          } catch {
             this.online = false
           }
         }

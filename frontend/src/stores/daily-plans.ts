@@ -280,8 +280,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
             }
             this.checkIn = await dailyPlanService.checkIn(targetDate)
             return
-          } catch (error) {
-            if (!isNetworkError(error)) throw error
+          } catch {
             this.online = false
           }
         }
