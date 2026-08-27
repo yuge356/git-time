@@ -238,6 +238,13 @@
         </section>
       </div>
 
+      <GanttChart
+        :rows="ganttRows"
+        :today="todayDate"
+        :loading="ganttLoading"
+        :error="ganttError"
+      />
+
       <div class="today-bottom-grid">
         <section class="activity-calendar" aria-label="计时日历">
           <header class="activity-calendar__header">
@@ -384,13 +391,6 @@
             <span v-else>按计时开始的小时统计，正在计时的时间实时计入当前小时。</span>
           </footer>
         </section>
-
-        <GanttChart
-          :rows="ganttRows"
-          :today="todayDate"
-          :loading="ganttLoading"
-          :error="ganttError"
-        />
       </div>
     </main>
   </AppShell>
@@ -895,6 +895,7 @@ onMounted(async () => {
       await Promise.all([loadCalendarMonth(), loadHourlyFocus(), loadTaskGantt()])
     }
     await restoreMissingActiveItem()
+    await daily.syncProjectTasks()
   })
   initialLoadFinished = true
   lastActivationRefreshAt = Date.now()
@@ -916,16 +917,23 @@ onActivated(() => {
     void loadTaskGantt()
   }
 
+  // Check for newly scheduled project tasks immediately (local in-memory sync)
+  void daily.syncProjectTasks()
+
   // Returning to a cached route should be instant. Refresh only after a
   // short interval (or after midnight), and keep all network work outside
   // the navigation path.
   const now = Date.now()
   if (!dateChanged && now - lastActivationRefreshAt < ACTIVATION_REFRESH_INTERVAL_MS) return
   lastActivationRefreshAt = now
-  tasks.load({ silent: true }).catch(() => {
+  tasks.load({ silent: true }).then(() => {
+    void daily.syncProjectTasks()
+  }).catch(() => {
     /* local cache remains visible */
   })
-  void daily.load(todayDate.value, { silent: true }).catch(() => {
+  void daily.load(todayDate.value, { silent: true }).then(() => {
+    void daily.syncProjectTasks()
+  }).catch(() => {
     /* local cache remains visible */
   })
 })

@@ -23,6 +23,7 @@ import type {
   DailyPlanItemUpdate,
 } from '@/types/daily-plan'
 import type { Task } from '@/types/task'
+import { useTaskStore } from '@/stores/tasks'
 import { projectPrefixedTaskTitle } from '@/utils/task-title'
 
 interface DailyPlanState {
@@ -664,6 +665,40 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         await this.flushAndRefresh()
       } finally {
         this.saving = false
+      }
+    },
+
+    /**
+     * Import project tasks that are due today (by `due_date` or repeat rule)
+     * but not yet present in today's daily plan. Safe to call repeatedly —
+     * tasks already referenced by an existing plan item are skipped.
+     */
+    async syncProjectTasks(): Promise<void> {
+      if (!this.plan || !this.ownerId) return
+      const today = localDateString()
+      if (this.selectedDate !== today) return
+
+      const taskStore = useTaskStore()
+      const existingTaskIds = new Set(
+        this.plan.items.flatMap((item) => (item.task_id ? [item.task_id] : [])),
+      )
+      const parentIds = new Set(
+        taskStore.items.flatMap((t) => (t.parent_id ? [t.parent_id] : [])),
+      )
+      const candidates = taskStore.items.filter(
+        (task) =>
+          task.node_type === 'TASK' &&
+          task.status !== 'DONE' &&
+          !existingTaskIds.has(task.id) &&
+          !parentIds.has(task.id) &&
+          (task.due_date === today || taskRepeatsOnDate(task, today)),
+      )
+      for (const task of candidates) {
+        await this.addItem({
+          task_id: task.id,
+          title: projectPrefixedTaskTitle(task, taskStore.items),
+          estimated_seconds: task.estimated_seconds,
+        })
       }
     },
   },
