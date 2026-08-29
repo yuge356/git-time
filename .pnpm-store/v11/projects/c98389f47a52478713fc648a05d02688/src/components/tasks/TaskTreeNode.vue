@@ -8,6 +8,7 @@
       :style="themeVars"
     >
       <article
+        ref="rowEl"
         :class="[
           'task-row',
           `task-row--${task.node_type.toLowerCase()}`,
@@ -192,10 +193,18 @@
       </div>
       </article>
 
+      <TreeConnectors
+        v-if="presentation === 'mindmap' && expanded && task.children.length > 0"
+        :parent-el="rowEl"
+        :children-els="childRowEls"
+        :color="theme.line"
+      />
+
       <ul v-if="expanded && task.children.length" class="task-tree task-tree--nested">
         <TaskTreeNode
           v-for="child in task.children"
           :key="child.id"
+          :ref="(el: any) => registerChildRow(child.id, el)"
           :task="child"
           :presentation="presentation"
           :project-theme="theme"
@@ -223,12 +232,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import type { Task, TaskNode, TaskNodeType } from '@/types/task'
 import { getProjectTheme, type ProjectTheme } from '@/utils/project-theme'
 import BudgetIndicator from './BudgetIndicator.vue'
 import TaskStatusBadge from './TaskStatusBadge.vue'
+import TreeConnectors from './TreeConnectors.vue'
 
 const props = withDefaults(defineProps<{
   task: TaskNode
@@ -265,6 +275,29 @@ const expanded = ref(
 )
 const dragTarget = ref(false)
 const actionMenuOpen = ref(false)
+const rowEl = ref<HTMLElement | null>(null)
+const childRowMap = ref(new Map<string, HTMLElement>())
+const childRowEls = computed(() =>
+  props.task.children
+    .map((child) => childRowMap.value.get(child.id))
+    .filter((el): el is HTMLElement => el != null),
+)
+
+function registerChildRow(childId: string, componentInstance: any): void {
+  if (componentInstance) {
+    const row = componentInstance.rowEl || (componentInstance.$el?.querySelector?.('.task-row') as HTMLElement | null)
+    if (row) {
+      childRowMap.value.set(childId, row)
+    }
+  } else {
+    childRowMap.value.delete(childId)
+  }
+}
+
+defineExpose({
+  rowEl,
+})
+
 const actionMenuId = computed(() => `task-actions-${props.task.id}`)
 const isContainer = computed(() => props.task.node_type !== 'TASK')
 // Executable tasks may own exactly one extra subtask level: a task whose

@@ -3301,43 +3301,17 @@ a {
   padding-left: 0;
 }
 
-.task-tree--mindmap .task-tree--nested > .task-tree-node::before,
-.task-tree--mindmap .task-tree--nested > .task-tree-node::after {
+/*
+ * SVG curve connectors (drawn by TreeConnectors.vue) replace the old
+ * ::before / ::after pseudo-element straight segments.
+ */
+.tree-connectors {
   position: absolute;
-  z-index: 1;
-  border: 0;
-  border-radius: 0;
-  background: var(--mindmap-line);
-  content: "";
-}
-
-/* Horizontal stub: spine → node left edge, always at the node's center. */
-.task-tree--mindmap .task-tree--nested > .task-tree-node::before {
-  left: calc(-1 * var(--mindmap-stub));
-  top: 50%;
-  width: var(--mindmap-stub);
-  height: 2px;
-  transform: translateY(-50%);
-}
-
-/* Vertical spine share; -gap bottom bridges the flex gap to the next sibling. */
-.task-tree--mindmap .task-tree--nested > .task-tree-node::after {
-  left: calc(-1 * var(--mindmap-stub));
   top: 0;
-  bottom: calc(-1 * var(--mindmap-gap));
-  width: 2px;
-}
-
-.task-tree--mindmap .task-tree--nested > .task-tree-node:first-child::after {
-  top: 50%;
-}
-
-.task-tree--mindmap .task-tree--nested > .task-tree-node:last-child::after {
-  bottom: 50%;
-}
-
-.task-tree--mindmap .task-tree--nested > .task-tree-node:only-child::after {
-  display: none;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
 }
 
 .task-tree-node {
@@ -3345,6 +3319,7 @@ a {
 }
 
 .task-mind-branch {
+  position: relative;
   display: flex;
   align-items: center;
 }
@@ -3372,18 +3347,6 @@ a {
     box-shadow 150ms ease,
     transform 150ms ease,
     background 150ms ease;
-}
-
-.task-mind-branch--expanded > .task-row::after {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  right: calc(-1 * var(--mindmap-stub, 36px));
-  width: var(--mindmap-stub, 36px);
-  height: 2px;
-  background: var(--mindmap-line, #a797e8);
-  content: "";
-  transform: translateY(-50%);
 }
 
 .task-row:hover,
@@ -5027,10 +4990,10 @@ body.task-editor-modal-open {
 
 .activity-gantt {
   display: grid;
-  grid-column: 1 / -1;
   grid-template-rows: auto 1fr auto;
   gap: 14px;
   min-width: 0;
+  margin-bottom: 18px;
   padding: 22px 24px;
   border: 1px solid rgb(124 92 252 / 16%);
   border-radius: 22px;
