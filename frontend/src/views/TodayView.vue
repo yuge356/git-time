@@ -210,7 +210,7 @@
             </li>
           </TransitionGroup>
 
-          <details class="quick-add">
+          <details ref="quickAddDetails" class="quick-add">
             <summary>+ 添加今日任务</summary>
             <div class="quick-add__body">
               <div class="quick-add__tabs" role="group" aria-label="任务类型">
@@ -410,7 +410,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
@@ -972,6 +972,14 @@ onMounted(async () => {
   lastActivationRefreshAt = Date.now()
 })
 
+// 切换页面后收起"添加今日任务"表单：KeepAlive 会保留展开状态，主动关闭
+// 以免回到本页时残留上次未完成的添加操作。
+const quickAddDetails = ref<HTMLDetailsElement | null>(null)
+
+onDeactivated(() => {
+  if (quickAddDetails.value) quickAddDetails.value.open = false
+})
+
 onActivated(() => {
   if (!initialLoadFinished) return
   const ownerId = auth.user?.profile.id
@@ -1206,8 +1214,9 @@ async function finish(): Promise<void> {
       }
     }
   })
+  // 刷新全部在后台进行：本地状态已更新，UI 立即回到可操作状态。
   if (calendarMonth.value === todayDate.value.slice(0, 7)) {
-    await loadCalendarMonth()
+    void loadCalendarMonth()
   }
   void loadHourlyFocus()
   void loadTaskGantt()

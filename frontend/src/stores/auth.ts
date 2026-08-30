@@ -17,6 +17,30 @@ interface AuthState {
 }
 
 const FIRST_LOGIN_INTRO_STORAGE_KEY = 'time-budget:first-login-intro-owner'
+// Profile cache so a page refresh renders immediately with the last known
+// account; the network refresh below keeps it current.
+const PROFILE_CACHE_PREFIX = 'dayflow:profile-cache:'
+
+function profileCacheKey(userId: string): string {
+  return `${PROFILE_CACHE_PREFIX}${userId}`
+}
+
+function readCachedProfile(userId: string): Account | null {
+  try {
+    const raw = localStorage.getItem(profileCacheKey(userId))
+    return raw ? (JSON.parse(raw) as Account) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedProfile(user: Account): void {
+  try {
+    localStorage.setItem(profileCacheKey(user.profile.id), JSON.stringify(user))
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
@@ -44,6 +68,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = user
       this.onboardingCompleted = onboardingCompleted
       this.showPageIntros = showPageIntros
+      writeCachedProfile(user)
       if (showPageIntros) {
         sessionStorage.setItem(FIRST_LOGIN_INTRO_STORAGE_KEY, user.profile.id)
       } else {
@@ -52,6 +77,13 @@ export const useAuthStore = defineStore('auth', {
     },
 
     clearSession(): void {
+      if (this.user) {
+        try {
+          localStorage.removeItem(profileCacheKey(this.user.profile.id))
+        } catch {
+          /* storage unavailable */
+        }
+      }
       this.token = null
       this.user = null
       this.showPageIntros = false
@@ -99,10 +131,27 @@ export const useAuthStore = defineStore('auth', {
         const session = await authService.currentSession()
         if (session) {
           this.token = session.access_token
-          this.user = await authService.currentAccount()
+          const cached = readCachedProfile(session.user.id)
           this.onboardingCompleted = session.user.user_metadata.onboarding_completed !== false
-          this.showPageIntros =
-            sessionStorage.getItem(FIRST_LOGIN_INTRO_STORAGE_KEY) === this.user.profile.id
+          if (cached) {
+            // Fast path: reuse the cached profile so the page renders at once;
+            // refresh it in the background and update the cache.
+            this.user = cached
+            this.showPageIntros =
+              sessionStorage.getItem(FIRST_LOGIN_INTRO_STORAGE_KEY) === cached.profile.id
+            void authService
+              .currentAccount()
+              .then((fresh) => {
+                this.user = fresh
+                writeCachedProfile(fresh)
+              })
+              .catch(() => {})
+          } else {
+            this.user = await authService.currentAccount()
+            writeCachedProfile(this.user)
+            this.showPageIntros =
+              sessionStorage.getItem(FIRST_LOGIN_INTRO_STORAGE_KEY) === this.user.profile.id
+          }
         }
       } catch {
         this.clearSession()

@@ -594,6 +594,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         ...this.plan,
         items: this.plan.items.map((item) => (item.id === itemId ? finished : item)),
       })
+      this.pushTimerSecondsToTasks(existing, finished.actual_seconds)
       await saveCachedDailyPlan(this.plan)
       await this.buildLocalCheckIn()
     },
@@ -611,8 +612,21 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         ...this.plan,
         items: this.plan.items.map((item) => (item.id === itemId ? updated : item)),
       })
+      this.pushTimerSecondsToTasks(existing, updated.actual_seconds)
       await saveCachedDailyPlan(this.plan)
       await this.buildLocalCheckIn()
+    },
+
+    /**
+     * Keep the projects-page progress bars in step with the timer: the task
+     * store only learns new actual seconds from server refreshes, so apply
+     * the local delta right away (the session snapshot remains the source of
+     * truth and is synced separately).
+     */
+    pushTimerSecondsToTasks(item: DailyPlanItem, newActualSeconds: number): void {
+      const delta = Math.max(0, newActualSeconds - item.actual_seconds)
+      if (delta <= 0 || !item.task_id) return
+      useTaskStore().applyTimerSeconds(item.task_id, delta)
     },
 
     async updateItem(itemId: string, payload: DailyPlanItemUpdate): Promise<void> {

@@ -117,7 +117,8 @@ async function logout(): Promise<void> {
       try {
         // Persist the elapsed time and leave the same session resumable. Time
         // spent while signed out must never be included in the task total.
-        await timer.pause()
+        // awaitSync keeps the old server-visible guarantee for sign-out.
+        await timer.pause(true)
       } catch (error) {
         // pause() writes the PAUSED snapshot locally before server sync. A
         // queued local pause is sufficient for logout; only block when the

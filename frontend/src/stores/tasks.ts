@@ -376,6 +376,38 @@ export const useTaskStore = defineStore('tasks', {
       }
     },
 
+    /**
+     * Reflect timer time into the local task aggregation immediately, so the
+     * projects page progress bars match the today page timer without waiting
+     * for the next server refresh. The authoritative roll-up still comes from
+     * the server (session snapshots are the source of truth and are synced
+     * separately); this only patches the local cache.
+     */
+    applyTimerSeconds(taskId: string, secondsDelta: number): void {
+      if (secondsDelta <= 0 || this.items.length === 0) return
+      const byId = new Map(this.items.map((task) => [task.id, task]))
+      const target = byId.get(taskId)
+      if (!target) return
+      const touched: Task[] = []
+      target.direct_actual_seconds += secondsDelta
+      target.actual_seconds += secondsDelta
+      touched.push(target)
+      const visited = new Set<string>([target.id])
+      let parentId = target.parent_id
+      while (parentId && !visited.has(parentId)) {
+        const parent = byId.get(parentId)
+        if (!parent) break
+        visited.add(parentId)
+        parent.actual_seconds += secondsDelta
+        touched.push(parent)
+        parentId = parent.parent_id
+      }
+      this.items = [...this.items]
+      for (const task of touched) {
+        void saveCachedTask(task).catch(() => {})
+      }
+    },
+
     async remove(taskId: string): Promise<void> {
       if (!this.ownerId) throw new Error('Task store is not initialized')
       this.saving = true

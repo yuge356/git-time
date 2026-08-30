@@ -40,11 +40,17 @@ Supabase 托管 PostgreSQL
   （`asyncio.Task` 并发），把串行往返从约 12 次压缩到约 6 次；前端统计视图纳入 KeepAlive，切回
   时立即展示缓存内容并后台刷新一次。
 
+前端刷新页面的恢复路径同样按"先显示、后同步"组织：账户资料缓存于 localStorage（按用户 ID 分键，
+登录与资料刷新时写入），刷新时立即复用并后台请求 `/auth/me` 更新；计时器本地有活动快照时直接恢复
+显示，本地无快照且无待重放队列时只等待一次 `GET /sessions/active`，历史列表与 outbox 重放均在
+后台进行。
+
 ## 2. 主要业务流
 
 ### 计时
 
-前端先把完整 Session 快照写入 IndexedDB，再尝试 `PUT /sessions/{id}`。运行中时长由
+前端先把完整 Session 快照写入 IndexedDB（并进入同步 outbox），UI 操作立即返回；随后在后台
+尝试 `PUT /sessions/{id}`，失败时由离线同步按 `client_updated_at` 顺序重放。运行中时长由
 `duration_seconds + 当前时间 - last_resumed_at` 计算，不依赖浏览器每秒累加。旧的离线快照由
 `client_updated_at` 判定并忽略。
 

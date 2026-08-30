@@ -405,37 +405,56 @@ export const useTimerStore = defineStore('timer', {
       }
 
       try {
-        await this.syncPending()
-        if (!this.active && this.online) {
-          const serverActive = await sessionService.active()
-          if (serverActive) {
-            this.active = {
-              id: ownerId,
-              owner_id: ownerId,
-              session_id: serverActive.id,
-              target_seconds: this.targetSeconds,
-              snapshot: {
-                task_id: serverActive.task_id,
-                daily_plan_item_id: serverActive.daily_plan_item_id,
-                client_id: serverActive.client_id,
-                status: serverActive.status,
-                started_at: serverActive.started_at,
-                ended_at: serverActive.ended_at,
-                duration_seconds: serverActive.duration_seconds,
-                last_resumed_at: serverActive.last_resumed_at,
-                client_updated_at: serverActive.client_updated_at,
-              },
-            }
-            await saveActiveTimer(
-              ownerId,
-              this.active.session_id,
-              this.active.snapshot,
-              this.targetSeconds,
-            )
-            this.displaySeconds = snapshotDuration(this.active.snapshot)
+        if (this.active) {
+          // 本地已恢复显示：outbox 重放与历史刷新全部后台进行。
+          void this.syncPending()
+            .then(() => this.refreshHistory())
+            .catch(() => {
+              // syncPending already stores a user-visible conflict message.
+            })
+        } else if (this.online) {
+          const localPending = await localDb.sessionOutbox
+            .where('owner_id')
+            .equals(ownerId)
+            .count()
+          this.pendingCount = localPending
+          // With queued snapshots the replay must land first: restoring from
+          // the server before it would resurrect an outdated RUNNING state.
+          if (localPending > 0) {
+            await this.syncPending()
           }
+          if (!this.active && this.online) {
+            const serverActive = await sessionService.active()
+            if (serverActive) {
+              this.active = {
+                id: ownerId,
+                owner_id: ownerId,
+                session_id: serverActive.id,
+                target_seconds: this.targetSeconds,
+                snapshot: {
+                  task_id: serverActive.task_id,
+                  daily_plan_item_id: serverActive.daily_plan_item_id,
+                  client_id: serverActive.client_id,
+                  status: serverActive.status,
+                  started_at: serverActive.started_at,
+                  ended_at: serverActive.ended_at,
+                  duration_seconds: serverActive.duration_seconds,
+                  last_resumed_at: serverActive.last_resumed_at,
+                  client_updated_at: serverActive.client_updated_at,
+                },
+              }
+              await saveActiveTimer(
+                ownerId,
+                this.active.session_id,
+                this.active.snapshot,
+                this.targetSeconds,
+              )
+              this.displaySeconds = snapshotDuration(this.active.snapshot)
+            }
+          }
+          // 历史列表不影响计时显示，放后台。
+          void this.refreshHistory().catch(() => {})
         }
-        await this.refreshHistory()
       } catch (error) {
         if (isNetworkError(error)) {
           this.online = false
@@ -710,14 +729,22 @@ export const useTimerStore = defineStore('timer', {
       }
     },
 
-    async pause(): Promise<void> {
-      await this.pauseAt(new Date())
+    async pause(awaitSync = false): Promise<void> {
+      await this.pauseAt(new Date(), awaitSync)
     },
 
-    /** Pause a running session at a precise boundary, including midnight. */
-    async pauseAt(pauseTime: Date): Promise<void> {
+    /**
+     * Pause a running session at a precise boundary, including midnight.
+     * The local PAUSED snapshot is persisted synchronously in the busy
+     * window; the network sync runs in the background so the UI never waits
+     * on a remote round trip (the outbox replays it if the sync fails).
+     * Pass `awaitSync` where the server state must exist before continuing,
+     * e.g. right before signing out.
+     */
+    async pauseAt(pauseTime: Date, awaitSync = false): Promise<void> {
       if (!this.active || this.active.snapshot.status !== 'RUNNING') return
       this.busy = true
+      let synced = Promise.resolve()
       try {
         const now = nextTimestamp(
           this.active.snapshot.client_updated_at,
@@ -732,7 +759,9 @@ export const useTimerStore = defineStore('timer', {
         }
         await this.persistSnapshot(this.active.session_id, snapshot, true)
         if (this.ownerId) clearTimerHeartbeat(this.ownerId)
-        await this.syncLatestOrKeepOffline(this.active.session_id)
+        synced = this.syncLatestOrKeepOffline(this.active.session_id)
+        if (awaitSync) await synced
+        else void synced.catch(() => {})
       } finally {
         this.busy = false
       }
@@ -809,7 +838,9 @@ export const useTimerStore = defineStore('timer', {
         }
         await this.persistSnapshot(this.active.session_id, snapshot, true)
         if (this.ownerId) writeTimerHeartbeat(this.ownerId, this.active.session_id)
-        await this.syncLatestOrKeepOffline(this.active.session_id)
+        // Sync in the background: the outbox already holds the snapshot, so
+        // the RUNNING state must not wait on a remote round trip.
+        void this.syncLatestOrKeepOffline(this.active.session_id).catch(() => {})
       } finally {
         this.busy = false
       }
@@ -833,19 +864,24 @@ export const useTimerStore = defineStore('timer', {
           client_updated_at: now,
           complete_daily_item: completeDailyItem,
         }
+        // The local COMPLETED snapshot is the source of truth for the UI.
+        // persistSnapshot also queues it in the outbox, so the network sync
+        // below must never block the busy window: it runs in the background
+        // and the offline sync replays it if it fails.
         await this.persistSnapshot(sessionId, snapshot, false)
         if (this.ownerId) clearTimerHeartbeat(this.ownerId)
         if (this.ownerId) clearTargetNoticeMarker(this.ownerId, sessionId)
         this.targetSeconds = null
         this.targetNotice = ''
         this.notifiedSessionId = null
-        if (syncImmediately) {
-          await this.syncLatestOrKeepOffline(sessionId)
-          await this.refreshHistory()
-        }
         this.completedRevision += 1
       } finally {
         this.busy = false
+      }
+      if (syncImmediately) {
+        void this.syncLatestOrKeepOffline(sessionId)
+          .then(() => this.refreshHistory())
+          .catch(() => {})
       }
     },
   },
