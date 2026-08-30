@@ -178,21 +178,42 @@ export const useTaskStore = defineStore('tasks', {
      */
     async mergeServerItems(serverItems: Task[]): Promise<Task[]> {
       if (!this.ownerId) return serverItems
-      await saveCachedTasks(serverItems)
-      const pendingOps = await getPendingOperations(this.ownerId, 'task')
-      if (pendingOps.length === 0) {
-        await this.dropStaleCache(serverItems, new Set())
-        return serverItems
-      }
-      const pendingIds = new Set(pendingOps.map((op) => op.entity_id))
-      const deletedIds = new Set(
-        pendingOps.filter((op) => op.action === 'delete').map((op) => op.entity_id),
-      )
       const cached = await localDb.cachedTasks
         .where('owner_id')
         .equals(this.ownerId)
         .toArray()
       const cachedById = new Map(cached.map((item) => [item.id, item]))
+      const pendingOps = await getPendingOperations(this.ownerId, 'task')
+      if (pendingOps.length === 0) {
+        // Session snapshots may still be replaying in the background, so the
+        // server aggregate can lag behind locally applied timer time. Never
+        // regress the two accumulated duration fields on merge.
+        const merged = serverItems.map((item) => {
+          const local = cachedById.get(item.id)
+          if (!local) return item
+          if (
+            local.actual_seconds > item.actual_seconds ||
+            local.direct_actual_seconds > item.direct_actual_seconds
+          ) {
+            return {
+              ...item,
+              actual_seconds: Math.max(item.actual_seconds, local.actual_seconds),
+              direct_actual_seconds: Math.max(
+                item.direct_actual_seconds,
+                local.direct_actual_seconds,
+              ),
+            }
+          }
+          return item
+        })
+        await this.dropStaleCache(serverItems, new Set())
+        await saveCachedTasks(merged)
+        return merged
+      }
+      const pendingIds = new Set(pendingOps.map((op) => op.entity_id))
+      const deletedIds = new Set(
+        pendingOps.filter((op) => op.action === 'delete').map((op) => op.entity_id),
+      )
       const serverIds = new Set(serverItems.map((item) => item.id))
       const merged = serverItems
         .filter((item) => !deletedIds.has(item.id))

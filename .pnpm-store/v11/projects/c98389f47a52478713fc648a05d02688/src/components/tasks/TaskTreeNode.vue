@@ -28,23 +28,6 @@
         @dragleave="leaveDrag"
         @drop.stop.prevent="dropOnTask"
       >
-      <div
-        v-if="task.node_type === 'TASK' && task.status === 'DONE'"
-        class="task-row__done-mark"
-        aria-hidden="true"
-        title="已完成"
-      >
-        <svg viewBox="0 0 24 24" class="task-row__done-svg">
-          <path
-            d="m4.5 12.75 5 5 10-10.5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </div>
       <button
         class="task-drag-handle"
         type="button"
@@ -184,6 +167,15 @@
               <span aria-hidden="true">↧</span>
               应用默认值
             </button>
+            <button
+              v-if="isContainer"
+              type="button"
+              role="menuitem"
+              @click="$emit('toggle-complete', task)"
+            >
+              <span aria-hidden="true">✓</span>
+              {{ toggleCompleteLabel }}
+            </button>
             <button class="task-action-menu__danger" type="button" role="menuitem" @click="removeTask">
               <span aria-hidden="true">×</span>
               删除{{ nodeTypeLabel }}
@@ -222,6 +214,7 @@
           @apply-defaults="$emit('apply-defaults', $event)"
           @start-task="$emit('start-task', $event)"
           @remove="$emit('remove', $event)"
+          @toggle-complete="$emit('toggle-complete', $event)"
           @drag-start="$emit('drag-start', $event)"
           @drag-end="$emit('drag-end')"
           @drop-on="$emit('drop-on', $event)"
@@ -266,6 +259,7 @@ const emit = defineEmits<{
   'apply-defaults': [task: Task]
   'start-task': [task: Task]
   remove: [task: Task]
+  'toggle-complete': [task: Task]
   'drag-start': [task: Task]
   'drag-end': []
   'drop-on': [task: Task]
@@ -335,6 +329,10 @@ const typeLabels: Record<TaskNodeType, string> = {
   TASK: '任务',
 }
 const nodeTypeLabel = computed(() => typeLabels[props.task.node_type])
+const toggleCompleteLabel = computed(() => {
+  const noun = props.task.node_type === 'PROJECT' ? '项目' : '模块'
+  return props.task.status === 'DONE' ? `恢复${noun}` : `标记${noun}完成`
+})
 const childTypeLabel = computed(() =>
   props.task.node_type === 'TASK' ? '子任务' : typeLabels[childNodeType.value],
 )
@@ -347,6 +345,8 @@ const progressRatio = computed(() => {
 const progressPercent = computed(() => Math.round(progressRatio.value * 100))
 const displayStatus = computed(() => {
   if (props.task.node_type === 'TASK') return props.task.status
+  // 已标记完成的项目即使子任务未全部完成也显示完成态。
+  if (props.task.status === 'DONE') return 'DONE' as const
   if (props.task.task_count > 0 && props.task.completed_task_count === props.task.task_count) {
     return 'DONE' as const
   }

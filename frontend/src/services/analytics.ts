@@ -7,13 +7,42 @@ import type {
 } from '@/types/analytics'
 
 const dashboardCache = new Map<string, AnalyticsDashboard>()
+// Persist dashboards so a full page reload still renders the analytics view
+// instantly and refreshes in the background; keys are pruned oldest-first.
+const DASHBOARD_LS_PREFIX = 'dayflow:dashboard-cache:'
+const DASHBOARD_LS_LIMIT = 8
+
+function persistDashboard(key: string, data: AnalyticsDashboard): void {
+  try {
+    localStorage.setItem(DASHBOARD_LS_PREFIX + key, JSON.stringify(data))
+    const keys = Object.keys(localStorage)
+      .filter((name) => name.startsWith(DASHBOARD_LS_PREFIX))
+      .sort()
+    while (keys.length > DASHBOARD_LS_LIMIT) {
+      localStorage.removeItem(keys.shift()!)
+    }
+  } catch {
+    /* storage unavailable or full */
+  }
+}
 
 export const analyticsService = {
   peekDashboard(key: string): AnalyticsDashboard | null {
-    return dashboardCache.get(key) ?? null
+    const cached = dashboardCache.get(key)
+    if (cached) return cached
+    try {
+      const raw = localStorage.getItem(DASHBOARD_LS_PREFIX + key)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as AnalyticsDashboard
+      dashboardCache.set(key, parsed)
+      return parsed
+    } catch {
+      return null
+    }
   },
   storeDashboard(key: string, data: AnalyticsDashboard): void {
     dashboardCache.set(key, data)
+    persistDashboard(key, data)
   },
   async summary(dateFrom: string, dateTo: string): Promise<AnalyticsSummary> {
     const { data } = await http.get<AnalyticsSummary>('/analytics/summary', {

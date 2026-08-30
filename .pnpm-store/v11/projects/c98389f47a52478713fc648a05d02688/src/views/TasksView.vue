@@ -40,6 +40,10 @@
                   大纲列表
                 </button>
               </div>
+              <label class="show-completed-toggle">
+                <input v-model="showCompletedProjects" type="checkbox" />
+                显示已完成项目
+              </label>
               <button class="button button--primary" type="button" @click="openCreate">
                 新建项目
               </button>
@@ -80,7 +84,7 @@
 
               <div class="task-mindmap-board">
                 <article
-                  v-for="project in tasks.tree"
+                  v-for="project in visibleProjectTree"
                   :key="`mindmap-board-${project.id}`"
                   class="task-mindmap-project"
                 >
@@ -141,6 +145,7 @@
                             @apply-defaults="applyDefaults"
                             @start-task="startTask"
                             @remove="removeTask"
+                            @toggle-complete="toggleProjectComplete"
                             @drag-start="startDrag"
                             @drag-end="finishDrag"
                             @drop-on="moveUnderTask"
@@ -167,7 +172,7 @@
               </header>
               <ul class="task-tree task-tree--cards">
                 <TaskTreeNode
-                  v-for="task in tasks.tree"
+                  v-for="task in visibleProjectTree"
                   :key="`outline-${task.id}`"
                   :task="task"
                   presentation="outline"
@@ -186,6 +191,7 @@
                   @apply-defaults="applyDefaults"
                   @start-task="startTask"
                   @remove="removeTask"
+                  @toggle-complete="toggleProjectComplete"
                   @drag-start="startDrag"
                   @drag-end="finishDrag"
                   @drop-on="moveUnderTask"
@@ -365,6 +371,29 @@ const taskViewMode = ref<TaskViewMode>(storedTaskViewMode)
 const mapZoom = ref(1)
 const collapsedMindmapProjects = reactive(new Set<string>())
 
+// 已标记完成的项目默认从列表隐藏（计时数据保留，历史记录仍可查）。
+const showCompletedProjects = ref(false)
+const visibleProjectTree = computed(() =>
+  showCompletedProjects.value
+    ? tasks.tree
+    : tasks.tree.filter((project) => project.status !== 'DONE'),
+)
+
+async function toggleProjectComplete(task: Task): Promise<void> {
+  const next: Task['status'] = task.status === 'DONE' ? 'IN_PROGRESS' : 'DONE'
+  const noun = task.node_type === 'PROJECT' ? '项目' : '模块'
+  actionMessage.value = ''
+  try {
+    await tasks.update(task.id, { status: next })
+    actionMessage.value =
+      next === 'DONE'
+        ? `已标记${noun}完成：${noun === '项目' ? '项目将从列表隐藏' : '模块将显示完成状态'}，计时数据保留在历史记录中${task.node_type === 'PROJECT' ? '；勾选"显示已完成项目"可恢复' : ''}。`
+        : `${noun}已恢复为进行中。`
+  } catch (error) {
+    actionMessage.value = getApiErrorMessage(error)
+  }
+}
+
 function toggleMindmapProject(projectId: string): void {
   if (collapsedMindmapProjects.has(projectId)) {
     collapsedMindmapProjects.delete(projectId)
@@ -385,7 +414,9 @@ let treeResizeObserver: ResizeObserver | null = null
 let layoutFrame = 0
 let initialLoadFinished = false
 
-const projectCount = computed(() => tasks.items.filter((task) => task.node_type === 'PROJECT').length)
+const projectCount = computed(() =>
+  visibleProjectTree.value.length,
+)
 const executableTaskCount = computed(() => tasks.items.filter((task) => task.node_type === 'TASK').length)
 const mapZoomPercent = computed(() => Math.round(mapZoom.value * 100))
 

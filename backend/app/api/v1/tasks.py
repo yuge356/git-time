@@ -263,10 +263,18 @@ async def update_task(
         "default_daily_reminder_time",
     }
     if task.node_type != TaskNodeType.TASK and task_only_fields.intersection(changes):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Projects and modules derive task status, time and recurrence",
+        # Projects and modules may toggle their own completion state ("mark
+        # complete" keeps every timing record); no other task-derived field
+        # can be set on containers directly.
+        container_completion_only = (
+            task_only_fields.intersection(changes) == {"status"}
+            and changes.get("status") in (TaskStatus.DONE, TaskStatus.IN_PROGRESS, TaskStatus.TODO)
         )
+        if not container_completion_only:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Projects and modules derive task status, time and recurrence",
+            )
     if task.node_type == TaskNodeType.TASK and container_only_fields.intersection(changes):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

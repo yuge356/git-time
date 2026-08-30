@@ -2639,6 +2639,30 @@ a {
   background: #f7f5fd;
 }
 
+.show-completed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid #e5e0f5;
+  border-radius: 12px;
+  background: #f7f5fd;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.show-completed-toggle input {
+  accent-color: var(--primary);
+}
+
+.show-completed-toggle:hover {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
 .task-view-switch button {
   display: inline-flex;
   min-height: 34px;
@@ -3399,32 +3423,6 @@ a {
 .task-row--done .task-row__name strong {
   color: #4a5568 !important;
   text-decoration: line-through rgba(47, 191, 143, 0.55) 1.5px;
-}
-
-.task-row__done-mark {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: rgba(16, 185, 129, 0.16);
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  color: #059669;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 3px 8px rgba(16, 185, 129, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.8);
-  pointer-events: none;
-  z-index: 6;
-}
-
-.task-row__done-svg {
-  width: 20px;
-  height: 20px;
-  stroke-width: 3;
 }
 
 .task-tree--mindmap .task-row {
