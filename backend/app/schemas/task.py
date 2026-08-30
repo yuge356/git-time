@@ -34,6 +34,8 @@ class TaskCreate(BaseModel):
     node_type: TaskNodeType = TaskNodeType.PROJECT
     priority: TaskPriority = TaskPriority.MEDIUM
     due_date: date | None = None
+    planned_start_date: date | None = None
+    planned_end_date: date | None = None
     dependency_ids: list[UUID] = Field(default_factory=list, max_length=100)
     estimated_seconds: int = Field(default=0, ge=0, le=315_360_000)
     budget_mode: TaskBudgetMode = TaskBudgetMode.ROLLUP
@@ -61,6 +63,8 @@ class TaskUpdate(BaseModel):
     parent_id: UUID | None = None
     priority: TaskPriority | None = None
     due_date: date | None = None
+    planned_start_date: date | None = None
+    planned_end_date: date | None = None
     dependency_ids: list[UUID] | None = Field(default=None, max_length=100)
     estimated_seconds: int | None = Field(default=None, ge=0, le=315_360_000)
     budget_mode: TaskBudgetMode | None = None
@@ -110,6 +114,8 @@ class TaskResponse(BaseModel):
     title: str
     priority: TaskPriority
     due_date: date | None
+    planned_start_date: date | None
+    planned_end_date: date | None
     dependency_ids: list[UUID]
     status: TaskStatus
     estimated_seconds: int

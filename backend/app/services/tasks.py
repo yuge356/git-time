@@ -50,6 +50,8 @@ def to_task_response(
         title=task.title,
         priority=task.priority,
         due_date=task.due_date,
+        planned_start_date=task.planned_start_date,
+        planned_end_date=task.planned_end_date,
         dependency_ids=list(dependency_ids),
         status=task.status,
         estimated_seconds=task.estimated_seconds,

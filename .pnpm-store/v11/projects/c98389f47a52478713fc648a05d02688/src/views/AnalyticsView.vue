@@ -409,7 +409,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
@@ -424,6 +424,8 @@ import type {
 } from '@/types/analytics'
 import type { CheckIn } from '@/types/daily-plan'
 import { getApiErrorMessage } from '@/utils/api-error'
+
+defineOptions({ name: 'AnalyticsView' })
 
 type TrendGranularity = 'day' | 'week' | 'month' | 'year'
 
@@ -647,8 +649,27 @@ function ringArcLength(percentage: number): number {
 }
 
 onMounted(() => {
-  startDayRolloverWatch()
   void load()
+})
+
+// KeepAlive 缓存本页：首次激活由 onMounted 负责加载，切回其他页面再回来时
+// 立即展示缓存内容并后台刷新一次，跨天监听只在页面可见时运行。
+let firstActivation = true
+
+onActivated(() => {
+  startDayRolloverWatch()
+  if (firstActivation) {
+    firstActivation = false
+    return
+  }
+  void load()
+})
+
+onDeactivated(() => {
+  if (rolloverTimer !== null) {
+    window.clearInterval(rolloverTimer)
+    rolloverTimer = null
+  }
 })
 
 onBeforeUnmount(() => {

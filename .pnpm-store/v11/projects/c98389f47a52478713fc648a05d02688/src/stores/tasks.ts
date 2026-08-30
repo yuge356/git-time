@@ -291,6 +291,10 @@ export const useTaskStore = defineStore('tasks', {
         title: payload.title,
         priority: payload.priority ?? 'MEDIUM',
         due_date: payload.due_date ?? null,
+        planned_start_date:
+          payload.node_type === 'TASK' ? (payload.planned_start_date ?? null) : null,
+        planned_end_date:
+          payload.node_type === 'TASK' ? (payload.planned_end_date ?? null) : null,
         dependency_ids: payload.dependency_ids ?? [],
         status: 'TODO',
         estimated_seconds: payload.node_type === 'TASK' ? payload.estimated_seconds : 0,

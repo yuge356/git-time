@@ -4742,7 +4742,7 @@ body.task-editor-modal-open {
   min-height: 0;
   aspect-ratio: 1;
   justify-self: center;
-  border-radius: 9px;
+  border-radius: 50%;
 }
 
 .activity-calendar__day {
@@ -4834,7 +4834,7 @@ body.task-editor-modal-open {
 .activity-calendar__legend i {
   width: 11px;
   height: 11px;
-  border-radius: 4px;
+  border-radius: 50%;
 }
 
 .focus-distribution {
@@ -4988,13 +4988,15 @@ body.task-editor-modal-open {
   white-space: nowrap;
 }
 
+/* ---------- 计划进度表（甘特图） ---------- */
+
 .activity-gantt {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 14px;
   min-width: 0;
   margin-bottom: 18px;
-  padding: 22px 24px;
+  padding: 20px 22px;
   border: 1px solid rgb(124 92 252 / 16%);
   border-radius: 22px;
   background: #fff;
@@ -5006,149 +5008,559 @@ body.task-editor-modal-open {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+  flex-wrap: wrap;
 }
 
-.activity-gantt__summary {
+.activity-gantt__heading {
   display: grid;
-  gap: 2px;
-  padding: 8px 14px;
-  border: 1px solid rgba(230, 225, 250, 0.7);
+  gap: 10px;
+  min-width: 0;
+}
+
+.activity-gantt__heading .eyebrow {
+  margin: 0;
+}
+
+.gantt-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gantt-stat {
+  display: grid;
+  gap: 1px;
+  min-width: 96px;
+  padding: 6px 12px;
+  border: 1px solid rgba(124, 92, 252, 0.14);
   border-radius: 12px;
-  background: rgba(250, 249, 255, 0.9);
-  text-align: right;
+  background: rgba(124, 92, 252, 0.05);
 }
 
-.activity-gantt__summary strong {
-  font-size: 13px;
+.gantt-stat strong {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
 }
 
-.activity-gantt__summary span {
+.gantt-stat span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 650;
 }
 
-.activity-gantt__scroll {
-  max-height: 356px;
-  overflow: auto;
+.gantt-scale {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(124, 92, 252, 0.14);
+  border-radius: 11px;
+  background: #f5f3fc;
+}
+
+.gantt-scale button {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.gantt-scale button.is-active {
+  background: #fff;
+  color: var(--primary-dark);
+  box-shadow: 0 1px 4px rgb(96 76 200 / 16%);
+}
+
+.gantt-viewport {
+  min-width: 0;
   transition: opacity 160ms ease;
 }
 
-.activity-gantt__scroll.is-loading {
+.gantt-viewport.is-loading {
   opacity: 0.45;
 }
 
-.activity-gantt__canvas {
-  position: relative;
-  min-width: 100%;
+.gantt-scroll {
+  max-height: 440px;
+  overflow: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid #efecfa;
+  border-radius: 14px;
+  cursor: grab;
 }
 
-.activity-gantt__dates {
+.gantt-viewport.is-panning .gantt-scroll {
+  cursor: grabbing;
+}
+
+.gantt-scroll button {
+  cursor: pointer;
+}
+
+.gantt-canvas {
+  position: relative;
+  min-width: 100%;
+  user-select: none;
+}
+
+/* ---- 固定表头 ---- */
+
+.gantt-head {
   position: sticky;
   top: 0;
-  z-index: 3;
-  height: 34px;
+  z-index: 6;
+  display: flex;
+  height: 56px;
   border-bottom: 1px solid #e5e0fa;
   background: #fff;
 }
 
-.activity-gantt__corner {
+.gantt-head__corner {
   position: sticky;
   left: 0;
   z-index: 3;
   display: flex;
   align-items: center;
-  width: 176px;
-  height: 34px;
-  background: #fff;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 750;
-}
-
-.activity-gantt__date {
-  position: absolute;
-  top: 0;
-  display: flex;
-  align-items: center;
-  height: 34px;
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 750;
-  white-space: nowrap;
-}
-
-.activity-gantt__body {
-  position: relative;
-}
-
-.activity-gantt__gridline {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: rgb(124 92 252 / 7%);
-}
-
-.activity-gantt__row {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: stretch;
-  height: 42px;
-}
-
-.activity-gantt__label {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
   flex: 0 0 auto;
-  overflow: hidden;
-  width: 176px;
-  padding-right: 14px;
+  width: var(--gantt-label-w, 184px);
+  padding: 0 12px;
   background: #fff;
-  box-shadow: 6px 0 8px -6px rgb(96 76 200 / 12%);
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
 }
 
-.activity-gantt__track {
+.gantt-head__tiers {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.activity-gantt__track::before {
-  content: "";
+.gantt-tier {
   position: absolute;
-  top: 50%;
   right: 0;
   left: 0;
-  height: 1px;
-  background: #e5e0fa;
 }
 
-.activity-gantt__bar {
+.gantt-tier--primary {
+  top: 0;
+  height: 22px;
+}
+
+.gantt-tier--secondary {
+  top: 22px;
+  height: 34px;
+}
+
+.gantt-tier__cell {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gantt-tier--primary .gantt-tier__cell {
+  height: 22px;
+  line-height: 22px;
+  padding-left: 8px;
+  border-left: 1px solid #e6e1f8;
+}
+
+.gantt-tier--secondary .gantt-tier__cell {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding-left: 6px;
+  color: #9a96b8;
+}
+
+.gantt-tier__cell--center {
+  justify-content: center;
+  padding-left: 0;
+}
+
+.gantt-tier__cell.is-weekend {
+  color: #bcb8d4;
+}
+
+.gantt-head__today-flag {
   position: absolute;
   top: 50%;
-  height: 16px;
+  z-index: 2;
+  padding: 2px 7px;
   border-radius: 999px;
-  background: #7559f5;
-  box-shadow: 0 6px 14px rgb(117 89 245 / 24%);
-  transform: translateY(-50%);
-  transition: filter 160ms ease;
+  background: #7456f5;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgb(116 86 245 / 25%);
 }
 
-.activity-gantt__bar:hover,
-.activity-gantt__bar:focus-visible {
-  filter: brightness(1.07);
-  outline: none;
+/* ---- 背景网格 ---- */
+
+.gantt-body {
+  position: relative;
+  padding-bottom: 10px;
 }
+
+.gantt-grid {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--gantt-label-w, 184px);
+  pointer-events: none;
+}
+
+.gantt-grid__lines {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    to right,
+    #f2f0fb 0,
+    #f2f0fb 1px,
+    transparent 1px,
+    transparent var(--gantt-period, 34px)
+  );
+}
+
+.gantt-grid__lines.is-hidden {
+  display: none;
+}
+
+.gantt-grid__weekend {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #f7f5fc;
+}
+
+.gantt-grid__boundary {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #e7e2f7;
+}
+
+.gantt-grid__today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 2px;
+  background: #7456f5;
+  box-shadow: 0 0 0 3px rgb(116 86 245 / 8%);
+}
+
+/* ---- 项目分组与任务行 ---- */
+
+.gantt-group__header {
+  display: flex;
+  height: 34px;
+  border-top: 1px solid #f0edfa;
+}
+
+.gantt-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+  width: var(--gantt-label-w, 184px);
+  padding: 0 12px;
+  border: none;
+  background: #fff;
+  box-shadow: 8px 0 8px -8px rgb(96 76 200 / 10%);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gantt-label--group {
+  z-index: 3;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+}
+
+.gantt-dot {
+  display: block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--group-color, #7c5cfc);
+}
+
+.gantt-chevron {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  transition: transform 160ms ease;
+}
+
+.gantt-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.gantt-label__title {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-label--group .gantt-label__title {
+  font-weight: 750;
+}
+
+.gantt-label__meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.gantt-label:hover .gantt-label__title {
+  color: var(--primary-dark);
+}
+
+.gantt-group__track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--group-soft, rgba(124, 92, 252, 0.08));
+}
+
+.gantt-group__count {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gantt-row {
+  position: relative;
+  display: flex;
+  height: 40px;
+}
+
+.gantt-row:hover .gantt-track {
+  background: rgb(124 92 252 / 4%);
+}
+
+.gantt-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  transition: background 140ms ease;
+}
+
+.gantt-track__span {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+}
+
+.gantt-bar {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  overflow: hidden;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  transform: translateY(-50%);
+  transition: filter 140ms ease;
+}
+
+.gantt-bar:hover,
+.gantt-bar:focus-visible {
+  filter: brightness(1.06);
+}
+
+.gantt-bar:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.gantt-bar__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 4px;
+}
+
+.gantt-bar__label {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 7px;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgb(43 26 102 / 25%);
+}
+
+/* ---- 计划窗口（可拖拽排期层） ---- */
+
+.gantt-plan {
+  position: absolute;
+  top: 50%;
+  z-index: 0;
+  box-sizing: border-box;
+  height: 24px;
+  border: 1px dashed var(--group-color, #7c5cfc);
+  border-radius: 7px;
+  transform: translateY(-50%);
+  transition:
+    border-style 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.gantt-plan:hover,
+.gantt-plan.is-dragging {
+  border-style: solid;
+  box-shadow: 0 1px 5px rgb(96 76 200 / 14%);
+}
+
+.gantt-plan__handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: ew-resize;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.gantt-plan__handle--start {
+  left: -4px;
+}
+
+.gantt-plan__handle--end {
+  right: -4px;
+}
+
+.gantt-plan__handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--group-color, #7c5cfc);
+  transform: translateY(-50%);
+}
+
+.gantt-plan__handle--start::after {
+  left: 1px;
+}
+
+.gantt-plan__handle--end::after {
+  right: 1px;
+}
+
+.gantt-plan:hover .gantt-plan__handle,
+.gantt-plan.is-dragging .gantt-plan__handle {
+  opacity: 1;
+}
+
+.gantt-plan__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--group-color, #7c5cfc);
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.gantt-dragtip {
+  position: fixed;
+  z-index: 90;
+  display: grid;
+  gap: 3px;
+  padding: 8px 12px;
+  border: 1px solid rgb(117 89 245 / 14%);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgb(58 39 112 / 14%);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.gantt-dragtip strong {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-dragtip span {
+  color: var(--primary-dark);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.gantt-viewport.is-dragging-plan .gantt-scroll {
+  cursor: grabbing;
+}
+
+.gantt-viewport.is-dragging-plan .gantt-bar:hover {
+  filter: none;
+}
+
+/* ---- 页脚与弹层 ---- */
 
 .activity-gantt__footer {
   display: flex;
@@ -5171,14 +5583,13 @@ body.task-editor-modal-open {
   position: fixed;
   z-index: 80;
   display: grid;
-  gap: 6px;
-  width: 248px;
-  max-height: 320px;
+  gap: 7px;
+  width: 252px;
   padding: 12px 14px;
   border: 1px solid rgb(117 89 245 / 12%);
   border-radius: 13px;
   background: #fff;
-  box-shadow: 0 14px 38px rgb(58 39 112 / 18%);
+  box-shadow: 0 8px 22px rgb(58 39 112 / 12%);
   color: #2e2943;
   font-size: 11px;
   pointer-events: none;
@@ -5191,34 +5602,171 @@ body.task-editor-modal-open {
   white-space: nowrap;
 }
 
-.gantt-tooltip__total {
+.gantt-tooltip__project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
 }
 
-.gantt-tooltip__days {
-  display: grid;
-  gap: 3px;
-  max-height: 180px;
-  padding-top: 6px;
-  border-top: 1px solid #efecfb;
-  overflow-y: auto;
+.gantt-tooltip__project i {
+  display: block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
 }
 
-.gantt-tooltip__days span {
+.gantt-tooltip__grid {
+  display: grid;
+  gap: 4px;
+  padding-top: 7px;
+  border-top: 1px solid #efecfb;
+}
+
+.gantt-tooltip__grid span {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.gantt-tooltip__days i {
+.gantt-tooltip__grid i {
   color: var(--muted);
   font-style: normal;
+}
+
+.gantt-tooltip__grid b {
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
 
-.gantt-tooltip__days b {
+.gantt-tooltip__progress {
+  height: 4px;
+  border-radius: 999px;
+  background: #efecfa;
+  overflow: hidden;
+}
+
+.gantt-tooltip__progress i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.gantt-tooltip__hint {
+  padding-top: 7px;
+  border-top: 1px solid #efecfb;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* ---- 手机端卡片视图 ---- */
+
+.gantt-cards {
+  display: grid;
+  gap: 12px;
+}
+
+.gantt-card-group {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.gantt-card-group__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gantt-card-group__header strong {
+  color: var(--ink);
+  font-size: 12.5px;
+}
+
+.gantt-card-group__header span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.gantt-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #efecfa;
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease;
+}
+
+.gantt-card:hover {
+  border-color: rgb(124 92 252 / 35%);
+}
+
+.gantt-card__title {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12.5px;
   font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-card__meta {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gantt-card__progress {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: #f0edfa;
+  overflow: hidden;
+}
+
+.gantt-card__progress i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--group-color, #7c5cfc);
+}
+
+.gantt-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.gantt-card__foot b {
+  color: var(--ink);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gantt-card__foot span {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+@media (max-width: 720px) {
+  .activity-gantt {
+    padding: 16px;
+  }
+
+  .gantt-stat {
+    min-width: 0;
+    flex: 1 1 40%;
+  }
 }
 
 .today-checklist {
@@ -5261,10 +5809,10 @@ body.task-editor-modal-open {
 .today-summary > span {
   display: grid;
   gap: 2px;
-  min-width: 102px;
-  padding: 10px 14px;
+  min-width: 74px;
+  padding: 8px 10px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
 }
 
 .today-summary > span + span {
@@ -5273,7 +5821,8 @@ body.task-editor-modal-open {
 
 .today-summary strong {
   color: var(--ink);
-  font-size: 13px;
+  font-size: 12.5px;
+  white-space: nowrap;
 }
 
 .today-empty {

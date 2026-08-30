@@ -23,6 +23,8 @@ export interface Task {
   title: string
   priority: TaskPriority
   due_date: string | null
+  planned_start_date: string | null
+  planned_end_date: string | null
   dependency_ids: string[]
   status: TaskStatus
   estimated_seconds: number
@@ -57,6 +59,8 @@ export interface TaskCreatePayload {
   node_type: TaskNodeType
   priority?: TaskPriority
   due_date?: string | null
+  planned_start_date?: string | null
+  planned_end_date?: string | null
   dependency_ids?: string[]
   estimated_seconds: number
   budget_mode?: TaskBudgetMode
@@ -74,6 +78,8 @@ export interface TaskUpdatePayload {
   parent_id?: string | null
   priority?: TaskPriority
   due_date?: string | null
+  planned_start_date?: string | null
+  planned_end_date?: string | null
   dependency_ids?: string[]
   estimated_seconds?: number
   budget_mode?: TaskBudgetMode

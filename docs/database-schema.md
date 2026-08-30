@@ -61,6 +61,8 @@ FastAPI 使用的 `postgres` Session Pooler 身份只被允许显式 `SET ROLE d
 | `title` | VARCHAR(200) | 任务标题 |
 | `priority` | VARCHAR(16) | `LOW`、`MEDIUM`、`HIGH` 或 `URGENT` |
 | `due_date` | DATE | 可空；截止日期 |
+| `planned_start_date` | DATE | 可空；仅 `TASK` 使用，甘特图计划窗口开始日期（迁移 0016） |
+| `planned_end_date` | DATE | 可空；仅 `TASK` 使用，甘特图计划窗口结束日期；与开始日期同时非空时开始不得晚于结束（CHECK 约束） |
 | `status` | `task_status` | 默认 `TODO` |
 | `estimated_seconds` | INTEGER | ≥ 0；仅 `TASK` 使用 |
 | `budget_mode` | VARCHAR(16) | `ROLLUP` 或 `FIXED_CAP` |

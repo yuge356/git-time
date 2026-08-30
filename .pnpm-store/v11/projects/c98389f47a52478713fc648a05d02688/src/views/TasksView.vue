@@ -128,6 +128,7 @@
                             presentation="mindmap"
                             :project-theme="getProjectTheme(project.id)"
                             :editor-task-id="selectedTask?.id ?? null"
+                            :expand-task-id="deepLinkTaskId"
                             :creating-child-for-id="creatingChildParentId"
                             :dragging-task="draggingTask"
                             :active-task-id="timer.active?.snapshot.task_id ?? null"
@@ -172,6 +173,7 @@
                   presentation="outline"
                   :project-theme="getProjectTheme(task.id)"
                   :editor-task-id="selectedTask?.id ?? null"
+                  :expand-task-id="deepLinkTaskId"
                   :creating-child-for-id="creatingChildParentId"
                   :dragging-task="draggingTask"
                   :active-task-id="timer.active?.snapshot.task_id ?? null"
@@ -310,6 +312,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
@@ -336,10 +339,13 @@ const tasks = useTaskStore()
 const auth = useAuthStore()
 const daily = useDailyPlanStore()
 const timer = useTimerStore()
+const route = useRoute()
+const router = useRouter()
 const creating = ref(false)
 const creatingChildParentId = ref<string | null>(null)
 const creatingChildNodeType = ref<TaskNodeType | null>(null)
 const selectedTask = ref<Task | null>(null)
+const deepLinkTaskId = ref<string | null>(null)
 const draggingTask = ref<Task | null>(null)
 const loadError = ref('')
 const editorError = ref('')
@@ -457,6 +463,23 @@ watch(
   ]),
   () => scheduleMapLayout(),
   { deep: true },
+)
+
+// Deep link from the today page gantt (?task=<id>): open the task editor and
+// expand its ancestor chain once the task tree is available, then drop the
+// query so refreshing does not reopen the dialog.
+watch(
+  () => route.query.task,
+  (query) => {
+    const taskId = typeof query === 'string' ? query : null
+    if (!taskId || tasks.items.length === 0) return
+    const task = tasks.items.find((item) => item.id === taskId)
+    if (!task) return
+    deepLinkTaskId.value = taskId
+    openEdit(task)
+    void router.replace({ query: { ...route.query, task: undefined } })
+  },
+  { immediate: true },
 )
 
 type ContainerDefaultKey =

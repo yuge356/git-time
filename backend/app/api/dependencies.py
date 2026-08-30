@@ -8,7 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload
 
 from app.core.config import settings
 from app.core.security import InvalidTokenError, decode_access_token
@@ -41,7 +41,7 @@ async def _load_or_create_supabase_user(
 
     await set_request_identity(db, identity.id)
     user = await db.scalar(
-        select(User).options(selectinload(User.profile)).where(User.id == identity.id)
+        select(User).options(joinedload(User.profile)).where(User.id == identity.id)
     )
     if user is not None:
         changed = user.email != identity.email or user.phone != identity.phone
@@ -77,7 +77,7 @@ async def _load_or_create_supabase_user(
         await db.rollback()
     await set_request_identity(db, identity.id)
     mirrored = await db.scalar(
-        select(User).options(selectinload(User.profile)).where(User.id == identity.id)
+        select(User).options(joinedload(User.profile)).where(User.id == identity.id)
     )
     if mirrored is None:
         raise InvalidTokenError("Supabase account profile could not be initialized")
@@ -116,7 +116,7 @@ async def authenticate_access_token(db: AsyncSession, token: str) -> User:
         user_id = decode_access_token(token)
         await set_request_identity(db, user_id)
         user = await db.scalar(
-            select(User).options(selectinload(User.profile)).where(User.id == user_id)
+            select(User).options(joinedload(User.profile)).where(User.id == user_id)
         )
     if user is None or not user.is_active:
         raise InvalidTokenError("Account is unavailable")

@@ -47,6 +47,19 @@ export interface GanttChartRow {
   firstDate: string
   lastDate: string
   days: TaskDailyPoint[]
+  /** 所属项目（任务树根节点）；null 表示项目已被删除或未关联项目。 */
+  projectId: string | null
+  projectTitle: string
+  status: import('./task').TaskStatus | null
+  /** 0-1 之间的投入进度；无法计算时为 null（条形按已投入实色展示）。 */
+  progressRatio: number | null
+  /** 有学习记录的天数。 */
+  activeDays: number
+  /** 首次到最后一次学习的自然日跨度。 */
+  spanDays: number
+  /** 计划窗口（甘特图上可拖拽调整）；null 表示尚未排期。 */
+  plannedStart: string | null
+  plannedEnd: string | null
 }
 
 export interface BudgetComparison {

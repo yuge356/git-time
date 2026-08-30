@@ -1,17 +1,20 @@
 """Read-only date-range learning analytics endpoint."""
 
+import asyncio
 from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.dependencies import CurrentUser, DatabaseSession
+from app.db.session import SessionFactory, set_request_identity
 from app.schemas.analytics import (
     AnalyticsDashboard,
     AnalyticsSummary,
     HourlyFocusResponse,
     TaskDailyResponse,
 )
+from app.schemas.daily_plan import CheckInResponse
 from app.services.analytics import (
     build_analytics_summary,
     build_dashboard_summaries,
@@ -38,18 +41,35 @@ async def read_analytics_dashboard(
     date_to: Annotated[date, Query()],
     today: Annotated[date, Query()],
 ) -> AnalyticsDashboard:
-    """Return all analytics-page data through one auth and HTTP round trip."""
+    """Return all analytics-page data through one auth and HTTP round trip.
+
+    The range summaries and the check-in read from independent pooled
+    connections so their queries overlap; the remote database costs ~100ms
+    per round trip, and serialising these two blocks doubles the page load.
+    """
+
     validate_range(date_from, date_to)
     timezone = current_user.profile.timezone
-    range_summary, today_summary = await build_dashboard_summaries(
-        db,
-        current_user.id,
-        timezone,
-        date_from,
-        date_to,
-        today,
-    )
-    today_check_in = await build_check_in(db, current_user.id, today, timezone)
+
+    async def _check_in() -> CheckInResponse:
+        async with SessionFactory() as session:
+            await set_request_identity(session, current_user.id)
+            return await build_check_in(session, current_user.id, today, timezone)
+
+    check_in_task = asyncio.create_task(_check_in())
+    try:
+        range_summary, today_summary = await build_dashboard_summaries(
+            db,
+            current_user.id,
+            timezone,
+            date_from,
+            date_to,
+            today,
+        )
+        today_check_in = await check_in_task
+    except Exception:
+        check_in_task.cancel()
+        raise
     return AnalyticsDashboard(
         range_summary=range_summary,
         today_summary=today_summary,

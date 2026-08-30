@@ -165,6 +165,14 @@ async def create_task(
         repeat_end_date=(
             payload.repeat_end_date if payload.node_type == TaskNodeType.TASK else None
         ),
+        planned_start_date=(
+            payload.planned_start_date
+            if payload.node_type == TaskNodeType.TASK
+            else None
+        ),
+        planned_end_date=(
+            payload.planned_end_date if payload.node_type == TaskNodeType.TASK else None
+        ),
         daily_reminder_time=daily_reminder_time,
         sort_order=await next_sort_order(db, current_user.id, payload.parent_id),
     )
@@ -244,6 +252,8 @@ async def update_task(
         "repeat_end_date",
         "daily_reminder_time",
         "status",
+        "planned_start_date",
+        "planned_end_date",
     }
     container_only_fields = {
         "budget_mode",
@@ -266,6 +276,15 @@ async def update_task(
     for field_name in task_only_fields | container_only_fields:
         if field_name in changes:
             setattr(task, field_name, changes[field_name])
+    if (
+        task.planned_start_date is not None
+        and task.planned_end_date is not None
+        and task.planned_start_date > task.planned_end_date
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The planned start date cannot be after the planned end date",
+        )
     if "budget_mode" in changes and task.budget_mode == TaskBudgetMode.ROLLUP:
         task.fixed_budget_seconds = None
     if task.budget_mode == TaskBudgetMode.FIXED_CAP and task.fixed_budget_seconds is None:

@@ -209,6 +209,7 @@
           :presentation="presentation"
           :project-theme="theme"
           :editor-task-id="editorTaskId"
+          :expand-task-id="expandTaskId"
           :creating-child-for-id="creatingChildForId"
           :dragging-task="draggingTask"
           :active-task-id="activeTaskId"
@@ -252,9 +253,11 @@ const props = withDefaults(defineProps<{
   timerBusy: boolean
   projectTheme?: ProjectTheme
   parentNodeType?: TaskNodeType | null
+  expandTaskId?: string | null
 }>(), {
   presentation: 'mindmap',
   parentNodeType: null,
+  expandTaskId: null,
 })
 
 const emit = defineEmits<{
@@ -425,6 +428,21 @@ watch(
     if (parentId === props.task.id) expanded.value = true
   },
 )
+
+watch(
+  () => props.expandTaskId,
+  (taskId) => {
+    if (taskId && subtreeContainsTask(taskId)) expanded.value = true
+  },
+)
+
+function subtreeContainsTask(taskId: string): boolean {
+  return props.task.children.some((child) => child.id === taskId || subtreeContains(child, taskId))
+}
+
+function subtreeContains(node: TaskNode, taskId: string): boolean {
+  return node.children.some((child) => child.id === taskId || subtreeContains(child, taskId))
+}
 
 function toggleExpanded(): void {
   expanded.value = !expanded.value

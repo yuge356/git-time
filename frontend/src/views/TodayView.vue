@@ -105,7 +105,7 @@
               <p>点击任务即可选中；色块表示已使用的计划时间。</p>
             </div>
             <div class="today-summary" aria-label="今日投入概览">
-              <span><strong>{{ formatDuration(displayLearningSeconds) }}</strong> 已投入</span>
+              <span><strong>{{ formatDurationCompact(displayLearningSeconds) }}</strong> 已投入</span>
               <span><strong>{{ daily.checkIn?.completed_items ?? 0 }}/{{ daily.checkIn?.total_items ?? 0 }}</strong> 已完成</span>
               <span><strong>{{ daily.checkIn?.streak_days ?? 0 }} 天</strong> 连续打卡</span>
             </div>
@@ -243,6 +243,7 @@
         :today="todayDate"
         :loading="ganttLoading"
         :error="ganttError"
+        @plan-change="updateTaskPlan"
       />
 
       <div class="today-bottom-grid">
@@ -426,9 +427,10 @@ import type {
   TaskDailySeries,
 } from '@/types/analytics'
 import type { DailyPlanItem } from '@/types/daily-plan'
+import type { Task } from '@/types/task'
 import { getApiErrorMessage } from '@/utils/api-error'
 import { projectPrefixedTaskTitle } from '@/utils/task-title'
-import { formatDuration } from '@/utils/time'
+import { formatDuration, formatDurationCompact } from '@/utils/time'
 import { formatTimer } from '@/utils/timer'
 
 const auth = useAuthStore()
@@ -569,24 +571,91 @@ const distributionAriaLabel = computed(() =>
   `当日专注小时分布，共 ${formatCalendarDuration(distributionTotalSeconds.value)}`,
 )
 const focusTooltip = ref<{ hour: number; seconds: number; x: number; y: number } | null>(null)
+const tasksById = computed(() => new Map(tasks.items.map((task) => [task.id, task])))
+function buildGanttRow(task: Task, series: TaskDailySeries | null): GanttChartRow | null {
+  const title = projectPrefixedTaskTitle(task, tasks.items)
+  if (!title) return null
+  const project = rootProjectOf(task)
+  const plannedStart = task.planned_start_date ?? null
+  const plannedEnd = task.planned_end_date ?? null
+  const firstDate = series?.daily[0]?.date ?? plannedStart
+  const lastDate = series
+    ? (series.daily[series.daily.length - 1]?.date ?? plannedEnd)
+    : plannedEnd
+  if (!firstDate || !lastDate) return null
+  return {
+    id: task.id,
+    title,
+    totalSeconds: series?.total_seconds ?? 0,
+    firstDate,
+    lastDate,
+    days: series?.daily ?? [],
+    projectId: project?.id ?? null,
+    projectTitle: project?.title ?? '未关联项目',
+    status: task.status,
+    progressRatio:
+      task.status === 'DONE'
+        ? 1
+        : task.estimated_seconds > 0
+          ? Math.min(1, task.actual_seconds / task.estimated_seconds)
+          : null,
+    activeDays: series?.daily.length ?? 0,
+    spanDays: dayDiff(firstDate, lastDate) + 1,
+    plannedStart,
+    plannedEnd,
+  }
+}
 const ganttRows = computed<GanttChartRow[]>(() => {
   const rows: GanttChartRow[] = []
-  for (const series of ganttSeries.value) {
-    if (!series.task_id || series.total_seconds <= 0 || series.daily.length === 0) continue
-    const task = tasks.items.find((item) => item.id === series.task_id)
-    const title = task ? projectPrefixedTaskTitle(task, tasks.items) : series.title
-    if (!title) continue
-    rows.push({
-      id: series.task_id,
-      title,
-      totalSeconds: series.total_seconds,
-      firstDate: series.daily[0]!.date,
-      lastDate: series.daily[series.daily.length - 1]!.date,
-      days: series.daily,
-    })
+  const seriesById = new Map(
+    ganttSeries.value
+      .filter((series) => series.task_id && series.total_seconds > 0 && series.daily.length > 0)
+      .map((series) => [series.task_id as string, series]),
+  )
+  for (const [taskId, series] of seriesById) {
+    const task = tasksById.value.get(taskId)
+    if (!task) continue
+    const row = buildGanttRow(task, series)
+    if (row) rows.push(row)
+  }
+  // 已排期但还没有学习记录的任务也显示一行，方便直接在甘特图上拖拽排期。
+  for (const task of tasks.items) {
+    if (task.node_type !== 'TASK') continue
+    if (seriesById.has(task.id)) continue
+    if (!task.planned_start_date && !task.planned_end_date) continue
+    const row = buildGanttRow(task, null)
+    if (row) rows.push(row)
   }
   return rows
 })
+
+// 甘特图拖拽排期：把计划窗口写回任务的 planned dates；失败时 store 会回滚本地状态。
+async function updateTaskPlan(payload: { taskId: string; start: string; end: string }): Promise<void> {
+  try {
+    await tasks.update(payload.taskId, {
+      planned_start_date: payload.start,
+      planned_end_date: payload.end,
+    })
+  } catch (error) {
+    ganttError.value = getApiErrorMessage(error)
+  }
+}
+
+function rootProjectOf(task: Task): Task | null {  let current = task
+  const visited = new Set<string>()
+  while (current.parent_id && !visited.has(current.id)) {
+    visited.add(current.id)
+    const parent = tasksById.value.get(current.parent_id)
+    if (!parent) return null
+    if (parent.node_type === 'PROJECT') return parent
+    current = parent
+  }
+  return current.node_type === 'PROJECT' ? current : null
+}
+
+function dayDiff(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
+}
 const plannedTaskIds = computed(
   () => new Set(daily.plan?.items.flatMap((item) => (item.task_id ? [item.task_id] : []))),
 )

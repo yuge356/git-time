@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 
-engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+# pool_pre_ping is deliberately off: against the remote transaction-pooling
+# endpoint every checkout re-opened a TLS connection (~0.5s), which dominated
+# analytics page loads. The app-level keepalive in app.main pings the pool on
+# a short interval instead, so idle connections stay healthy.
+engine = create_async_engine(settings.database_url)
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 

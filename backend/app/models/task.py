@@ -112,6 +112,10 @@ class Task(TimestampMixin, Base):
         default=TaskPriority.MEDIUM,
     )
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Executable-task planning window shown and dragged on the Today page
+    # Gantt chart. Always null for project/module containers.
+    planned_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    planned_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus, name="task_status"),
         nullable=False,

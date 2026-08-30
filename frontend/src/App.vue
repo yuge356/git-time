@@ -1,6 +1,6 @@
 <template>
   <RouterView v-slot="{ Component, route }">
-    <KeepAlive :include="['TasksView', 'TodayView']">
+    <KeepAlive :include="['TasksView', 'TodayView', 'AnalyticsView']">
       <component :is="Component" :key="route.name" />
     </KeepAlive>
   </RouterView>
