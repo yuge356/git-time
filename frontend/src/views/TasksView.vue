@@ -16,7 +16,10 @@
         <div class="task-list-panel">
           <header class="panel-header">
             <div>
-              <h2>我的项目</h2>
+              <h2>
+                我的项目
+                <HintIcon :text="taskViewHelpText" />
+              </h2>
               <p>{{ projectCount }} 个项目 · {{ executableTaskCount }} 个可执行任务</p>
             </div>
             <div class="panel-header__actions">
@@ -56,10 +59,6 @@
               </button>
             </div>
           </header>
-
-          <p class="task-drag-help">
-            {{ taskViewHelpText }}
-          </p>
 
           <p
             v-if="hiddenCompletedCount > 0 && visibleProjectTree.length > 0"
@@ -102,8 +101,12 @@
             <section v-if="taskViewMode === 'MINDMAP'" class="task-mindmap-shell">
               <header class="task-mindmap-toolbar">
                 <div>
-                  <strong>任务结构</strong>
-                  <span>每个项目一块独立画布；节点保持固定大小，超出画布的内容滚动查看</span>
+                  <strong>
+                    任务结构
+                    <HintIcon
+                      text="每个项目一块独立画布，画布高度跟随任务树本身。实线表示上下级关系；节点保持固定大小，调整窗口只裁剪画布、不缩放内容，需要时用右侧按钮缩放。"
+                    />
+                  </strong>
                 </div>
                 <div class="task-mindmap-toolbar__controls" aria-label="导图缩放控制">
                   <button class="icon-button" type="button" aria-label="缩小导图" @click="changeMapZoom(-0.1)">−</button>
@@ -189,16 +192,17 @@
                 </article>
               </div>
 
-              <p class="task-mindmap-hint">
-                实线表示上下级关系；调整窗口大小时节点大小不变，被遮住的部分通过画布滚动查看。
-              </p>
             </section>
 
             <section v-else class="task-card-view" aria-label="项目与任务大纲视图">
               <header class="task-card-view__header">
                 <div>
-                  <strong>项目大纲</strong>
-                  <span>父任务默认折叠；点击节点前的展开按钮查看子任务，同级子任务保持整齐对齐</span>
+                  <strong>
+                    项目大纲
+                    <HintIcon
+                      text="父任务默认折叠；点击节点前的展开箭头查看子任务，同级子任务保持整齐对齐。左侧拖动手柄可调整层级。"
+                    />
+                  </strong>
                 </div>
               </header>
               <ul class="task-tree task-tree--cards">
@@ -362,6 +366,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
+import HintIcon from '@/components/HintIcon.vue'
 import ProjectTemplateLibrary from '@/components/tasks/ProjectTemplateLibrary.vue'
 import TaskEditor from '@/components/tasks/TaskEditor.vue'
 import TaskTreeNode from '@/components/tasks/TaskTreeNode.vue'
@@ -415,7 +420,12 @@ const storedTaskViewMode = (() => {
 })()
 const taskViewMode = ref<TaskViewMode>(storedTaskViewMode)
 const mapZoom = ref(1)
+// Projects open collapsed so the page starts as a readable list of projects
+// rather than a wall of task trees; ids seen after the first load (a project
+// the user just created) stay open.
 const collapsedMindmapProjects = reactive(new Set<string>())
+const decidedProjects = new Set<string>()
+let firstProjectsSeen = false
 
 // 已标记完成的项目默认从列表隐藏（计时数据保留，历史记录仍可查）。
 const showCompletedProjects = ref(false)
@@ -443,6 +453,27 @@ async function toggleProjectComplete(task: Task): Promise<void> {
   } catch (error) {
     actionMessage.value = getApiErrorMessage(error)
   }
+}
+
+watch(
+  () => tasks.tree.map((project) => project.id),
+  (ids) => {
+    if (ids.length === 0) return
+    const initial = !firstProjectsSeen
+    firstProjectsSeen = true
+    for (const id of ids) {
+      if (decidedProjects.has(id)) continue
+      decidedProjects.add(id)
+      if (initial) collapsedMindmapProjects.add(id)
+    }
+  },
+  { immediate: true },
+)
+
+function expandMindmapProject(projectId: string): void {
+  collapsedMindmapProjects.delete(projectId)
+  decidedProjects.add(projectId)
+  scheduleMapLayout()
 }
 
 function toggleMindmapProject(projectId: string): void {
@@ -569,18 +600,44 @@ watch(
 // expand its ancestor chain once the task tree is available, then drop the
 // query so refreshing does not reopen the dialog.
 watch(
-  () => route.query.task,
-  (query) => {
+  // Also depends on the loaded list: arriving from the plan chart on a cold
+  // page, the query is present long before the tasks are, and watching the
+  // query alone silently dropped the deep link.
+  () => [route.query.task, tasks.items.length] as const,
+  ([query]) => {
     const taskId = typeof query === 'string' ? query : null
     if (!taskId || tasks.items.length === 0) return
     const task = tasks.items.find((item) => item.id === taskId)
     if (!task) return
     deepLinkTaskId.value = taskId
+    const project = rootProjectOf(task)
+    if (project) expandMindmapProject(project.id)
     openEdit(task)
+    void nextTick(() => scrollTaskIntoView(taskId))
     void router.replace({ query: { ...route.query, task: undefined } })
   },
   { immediate: true },
 )
+
+/** Walk up to the project a task belongs to, so the deep link can open it. */
+function rootProjectOf(task: Task): Task | null {
+  let current = task
+  const visited = new Set<string>()
+  while (current.parent_id && !visited.has(current.id)) {
+    visited.add(current.id)
+    const parent = tasks.items.find((item) => item.id === current.parent_id)
+    if (!parent) return null
+    current = parent
+  }
+  return current.node_type === 'PROJECT' ? current : null
+}
+
+function scrollTaskIntoView(taskId: string): void {
+  window.requestAnimationFrame(() => {
+    const node = document.querySelector(`[data-task-id="${CSS.escape(taskId)}"]`)
+    node?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
+  })
+}
 
 type ContainerDefaultKey =
   | 'default_estimated_seconds'

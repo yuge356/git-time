@@ -98,7 +98,9 @@ Supabase 托管 PostgreSQL
 待处理的邀请必须始终对收件人可见：`profiles` 的发现策略把 PENDING 关系与 ACCEPTED 一同放行，
 而 `to_partnership_response` 在资料确实读不到时也只把伙伴降级成“未公开用户”，不会丢掉整条邀请。
 伙伴页的各个面板独立加载（`Promise.allSettled`），一个请求失败不会连带清空邀请列表；
-收到 `PARTNER_INVITE` / `PARTNER_ACCEPTED` 通知时页面会自动重新拉取关系列表。
+收到 `PARTNER_INVITE` / `PARTNER_ACCEPTED` 通知时页面会自动重新拉取关系列表。页面按
+“待办 → 动态 → 管理”编排：待处理邀请是顶部横幅，左侧主栏是收到的分享，右侧边栏依次是分享我的
+计划、我的伙伴（含查找邀请）和折叠的其他关系。
 
 ### 通知
 
@@ -148,7 +150,7 @@ Supabase Auth `user_metadata` 中写入 `onboarding_completed=false`；路由守
 | 项目模板库 | project templates |
 | 伙伴与屏蔽 | partnerships、blocks |
 | 分享与鼓励 | plan shares、encouragements |
-| 通知中心 | notifications、WebSocket |
+| 通知中心（在个人资料页内） | notifications、WebSocket |
 | IndexedDB 同步 | 幂等客户端 UUID API |
 
 Supabase 使用非对称签名密钥时，API 通过缓存的 JWKS 在本地验证访问令牌，避免每个业务请求再次访问

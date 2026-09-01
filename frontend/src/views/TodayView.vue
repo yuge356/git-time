@@ -243,7 +243,6 @@
         :today="todayDate"
         :loading="ganttLoading"
         :error="ganttError"
-        @plan-change="updateTaskPlan"
       />
 
       <div class="today-bottom-grid">
@@ -573,9 +572,12 @@ const distributionAriaLabel = computed(() =>
 const focusTooltip = ref<{ hour: number; seconds: number; x: number; y: number } | null>(null)
 const tasksById = computed(() => new Map(tasks.items.map((task) => [task.id, task])))
 function buildGanttRow(task: Task, series: TaskDailySeries | null): GanttChartRow | null {
-  const title = projectPrefixedTaskTitle(task, tasks.items)
+  // The chart groups by project and module, so the row keeps its own plain
+  // title instead of the project-prefixed label used by daily-plan snapshots.
+  const title = task.title
   if (!title) return null
   const project = rootProjectOf(task)
+  const module = moduleOf(task, project)
   const plannedStart = task.planned_start_date ?? null
   const plannedEnd = task.planned_end_date ?? null
   const firstDate = series?.daily[0]?.date ?? plannedStart
@@ -592,6 +594,8 @@ function buildGanttRow(task: Task, series: TaskDailySeries | null): GanttChartRo
     days: series?.daily ?? [],
     projectId: project?.id ?? null,
     projectTitle: project?.title ?? '未关联项目',
+    moduleId: module?.id ?? null,
+    moduleTitle: module?.title ?? '',
     status: task.status,
     progressRatio:
       task.status === 'DONE'
@@ -629,16 +633,19 @@ const ganttRows = computed<GanttChartRow[]>(() => {
   return rows
 })
 
-// 甘特图拖拽排期：把计划窗口写回任务的 planned dates；失败时 store 会回滚本地状态。
-async function updateTaskPlan(payload: { taskId: string; start: string; end: string }): Promise<void> {
-  try {
-    await tasks.update(payload.taskId, {
-      planned_start_date: payload.start,
-      planned_end_date: payload.end,
-    })
-  } catch (error) {
-    ganttError.value = getApiErrorMessage(error)
+/** The module a task sits in, or null when it hangs directly off the project. */
+function moduleOf(task: Task, project: Task | null): Task | null {
+  if (!project) return null
+  let current = task
+  const visited = new Set<string>()
+  while (current.parent_id && !visited.has(current.id)) {
+    visited.add(current.id)
+    const parent = tasksById.value.get(current.parent_id)
+    if (!parent || parent.id === project.id) return null
+    if (parent.node_type === 'MODULE') return parent
+    current = parent
   }
+  return null
 }
 
 function rootProjectOf(task: Task): Task | null {  let current = task

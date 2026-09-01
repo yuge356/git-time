@@ -1,18 +1,31 @@
 <template>
   <AppShell>
     <main class="partners-page">
-      <section
-        :class="['page-heading', 'collaboration-heading', { 'is-intro-hidden': !auth.showPageIntros }]"
-      >
-        <div v-if="auth.showPageIntros">
-          <p class="eyebrow">伙伴协作</p>
-          <h1>一起推进，彼此看见</h1>
-          <p>分享计划、查看伙伴进度和管理关系，现在都在这里。</p>
+      <section class="partners-topbar">
+        <div class="partners-topbar__title">
+          <h1>
+            伙伴协作
+            <HintIcon
+              text="把某一天的计划分享给伙伴，对方就能看到你的任务和完成情况；是否公开用时由你决定。收到的分享会出现在“伙伴动态”里，可以回一个鼓励。"
+            />
+          </h1>
+          <p>{{ partners.length }} 位伙伴 · 收到 {{ received.length }} 份分享</p>
         </div>
-        <label class="field collaboration-date">
-          <span>计划日期</span>
-          <input v-model="planDate" type="date" @change="loadPlan" />
-        </label>
+        <div class="partners-topbar__actions">
+          <label class="field partners-date">
+            <span>计划日期</span>
+            <input v-model="planDate" type="date" @change="loadPlan" />
+          </label>
+          <button
+            class="button button--quiet"
+            type="button"
+            :disabled="busy"
+            title="重新拉取邀请、伙伴与分享"
+            @click="reload"
+          >
+            刷新
+          </button>
+        </div>
       </section>
 
       <FormMessage :message="errorMessage" />
@@ -20,84 +33,42 @@
         {{ successMessage }}
       </p>
 
-      <section class="collaboration-grid">
-        <article class="collaboration-card share-plan-card">
-          <header class="collaboration-card__header">
-            <div>
-              <p class="eyebrow">我的计划</p>
-              <h2>分享给伙伴</h2>
-            </div>
-            <span class="plan-progress-pill">
-              {{ plan?.completed_items ?? 0 }}/{{ plan?.total_items ?? 0 }} 完成
-            </span>
-          </header>
-
-          <p class="share-plan-summary">
-            {{ formattedPlanDate }}
-            <template v-if="plan?.total_items">
-              · 共 {{ plan.total_items }} 项
-            </template>
-          </p>
-
-          <form class="share-plan-form" @submit.prevent="sharePlan">
-            <select v-model="partnerId" required aria-label="选择分享伙伴">
-              <option value="">选择伙伴…</option>
-              <option
-                v-for="relationship in availablePartners"
-                :key="relationship.partner.id"
-                :value="relationship.partner.id"
-              >
-                {{ relationship.partner.display_name }}
-              </option>
-            </select>
-            <label class="share-duration-toggle">
-              <input v-model="shareDuration" type="checkbox" />
-              <span>公开用时</span>
-            </label>
-            <button
-              class="button button--primary"
-              type="submit"
-              :disabled="busy || !plan || !partnerId || plan.total_items === 0"
-            >
-              分享
-            </button>
-          </form>
-
-          <p v-if="partners.length === 0" class="inline-empty">
-            还没有伙伴，请在下方“伙伴管理”中发送邀请。
-          </p>
-          <p v-else-if="plan?.total_items === 0" class="inline-empty">
-            当天还没有任务，添加任务后即可分享。
-          </p>
-          <p v-else-if="availablePartners.length === 0 && sentForPlan.length > 0" class="inline-empty">
-            这份计划已经分享给所有伙伴。
-          </p>
-
-          <div v-if="sentForPlan.length > 0" class="sent-share-strip" aria-label="已分享的伙伴">
-            <span>已分享</span>
-            <div>
+      <section v-if="incoming.length > 0" class="invitation-banner">
+        <header>
+          <strong>{{ incoming.length }} 个待处理的伙伴邀请</strong>
+          <span>接受后你们可以互相分享每日计划。</span>
+        </header>
+        <ul>
+          <li v-for="item in incoming" :key="item.id">
+            <ProfileRow :profile="item.partner">
               <button
-                v-for="share in sentForPlan"
-                :key="share.id"
+                class="button button--primary button--small"
                 type="button"
-                :title="`撤销与${share.partner.display_name}的分享`"
                 :disabled="busy"
-                @click="revoke(share.id)"
+                @click="decide(item.id, true)"
               >
-                {{ share.partner.display_name }}
-                <small>{{ share.share_duration ? '· 含用时' : '' }}</small>
-                ×
+                接受
               </button>
-            </div>
-          </div>
-        </article>
+              <button
+                class="button button--quiet button--small"
+                type="button"
+                :disabled="busy"
+                @click="decide(item.id, false)"
+              >
+                拒绝
+              </button>
+            </ProfileRow>
+          </li>
+        </ul>
+      </section>
 
-        <article class="collaboration-card partner-feed-card">
+      <div class="partners-layout">
+        <section class="collaboration-card partner-feed-card">
           <header class="collaboration-card__header">
-            <div>
-              <p class="eyebrow">伙伴动态</p>
-              <h2>分享给我的计划</h2>
-            </div>
+            <h2>
+              伙伴动态
+              <HintIcon text="伙伴分享给你的每日计划。勾选状态实时反映他们的进度，可以给对方发送一句固定鼓励。" />
+            </h2>
             <span v-if="received.length > 0" class="feed-count">{{ received.length }}</span>
           </header>
 
@@ -140,104 +111,148 @@
               </div>
             </article>
           </div>
-        </article>
-      </section>
+        </section>
 
-      <details class="partner-management" :open="incoming.length > 0">
-        <summary>
-          <span>
-            <strong>伙伴管理</strong>
-            <small>查找伙伴、处理邀请和调整关系</small>
-          </span>
-          <i v-if="incoming.length > 0">{{ incoming.length }} 个待处理</i>
-        </summary>
+        <aside class="partners-side">
+          <section class="collaboration-card share-plan-card">
+            <header class="collaboration-card__header">
+              <h2>
+                分享我的计划
+                <HintIcon text="分享的是选定日期那一天的计划快照，伙伴能看到任务标题和完成状态；勾选“公开用时”后才会一并显示计划与实际时长。" />
+              </h2>
+              <span class="plan-progress-pill">
+                {{ plan?.completed_items ?? 0 }}/{{ plan?.total_items ?? 0 }} 完成
+              </span>
+            </header>
 
-        <div class="partner-management__body">
-          <form class="partner-search partner-search--compact" @submit.prevent="search">
-            <label class="field">
-              <span>查找新伙伴</span>
+            <p class="share-plan-summary">{{ formattedPlanDate }}</p>
+
+            <form class="share-plan-form" @submit.prevent="sharePlan">
+              <select v-model="partnerId" required aria-label="选择分享伙伴">
+                <option value="">选择伙伴…</option>
+                <option
+                  v-for="relationship in availablePartners"
+                  :key="relationship.partner.id"
+                  :value="relationship.partner.id"
+                >
+                  {{ relationship.partner.display_name }}
+                </option>
+              </select>
+              <label class="share-duration-toggle">
+                <input v-model="shareDuration" type="checkbox" />
+                <span>公开用时</span>
+              </label>
+              <button
+                class="button button--primary"
+                type="submit"
+                :disabled="busy || !plan || !partnerId || plan.total_items === 0"
+              >
+                分享
+              </button>
+            </form>
+
+            <p v-if="partners.length === 0" class="inline-empty">
+              还没有伙伴，先在下方查找并邀请。
+            </p>
+            <p v-else-if="plan?.total_items === 0" class="inline-empty">
+              当天还没有任务，添加任务后即可分享。
+            </p>
+            <p v-else-if="availablePartners.length === 0 && sentForPlan.length > 0" class="inline-empty">
+              这份计划已经分享给所有伙伴。
+            </p>
+
+            <div v-if="sentForPlan.length > 0" class="sent-share-strip" aria-label="已分享的伙伴">
+              <span>已分享</span>
+              <div>
+                <button
+                  v-for="share in sentForPlan"
+                  :key="share.id"
+                  type="button"
+                  :title="`撤销与${share.partner.display_name}的分享`"
+                  :disabled="busy"
+                  @click="revoke(share.id)"
+                >
+                  {{ share.partner.display_name }}
+                  <small>{{ share.share_duration ? '· 含用时' : '' }}</small>
+                  ×
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="collaboration-card partner-list-card">
+            <header class="collaboration-card__header">
+              <h2>
+                我的伙伴
+                <HintIcon text="输入用户名或显示名称查找并发送邀请；对方接受后才会成为伙伴。解除伙伴会同时撤销双方之间的计划分享。" />
+              </h2>
+              <span class="feed-count">{{ partners.length }}</span>
+            </header>
+
+            <form class="partner-search" @submit.prevent="search">
               <input
                 v-model.trim="query"
                 maxlength="80"
-                placeholder="输入用户名或显示名称"
+                placeholder="查找用户名或显示名称"
+                aria-label="查找新伙伴"
                 required
               />
-            </label>
-            <button class="button button--primary" type="submit" :disabled="busy">查找</button>
-            <button
-              class="button button--quiet"
-              type="button"
-              :disabled="busy"
-              title="重新拉取伙伴邀请与分享"
-              @click="reload"
-            >
-              刷新
-            </button>
-          </form>
-
-          <div v-if="searched" class="search-results">
-            <p v-if="searchResults.length === 0" class="empty-state">没有找到可添加的用户。</p>
-            <ProfileRow v-for="profile in searchResults" v-else :key="profile.id" :profile="profile">
-              <span v-if="profile.direction === 'PARTNER'" class="relation-label">已是伙伴</span>
-              <span v-else-if="profile.direction === 'OUTGOING'" class="relation-label">已邀请</span>
-              <button
-                v-else-if="profile.direction === 'INCOMING' && profile.partnership_id"
-                class="button button--primary button--small"
-                type="button"
-                @click="decide(profile.partnership_id, true)"
-              >
-                接受
+              <button class="button button--primary button--small" type="submit" :disabled="busy">
+                查找
               </button>
-              <button v-else class="button button--primary button--small" type="button" @click="invite(profile.id)">
-                邀请
+            </form>
+
+            <div v-if="searched" class="search-results">
+              <p v-if="searchResults.length === 0" class="inline-empty">没有找到可添加的用户。</p>
+              <ProfileRow v-for="profile in searchResults" v-else :key="profile.id" :profile="profile">
+                <span v-if="profile.direction === 'PARTNER'" class="relation-label">已是伙伴</span>
+                <span v-else-if="profile.direction === 'OUTGOING'" class="relation-label">已邀请</span>
+                <button
+                  v-else-if="profile.direction === 'INCOMING' && profile.partnership_id"
+                  class="button button--primary button--small"
+                  type="button"
+                  @click="decide(profile.partnership_id, true)"
+                >
+                  接受
+                </button>
+                <button v-else class="button button--primary button--small" type="button" @click="invite(profile.id)">
+                  邀请
+                </button>
+              </ProfileRow>
+            </div>
+
+            <p v-if="partners.length === 0" class="inline-empty">还没有协作伙伴。</p>
+            <ProfileRow v-for="item in partners" v-else :key="item.id" :profile="item.partner">
+              <button class="text-action" type="button" :disabled="busy" @click="remove(item.id)">解除</button>
+              <button class="text-action text-action--danger" type="button" :disabled="busy" @click="block(item.partner.id)">
+                屏蔽
               </button>
             </ProfileRow>
-          </div>
 
-          <div class="partner-management__groups">
-            <article v-if="incoming.length > 0" class="relationship-group relationship-group--notice">
-              <header>
-                <h3>待处理邀请</h3>
-                <span>{{ incoming.length }}</span>
-              </header>
-              <ProfileRow v-for="item in incoming" :key="item.id" :profile="item.partner">
-                <button class="button button--primary button--small" type="button" @click="decide(item.id, true)">接受</button>
-                <button class="button button--quiet button--small" type="button" @click="decide(item.id, false)">拒绝</button>
-              </ProfileRow>
-            </article>
-
-            <article class="relationship-group">
-              <header>
-                <h3>我的伙伴</h3>
-                <span>{{ partners.length }}</span>
-              </header>
-              <p v-if="partners.length === 0" class="empty-state">还没有协作伙伴。</p>
-              <ProfileRow v-for="item in partners" v-else :key="item.id" :profile="item.partner">
-                <button class="button button--quiet button--small" type="button" @click="remove(item.id)">解除</button>
-                <button class="text-action text-action--danger" type="button" @click="block(item.partner.id)">屏蔽</button>
-              </ProfileRow>
-            </article>
-          </div>
-
-          <details v-if="outgoing.length > 0 || blocks.length > 0" class="relationship-more">
-            <summary>其他关系（{{ outgoing.length + blocks.length }}）</summary>
-            <div class="partner-management__groups">
-              <article v-if="outgoing.length > 0" class="relationship-group">
-                <header><h3>等待回应</h3></header>
-                <ProfileRow v-for="item in outgoing" :key="item.id" :profile="item.partner">
-                  <button class="text-action" type="button" @click="remove(item.id)">取消邀请</button>
-                </ProfileRow>
-              </article>
-              <article v-if="blocks.length > 0" class="relationship-group">
-                <header><h3>已屏蔽</h3></header>
-                <ProfileRow v-for="item in blocks" :key="item.id" :profile="item.blocked_user">
-                  <button class="text-action" type="button" @click="unblock(item.id)">取消屏蔽</button>
-                </ProfileRow>
-              </article>
-            </div>
-          </details>
-        </div>
-      </details>
+            <details v-if="outgoing.length > 0 || blocks.length > 0" class="relationship-more">
+              <summary>其他关系（{{ outgoing.length + blocks.length }}）</summary>
+              <div class="relationship-more__body">
+                <template v-if="outgoing.length > 0">
+                  <h3>等待回应</h3>
+                  <ProfileRow v-for="item in outgoing" :key="item.id" :profile="item.partner">
+                    <button class="text-action" type="button" :disabled="busy" @click="remove(item.id)">
+                      取消邀请
+                    </button>
+                  </ProfileRow>
+                </template>
+                <template v-if="blocks.length > 0">
+                  <h3>已屏蔽</h3>
+                  <ProfileRow v-for="item in blocks" :key="item.id" :profile="item.blocked_user">
+                    <button class="text-action" type="button" :disabled="busy" @click="unblock(item.id)">
+                      取消屏蔽
+                    </button>
+                  </ProfileRow>
+                </template>
+              </div>
+            </details>
+          </section>
+        </aside>
+      </div>
     </main>
   </AppShell>
 </template>
@@ -248,6 +263,7 @@ import { computed, defineComponent, h, onMounted, ref, watch, type PropType } fr
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
+import HintIcon from '@/components/HintIcon.vue'
 import { dailyPlanService } from '@/services/daily-plans'
 import { partnershipService } from '@/services/partnerships'
 import { sharingService } from '@/services/sharing'

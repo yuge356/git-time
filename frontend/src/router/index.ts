@@ -52,10 +52,9 @@ export const router = createRouter({
       redirect: '/partners',
     },
     {
+      // The notification centre now lives inside the profile page.
       path: '/notifications',
-      name: 'notifications',
-      component: () => import('@/views/NotificationsView.vue'),
-      meta: { requiresAuth: true },
+      redirect: '/profile',
     },
     {
       path: '/login',

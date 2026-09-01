@@ -34,24 +34,20 @@
           </svg>
           <span>伙伴协作</span>
         </RouterLink>
-        <RouterLink class="notification-link" to="/notifications" title="通知">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M18 9a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 15 18 9Zm-8.3 10a2.5 2.5 0 0 0 4.6 0"
-            />
-          </svg>
-          <span>通知</span>
-          <i v-if="notifications.unreadCount > 0">
-            {{ notifications.unreadCount > 99 ? '99+' : notifications.unreadCount }}
-          </i>
-        </RouterLink>
-        <RouterLink to="/profile" title="个人资料">
+        <RouterLink
+          class="notification-link"
+          to="/profile"
+          :title="notifications.unreadCount > 0 ? `个人资料（${notifications.unreadCount} 条未读通知）` : '个人资料'"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c0-3.3 3.1-5 7-5s7 1.7 7 5"
             />
           </svg>
           <span>个人资料</span>
+          <i v-if="notifications.unreadCount > 0">
+            {{ notifications.unreadCount > 99 ? '99+' : notifications.unreadCount }}
+          </i>
         </RouterLink>
       </nav>
 

@@ -5554,7 +5554,7 @@ body.task-editor-modal-open {
 .gantt-label {
   position: sticky;
   left: 0;
-  z-index: 2;
+  z-index: 6;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
@@ -5571,7 +5571,7 @@ body.task-editor-modal-open {
 }
 
 .gantt-label--group {
-  z-index: 3;
+  z-index: 7;
   flex-direction: row;
   align-items: center;
   gap: 6px;
@@ -5656,7 +5656,17 @@ button.gantt-label:hover .gantt-label__title {
 .gantt-row {
   position: relative;
   display: flex;
-  height: 40px;
+  min-height: 40px;
+}
+
+.gantt-row--project {
+  min-height: 40px;
+  border-top: 1px solid #f0edfa;
+}
+
+.gantt-row--module {
+  /* One lane per group of non-overlapping tasks, plus breathing room. */
+  min-height: calc(var(--lane-count, 1) * 22px + 12px);
 }
 
 .gantt-row:hover .gantt-track {
@@ -5680,15 +5690,25 @@ button.gantt-label:hover .gantt-label__title {
 
 .gantt-bar {
   position: absolute;
-  top: 50%;
-  z-index: 1;
+  /* stays under the sticky label column, which sits at z-index 6 */
+  z-index: 2;
+  display: flex;
   overflow: hidden;
-  height: 18px;
+  align-items: center;
+  height: 17px;
   padding: 0;
-  border: 1px solid transparent;
+  border: 1px solid var(--group-color, #7c5cfc);
   border-radius: 5px;
-  transform: translateY(-50%);
-  transition: filter 140ms ease;
+  cursor: pointer;
+  transition:
+    filter 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.gantt-bar:hover,
+.gantt-bar:focus-visible {
+  z-index: 4;
+  box-shadow: 0 3px 10px rgb(76 58 150 / 22%);
 }
 
 .gantt-bar:hover,
@@ -5707,6 +5727,7 @@ button.gantt-label:hover .gantt-label__title {
   bottom: 0;
   left: 0;
   border-radius: 4px;
+  opacity: 0.55;
 }
 
 .gantt-bar__label {
@@ -9204,5 +9225,319 @@ button.gantt-label:hover .gantt-label__title {
 
   .date-range > i {
     display: none;
+  }
+}
+
+/* ---------- 计划进度表：项目 / 模块时间线 ---------- */
+
+.activity-gantt__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gantt-expand-all {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.gantt-expand-all:hover {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+
+.gantt-label__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.gantt-label--module {
+  padding-left: 58px;
+  cursor: default;
+}
+
+.gantt-label--module .gantt-label__title {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gantt-track--project,
+.gantt-track--module {
+  padding: 6px 0;
+}
+
+.gantt-span {
+  position: absolute;
+  display: flex;
+  overflow: hidden;
+  align-items: center;
+  height: 20px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.gantt-span--project {
+  top: 50%;
+  height: 22px;
+  transform: translateY(-50%);
+  cursor: default;
+}
+
+.gantt-span__fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  opacity: 0.45;
+}
+
+.gantt-span__label {
+  position: relative;
+  padding: 0 9px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gantt-module-line {
+  position: absolute;
+  top: 50%;
+  height: 3px;
+  border: 0;
+  border-radius: 999px;
+  transform: translateY(-50%);
+}
+
+.gantt-plan-outline {
+  position: absolute;
+  z-index: 1;
+  height: 21px;
+  border: 1px dashed rgb(124 92 252 / 55%);
+  border-radius: 6px;
+  background: rgb(124 92 252 / 5%);
+  pointer-events: none;
+}
+
+/* ---------- 说明气泡（把长提示收进小图标） ---------- */
+
+.hint-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 5px;
+}
+
+.hint-icon__button {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--muted);
+  cursor: help;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.hint-icon__button:hover,
+.hint-icon__button:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+
+.hint-icon__bubble {
+  position: fixed;
+  z-index: 2000;
+  display: block;
+  width: 268px;
+  padding: 11px 13px;
+  border: 1px solid #e4defa;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgb(45 35 100 / 18%);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.7;
+  pointer-events: none;
+  text-align: left;
+  white-space: normal;
+}
+
+/* ---------- 个人资料内的通知区块 ---------- */
+
+.notification-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+
+.notification-card__header h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.notification-card__header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- 伙伴协作页布局 ---------- */
+
+.partners-topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.partners-topbar__title h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.015em;
+}
+
+.partners-topbar__title p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.partners-topbar__actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.partners-date {
+  width: 190px;
+}
+
+.invitation-banner {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border: 1px solid #d9cffb;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgb(124 92 252 / 9%), rgb(124 92 252 / 3%));
+}
+
+.invitation-banner header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.invitation-banner header strong {
+  color: var(--primary-dark);
+  font-size: 15px;
+}
+
+.invitation-banner header span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.invitation-banner ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.partners-layout {
+  display: grid;
+  align-items: start;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+}
+
+.partners-side {
+  display: grid;
+  gap: 20px;
+}
+
+.partners-layout .collaboration-card__header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.partner-list-card .partner-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.partner-list-card .partner-search input {
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: none;
+  background: #fafaff;
+  font: inherit;
+}
+
+.partner-list-card .partner-search input:focus {
+  border-color: var(--focus);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgb(124 92 252 / 14%);
+}
+
+.partner-list-card .search-results {
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.relationship-more__body h3 {
+  margin: 12px 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (width <= 1020px) {
+  .partners-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (width <= 640px) {
+  .partners-topbar__actions {
+    width: 100%;
+  }
+
+  .partners-date {
+    flex: 1 1 auto;
+    width: auto;
   }
 }
