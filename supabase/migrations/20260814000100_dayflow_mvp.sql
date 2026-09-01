@@ -561,8 +561,11 @@ using (
   (
     is_searchable
     or exists (
+      -- A pending invitation grants the same narrow read an accepted one
+      -- does, so the recipient can always see who invited them even if the
+      -- requester later turns discovery off.
       select 1 from public.partnerships
-      where status = 'ACCEPTED' and deleted_at is null
+      where status in ('ACCEPTED', 'PENDING') and deleted_at is null
         and (
           (requester_id = profiles.id and addressee_id = public.app_current_user_id())
           or (addressee_id = profiles.id and requester_id = public.app_current_user_id())

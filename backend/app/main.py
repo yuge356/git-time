@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -80,6 +82,44 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+
+
+@app.exception_handler(SQLAlchemyTimeoutError)
+async def pool_timeout_handler(_: Request, exc: SQLAlchemyTimeoutError) -> JSONResponse:
+    """Answer a saturated connection pool with a retryable 503.
+
+    The pool is deliberately tiny because the managed session-mode pooler
+    caps the whole project at a handful of client slots. When a page opens
+    several requests at once the surplus ones wait for a free connection and
+    can time out. That is a transient capacity problem, not a broken
+    request: 503 tells the client to back off and replay instead of showing
+    an alarming "server error" banner over empty charts.
+    """
+
+    logger.warning("Database connection pool exhausted: %s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "服务器繁忙，请稍后重试。"},
+        headers={"Retry-After": "1"},
+    )
+
+
+@app.exception_handler(DBAPIError)
+async def database_connection_handler(request: Request, exc: DBAPIError) -> JSONResponse:
+    """Answer a dropped or refused database connection with a retryable 503.
+
+    Only a connection the driver actually invalidated is transient. A query
+    the database understood and rejected is a real failure and keeps its 500.
+    """
+
+    if not exc.connection_invalidated:
+        return await unhandled_exception_handler(request, exc)
+    logger.warning("Database connection was invalidated: %s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "数据库连接已断开，请稍后重试。"},
+        headers={"Retry-After": "1"},
+    )
 
 
 @app.exception_handler(Exception)

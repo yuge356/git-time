@@ -385,3 +385,95 @@ async def test_completed_project_keeps_existing_today_item(client: AsyncClient) 
     assert reopened.json()["items"][0]["title"] == (
         "今天已安排的项目任务 project/今天已安排的项目任务"
     )
+
+
+async def test_auto_populate_adds_scheduled_and_due_tasks(client: AsyncClient) -> None:
+    """A task scheduled on the projects page lands in that day's plan."""
+
+    token, _ = await register_user(client, "scheduled_today")
+    today = date.today()
+    _, module, _ = await create_structured_task(client, token, "排期")
+
+    due_today = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "今天截止",
+            "node_type": "TASK",
+            "parent_id": module["id"],
+            "due_date": today.isoformat(),
+            "estimated_seconds": 900,
+        },
+    )
+    planned_window = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "本周排期",
+            "node_type": "TASK",
+            "parent_id": module["id"],
+            "planned_start_date": (today - timedelta(days=1)).isoformat(),
+            "planned_end_date": (today + timedelta(days=2)).isoformat(),
+            "estimated_seconds": 1_800,
+        },
+    )
+    unscheduled = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "还没排期",
+            "node_type": "TASK",
+            "parent_id": module["id"],
+            "estimated_seconds": 600,
+        },
+    )
+    assert due_today.status_code == 201
+    assert planned_window.status_code == 201
+    assert unscheduled.status_code == 201
+
+    plan = await create_plan(client, token, today)
+    populated = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/auto-populate",
+        headers=auth_header(token),
+    )
+    assert populated.status_code == 200
+    assert {item["task_id"] for item in populated.json()["items"]} == {
+        due_today.json()["id"],
+        planned_window.json()["id"],
+    }
+
+
+async def test_auto_populate_skips_tasks_that_own_subtasks(client: AsyncClient) -> None:
+    """A task with subtasks is a container and can never be timed."""
+
+    token, _ = await register_user(client, "scheduled_container")
+    today = date.today()
+    _, module, parent_task = await create_structured_task(client, token, "容器")
+    scheduled_parent = await client.patch(
+        f"/api/v1/tasks/{parent_task['id']}",
+        headers=auth_header(token),
+        json={"due_date": today.isoformat()},
+    )
+    assert scheduled_parent.status_code == 200
+    subtask = await client.post(
+        "/api/v1/tasks",
+        headers=auth_header(token),
+        json={
+            "title": "子任务",
+            "node_type": "TASK",
+            "parent_id": parent_task["id"],
+            "due_date": today.isoformat(),
+            "estimated_seconds": 600,
+        },
+    )
+    assert subtask.status_code == 201
+
+    plan = await create_plan(client, token, today)
+    populated = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/auto-populate",
+        headers=auth_header(token),
+    )
+    assert populated.status_code == 200
+    assert [item["task_id"] for item in populated.json()["items"]] == [
+        subtask.json()["id"]
+    ]

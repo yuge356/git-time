@@ -115,3 +115,18 @@ class AnalyticsDashboard(BaseModel):
     range_summary: AnalyticsSummary
     today_summary: AnalyticsSummary
     today_check_in: CheckInResponse
+
+
+class TodayOverview(BaseModel):
+    """Every chart the Today page draws, returned through one request.
+
+    The page used to issue three separate analytics requests on load. Each
+    one re-read the owner's whole task and session history, and together
+    they claimed more simultaneous database connections than the pooled
+    backend can hold -- the surplus requests timed out and surfaced as a red
+    "server error" banner with empty charts. One request reads the rows once.
+    """
+
+    calendar_trend: list[DailyTrendPoint]
+    hourly_focus: HourlyFocusResponse
+    task_daily: TaskDailyResponse

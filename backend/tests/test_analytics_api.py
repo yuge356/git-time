@@ -311,3 +311,93 @@ async def test_task_daily_series_buckets_seconds_per_task_and_day(
         params={"date_from": today.isoformat(), "date_to": yesterday.isoformat()},
     )
     assert reversed_range.status_code == 422
+
+
+async def test_today_overview_matches_the_separate_endpoints(client: AsyncClient) -> None:
+    """One bundled request returns exactly what three requests returned."""
+
+    from zoneinfo import ZoneInfo
+
+    token, _ = await register_user(client, "today_overview")
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    task_id = await create_task(client, token, "Overview lesson")
+    plan = await create_plan(client, token, today)
+    item = await add_item(client, token, plan["id"], task_id=task_id)
+    done = await client.patch(
+        f"/api/v1/daily-plan-items/{item['id']}",
+        headers=auth_header(token),
+        json={"status": "DONE"},
+    )
+    assert done.status_code == 200
+
+    local_tz = ZoneInfo("Asia/Shanghai")
+    for day, hour, duration in ((yesterday, 10, 900), (today, 15, 600)):
+        started = datetime.combine(day, time(hour, 0), tzinfo=local_tz).astimezone(UTC)
+        response = await client.put(
+            f"/api/v1/sessions/{uuid4()}",
+            headers=auth_header(token),
+            json=snapshot(
+                task_id,
+                str(uuid4()),
+                "COMPLETED",
+                started,
+                started + timedelta(seconds=duration),
+                duration,
+                ended_at=started + timedelta(seconds=duration),
+            ),
+        )
+        assert response.status_code == 200
+
+    calendar_from = today.replace(day=1)
+    gantt_from = today - timedelta(days=30)
+    overview = await client.get(
+        "/api/v1/analytics/today-overview",
+        headers=auth_header(token),
+        params={
+            "calendar_from": calendar_from.isoformat(),
+            "calendar_to": today.isoformat(),
+            "focus_day": today.isoformat(),
+            "gantt_from": gantt_from.isoformat(),
+            "gantt_to": today.isoformat(),
+        },
+    )
+    assert overview.status_code == 200
+    body = overview.json()
+
+    summary = await client.get(
+        "/api/v1/analytics/summary",
+        headers=auth_header(token),
+        params={"date_from": calendar_from.isoformat(), "date_to": today.isoformat()},
+    )
+    hourly = await client.get(
+        "/api/v1/analytics/hourly-focus",
+        headers=auth_header(token),
+        params={"day": today.isoformat()},
+    )
+    task_daily = await client.get(
+        "/api/v1/analytics/task-daily",
+        headers=auth_header(token),
+        params={"date_from": gantt_from.isoformat(), "date_to": today.isoformat()},
+    )
+    assert body["calendar_trend"] == summary.json()["daily_trend"]
+    assert body["hourly_focus"] == hourly.json()
+    assert body["task_daily"] == task_daily.json()
+
+
+async def test_today_overview_rejects_reversed_ranges(client: AsyncClient) -> None:
+    token, _ = await register_user(client, "today_overview_range")
+    today = date.today()
+
+    response = await client.get(
+        "/api/v1/analytics/today-overview",
+        headers=auth_header(token),
+        params={
+            "calendar_from": today.isoformat(),
+            "calendar_to": (today - timedelta(days=1)).isoformat(),
+            "focus_day": today.isoformat(),
+            "gantt_from": (today - timedelta(days=7)).isoformat(),
+            "gantt_to": today.isoformat(),
+        },
+    )
+    assert response.status_code == 422

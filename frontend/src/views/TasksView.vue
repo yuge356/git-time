@@ -44,6 +44,13 @@
                 <input v-model="showCompletedProjects" type="checkbox" />
                 显示已完成项目
               </label>
+              <button
+                class="button button--quiet"
+                type="button"
+                @click="templateLibraryOpen = true"
+              >
+                模板库
+              </button>
               <button class="button button--primary" type="button" @click="openCreate">
                 新建项目
               </button>
@@ -52,6 +59,16 @@
 
           <p class="task-drag-help">
             {{ taskViewHelpText }}
+          </p>
+
+          <p
+            v-if="hiddenCompletedCount > 0 && visibleProjectTree.length > 0"
+            class="task-hidden-hint"
+          >
+            另有 {{ hiddenCompletedCount }} 个已完成项目被隐藏。
+            <button type="button" class="text-action" @click="showCompletedProjects = true">
+              显示它们
+            </button>
           </p>
 
           <FormMessage :message="loadError || timer.syncError" />
@@ -68,7 +85,20 @@
             </button>
           </div>
 
-          <template v-else-if="tasks.tree.length">
+          <div v-else-if="visibleProjectTree.length === 0" class="empty-state">
+            <span aria-hidden="true">✓</span>
+            <h3>{{ hiddenCompletedCount }} 个项目已标记完成</h3>
+            <p>已完成的项目默认隐藏，计时数据仍保留在时间统计与计划进度表中。</p>
+            <button
+              class="button button--primary"
+              type="button"
+              @click="showCompletedProjects = true"
+            >
+              显示已完成项目
+            </button>
+          </div>
+
+          <template v-else>
             <section v-if="taskViewMode === 'MINDMAP'" class="task-mindmap-shell">
               <header class="task-mindmap-toolbar">
                 <div>
@@ -201,6 +231,13 @@
           </template>
 
           <Teleport to="body">
+            <ProjectTemplateLibrary
+              v-if="templateLibraryOpen"
+              @close="templateLibraryOpen = false"
+            />
+          </Teleport>
+
+          <Teleport to="body">
             <div
               v-if="editorDialogOpen"
               class="task-editor-modal__backdrop"
@@ -289,7 +326,6 @@
                     :parent-task="creatingChildParent"
                     :inherited-default-estimated-seconds="inheritedDefaultEstimatedSeconds"
                     :inherited-default-repeat-rule="inheritedDefaultRepeatRule"
-                    :inherited-default-reminder-time="inheritedDefaultReminderTime"
                     :saving="tasks.saving"
                     :external-error="editorError"
                     @close="closeEditor"
@@ -302,8 +338,11 @@
                     node-type="PROJECT"
                     :saving="tasks.saving"
                     :external-error="editorError"
+                    :templates="templates.options"
+                    :selected-template-key="selectedTemplateKey"
                     @close="closeEditor"
                     @create="createTask"
+                    @select-template="selectedTemplateKey = $event"
                   />
                 </div>
               </section>
@@ -322,12 +361,15 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
+import ProjectTemplateLibrary from '@/components/tasks/ProjectTemplateLibrary.vue'
 import TaskEditor from '@/components/tasks/TaskEditor.vue'
 import TaskTreeNode from '@/components/tasks/TaskTreeNode.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useDailyPlanStore } from '@/stores/daily-plans'
+import { useProjectTemplateStore } from '@/stores/project-templates'
 import { useTaskStore } from '@/stores/tasks'
 import { useTimerStore } from '@/stores/timer'
+import type { TemplateNode } from '@/types/project-template'
 import type {
   Task,
   TaskCreatePayload,
@@ -342,6 +384,7 @@ import { projectPrefixedTaskTitle } from '@/utils/task-title'
 defineOptions({ name: 'TasksView' })
 
 const tasks = useTaskStore()
+const templates = useProjectTemplateStore()
 const auth = useAuthStore()
 const daily = useDailyPlanStore()
 const timer = useTimerStore()
@@ -355,6 +398,8 @@ const deepLinkTaskId = ref<string | null>(null)
 const draggingTask = ref<Task | null>(null)
 const loadError = ref('')
 const editorError = ref('')
+const templateLibraryOpen = ref(false)
+const selectedTemplateKey = ref('')
 const actionMessage = ref('')
 type TaskViewMode = 'MINDMAP' | 'CARDS'
 const TASK_VIEW_MODE_STORAGE_KEY = 'time-budget:project-view-mode'
@@ -377,6 +422,11 @@ const visibleProjectTree = computed(() =>
   showCompletedProjects.value
     ? tasks.tree
     : tasks.tree.filter((project) => project.status !== 'DONE'),
+)
+// 被“显示已完成项目”开关隐藏的项目数量。之前列表为空时页面既不显示空状态
+// 也不显示任何项目，看起来就像项目连同任务一起丢失了。
+const hiddenCompletedCount = computed(() =>
+  tasks.tree.length - visibleProjectTree.value.length,
 )
 
 async function toggleProjectComplete(task: Task): Promise<void> {
@@ -474,9 +524,6 @@ const inheritedDefaultEstimatedSeconds = computed<number | null>(() =>
 const inheritedDefaultRepeatRule = computed<TaskRepeatRule | null>(() =>
   resolveInheritedDefault('default_repeat_rule'),
 )
-const inheritedDefaultReminderTime = computed<string | null>(() =>
-  resolveInheritedDefault('default_daily_reminder_time'),
-)
 
 watch(
   editorDialogOpen,
@@ -516,7 +563,6 @@ watch(
 type ContainerDefaultKey =
   | 'default_estimated_seconds'
   | 'default_repeat_rule'
-  | 'default_daily_reminder_time'
 
 function resolveInheritedDefault<K extends ContainerDefaultKey>(key: K): Task[K] | null {
   let current = creatingChildParent.value
@@ -604,6 +650,9 @@ onMounted(async () => {
     const ownerId = auth.user?.profile.id
     if (ownerId) {
       await Promise.all([tasks.initialize(ownerId), timer.initialize(ownerId)])
+      // Templates are optional decoration for this page: load them after the
+      // task tree so they never delay it or block it on their own failure.
+      void templates.initialize(ownerId)
     }
   } catch (error) {
     loadError.value = getApiErrorMessage(error)
@@ -644,6 +693,7 @@ function openCreate(): void {
   creatingChildParentId.value = null
   creatingChildNodeType.value = null
   creating.value = true
+  selectedTemplateKey.value = ''
   editorError.value = ''
   actionMessage.value = ''
 }
@@ -677,6 +727,7 @@ function closeEditor(): void {
   creatingChildParentId.value = null
   creatingChildNodeType.value = null
   selectedTask.value = null
+  selectedTemplateKey.value = ''
   editorError.value = ''
 }
 
@@ -684,11 +735,51 @@ async function createTask(payload: TaskCreatePayload): Promise<void> {
   editorError.value = ''
   try {
     const createdTask = await tasks.create(payload)
+    const applied = await applySelectedTemplate(createdTask)
     closeEditor()
-    actionMessage.value = `已创建“${createdTask.title}”。`
+    actionMessage.value = applied
+      ? `已按模板创建“${createdTask.title}”，共 ${applied} 个模块与任务。`
+      : `已创建“${createdTask.title}”。`
   } catch (error) {
     editorError.value = getApiErrorMessage(error)
   }
+}
+
+/**
+ * Materialize the selected template under a freshly created project. The
+ * nodes go through the ordinary task store, so they are cached locally and
+ * replayed through the same offline outbox as any hand-made task.
+ */
+async function applySelectedTemplate(project: Task): Promise<number> {
+  const template = templates.options.find((option) => option.key === selectedTemplateKey.value)
+  selectedTemplateKey.value = ''
+  if (!template || project.node_type !== 'PROJECT') return 0
+
+  let created = 0
+  const createNodes = async (nodes: TemplateNode[], parentId: string): Promise<void> => {
+    for (const node of nodes) {
+      const child = await tasks.create({
+        parent_id: parentId,
+        node_type: node.node_type,
+        title: node.title,
+        estimated_seconds: node.node_type === 'TASK' ? node.estimated_seconds : 0,
+        budget_mode: 'ROLLUP',
+        fixed_budget_seconds: null,
+        default_estimated_seconds:
+          node.node_type === 'MODULE' ? template.default_estimated_seconds : null,
+        default_repeat_rule: node.node_type === 'MODULE' ? template.default_repeat_rule : null,
+        default_daily_reminder_time: null,
+        repeat_rule:
+          node.node_type === 'TASK' ? (template.default_repeat_rule ?? 'NONE') : 'NONE',
+        repeat_end_date: null,
+        daily_reminder_time: null,
+      })
+      created += 1
+      if (node.children.length > 0) await createNodes(node.children, child.id)
+    }
+  }
+  await createNodes(template.structure, project.id)
+  return created
 }
 
 async function updateTask(taskId: string, payload: TaskUpdatePayload): Promise<void> {

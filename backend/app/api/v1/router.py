@@ -9,6 +9,7 @@ from app.api.v1 import (
     notifications,
     partnerships,
     profiles,
+    project_templates,
     sessions,
     sharing,
     tasks,
@@ -18,6 +19,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(profiles.router)
 api_router.include_router(tasks.router)
+api_router.include_router(project_templates.router)
 api_router.include_router(sessions.router)
 api_router.include_router(daily_plans.router)
 api_router.include_router(analytics.router)

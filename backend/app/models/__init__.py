@@ -3,6 +3,7 @@
 from app.models.daily_plan import DailyPlan, DailyPlanItem, DailyPlanItemStatus
 from app.models.partnership import Partnership, PartnershipStatus, UserBlock
 from app.models.profile import Profile
+from app.models.project_template import ProjectTemplate
 from app.models.session import Session, SessionStatus
 from app.models.sharing import (
     DailyPlanShare,
@@ -33,6 +34,7 @@ __all__ = [
     "Partnership",
     "PartnershipStatus",
     "Profile",
+    "ProjectTemplate",
     "Session",
     "SessionStatus",
     "Task",

@@ -96,16 +96,14 @@
         </span>
 
         <span
-          v-if="task.node_type === 'TASK' && (task.repeat_rule !== 'NONE' || task.daily_reminder_time || task.repeat_end_date)"
+          v-if="task.node_type === 'TASK' && (task.repeat_rule !== 'NONE' || task.repeat_end_date || plannedWindowLabel)"
           class="task-row__schedule"
         >
           <span v-if="task.repeat_rule !== 'NONE'">{{ repeatLabel }}</span>
           <span v-if="task.repeat_end_date" class="task-row__schedule-end">
             截止 {{ task.repeat_end_date }}
           </span>
-          <span v-if="task.daily_reminder_time">
-            每日 {{ task.daily_reminder_time.slice(0, 5) }} 提醒
-          </span>
+          <span v-if="plannedWindowLabel">{{ plannedWindowLabel }}</span>
         </span>
 
         <BudgetIndicator
@@ -393,6 +391,14 @@ const repeatLabels = {
 const repeatLabel = computed(() =>
   props.task.repeat_rule === 'NONE' ? '' : repeatLabels[props.task.repeat_rule],
 )
+// 已安排的任务会在安排期内自动出现在“今日任务”里，节点上标出这段时间。
+const plannedWindowLabel = computed(() => {
+  const start = props.task.planned_start_date
+  const end = props.task.planned_end_date
+  if (!start && !end) return ''
+  if (start && end) return start === end ? `安排 ${start}` : `安排 ${start} → ${end}`
+  return start ? `安排自 ${start}` : `安排至 ${end}`
+})
 const hasChildren = computed(() => props.task.children.length > 0)
 const startDisabled = computed(() =>
   props.timerBusy

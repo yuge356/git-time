@@ -11,6 +11,36 @@
     </header>
 
     <form class="form-stack" @submit.prevent="submit">
+      <fieldset v-if="showTemplatePicker" class="budget-fieldset template-picker">
+        <legend>从模板开始</legend>
+        <div class="template-picker__options" role="radiogroup" aria-label="项目模板">
+          <button
+            type="button"
+            :class="['template-chip', { 'template-chip--active': !selectedTemplateKey }]"
+            :aria-pressed="!selectedTemplateKey"
+            @click="$emit('select-template', '')"
+          >
+            <span aria-hidden="true">＋</span>
+            空白项目
+          </button>
+          <button
+            v-for="option in templates"
+            :key="option.key"
+            type="button"
+            :class="['template-chip', { 'template-chip--active': selectedTemplateKey === option.key }]"
+            :aria-pressed="selectedTemplateKey === option.key"
+            :title="option.description"
+            @click="$emit('select-template', option.key)"
+          >
+            <span aria-hidden="true">{{ option.icon }}</span>
+            {{ option.name }}
+          </button>
+        </div>
+        <p v-if="selectedTemplate" class="template-picker__preview">
+          将创建 {{ templatePreview }}：{{ templateOutlineText }}
+        </p>
+      </fieldset>
+
       <label class="field">
         <span>{{ titleFieldLabel }}</span>
         <input
@@ -76,17 +106,15 @@
             <small>留空表示永不截止。</small>
           </label>
 
-          <div class="reminder-setting">
-            <label class="toggle-field">
-              <input v-model="form.reminder_enabled" type="checkbox" />
-              <span>每日提醒</span>
-            </label>
-            <label v-if="form.reminder_enabled" class="field">
-              <span>提醒时间</span>
-              <input v-model="form.reminder_time" type="time" required />
-            </label>
-            <small v-else>开启后可设置每天的提醒时间。</small>
-          </div>
+          <label class="field">
+            <span>安排开始</span>
+            <input v-model="form.planned_start_date" type="date" />
+          </label>
+          <label class="field">
+            <span>安排结束</span>
+            <input v-model="form.planned_end_date" type="date" />
+            <small>安排期内的每一天，这项任务都会出现在“今日任务”里。</small>
+          </label>
         </div>
 
         <label v-if="task" class="field">
@@ -151,16 +179,6 @@
                 <option value="MONTHLY">每月</option>
               </select>
             </label>
-            <div class="reminder-setting">
-              <label class="toggle-field">
-                <input v-model="form.default_reminder_enabled" type="checkbox" />
-                <span>设置默认提醒</span>
-              </label>
-              <label v-if="form.default_reminder_enabled" class="field">
-                <span>默认提醒时间</span>
-                <input v-model="form.default_reminder_time" type="time" required />
-              </label>
-            </div>
           </div>
         </fieldset>
       </template>
@@ -183,6 +201,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 
 import FormMessage from '@/components/FormMessage.vue'
+import type { TemplateOption } from '@/types/project-template'
+import { countTemplateNodes } from '@/types/project-template'
 import type {
   Task,
   TaskBudgetMode,
@@ -206,7 +226,8 @@ const props = withDefaults(defineProps<{
   parentTask?: Task | null
   inheritedDefaultEstimatedSeconds?: number | null
   inheritedDefaultRepeatRule?: TaskRepeatRule | null
-  inheritedDefaultReminderTime?: string | null
+  templates?: TemplateOption[]
+  selectedTemplateKey?: string
 }>(), {
   externalError: '',
   parentId: null,
@@ -215,7 +236,8 @@ const props = withDefaults(defineProps<{
   parentTask: null,
   inheritedDefaultEstimatedSeconds: null,
   inheritedDefaultRepeatRule: null,
-  inheritedDefaultReminderTime: null,
+  templates: () => [],
+  selectedTemplateKey: '',
 })
 
 const resolvedNodeType = computed(() => props.task?.node_type ?? props.nodeType)
@@ -246,7 +268,38 @@ const emit = defineEmits<{
   close: []
   create: [payload: TaskCreatePayload]
   update: [taskId: string, payload: TaskUpdatePayload]
+  'select-template': [templateKey: string]
 }>()
+
+// Templates only make sense for a brand-new project: modules and tasks are
+// created by applying one, and an existing project already has its structure.
+const showTemplatePicker = computed(
+  () => !props.task && resolvedNodeType.value === 'PROJECT' && props.templates.length > 0,
+)
+const selectedTemplate = computed(
+  () => props.templates.find((option) => option.key === props.selectedTemplateKey) ?? null,
+)
+const templatePreview = computed(() => {
+  if (!selectedTemplate.value) return ''
+  const { modules, tasks } = countTemplateNodes(selectedTemplate.value.structure)
+  const parts: string[] = []
+  if (modules > 0) parts.push(`${modules} 个模块`)
+  if (tasks > 0) parts.push(`${tasks} 个任务`)
+  return parts.join(' 和 ') || '空结构'
+})
+const templateOutlineText = computed(() =>
+  (selectedTemplate.value?.structure ?? []).map((node) => node.title).join('、'),
+)
+
+// Picking a template pre-fills the project name and its per-task defaults so
+// the form matches what will actually be created.
+watch(selectedTemplate, (option) => {
+  if (!option || props.task) return
+  if (!form.title) form.title = option.name
+  form.budget_mode = option.budget_mode
+  form.default_repeat_rule = option.default_repeat_rule ?? ''
+  ;[form.default_hours, form.default_minutes] = splitDuration(option.default_estimated_seconds)
+})
 
 interface EditorForm {
   title: string
@@ -257,16 +310,14 @@ interface EditorForm {
   status: TaskStatus
   repeat_rule: TaskRepeatRule
   repeat_end_date: string
-  reminder_enabled: boolean
-  reminder_time: string
+  planned_start_date: string
+  planned_end_date: string
   budget_mode: TaskBudgetMode
   fixed_hours: number
   fixed_minutes: number
   default_hours: number
   default_minutes: number
   default_repeat_rule: TaskRepeatRule | ''
-  default_reminder_enabled: boolean
-  default_reminder_time: string
 }
 
 const errorMessage = ref('')
@@ -279,16 +330,14 @@ const form = reactive<EditorForm>({
   status: 'TODO',
   repeat_rule: 'NONE',
   repeat_end_date: '',
-  reminder_enabled: false,
-  reminder_time: '08:00',
+  planned_start_date: '',
+  planned_end_date: '',
   budget_mode: 'ROLLUP',
   fixed_hours: 0,
   fixed_minutes: 0,
   default_hours: 0,
   default_minutes: 0,
   default_repeat_rule: '',
-  default_reminder_enabled: false,
-  default_reminder_time: '08:00',
 })
 
 function splitDuration(seconds: number | null | undefined): [number, number] {
@@ -312,14 +361,10 @@ function resetForm(): void {
     ?? (resolvedNodeType.value === 'TASK' ? props.inheritedDefaultRepeatRule : null)
     ?? 'NONE'
   form.repeat_end_date = source?.repeat_end_date ?? ''
-  const taskReminder = source?.daily_reminder_time
-    ?? (resolvedNodeType.value === 'TASK' ? props.inheritedDefaultReminderTime : null)
-  form.reminder_enabled = Boolean(taskReminder)
-  form.reminder_time = taskReminder?.slice(0, 5) ?? '08:00'
+  form.planned_start_date = source?.planned_start_date ?? ''
+  form.planned_end_date = source?.planned_end_date ?? ''
   form.budget_mode = source?.budget_mode ?? 'ROLLUP'
   form.default_repeat_rule = source?.default_repeat_rule ?? ''
-  form.default_reminder_enabled = Boolean(source?.default_daily_reminder_time)
-  form.default_reminder_time = source?.default_daily_reminder_time?.slice(0, 5) ?? '08:00'
   errorMessage.value = ''
 }
 
@@ -351,6 +396,14 @@ function submit(): void {
     errorMessage.value = '固定上限必须大于 0。'
     return
   }
+  if (
+    form.planned_start_date
+    && form.planned_end_date
+    && form.planned_start_date > form.planned_end_date
+  ) {
+    errorMessage.value = '安排开始日期不能晚于结束日期。'
+    return
+  }
 
   try {
     if (props.task) {
@@ -365,7 +418,12 @@ function submit(): void {
           status: form.status,
           repeat_rule: form.repeat_rule,
           repeat_end_date: form.repeat_end_date || null,
-          daily_reminder_time: form.reminder_enabled ? form.reminder_time : null,
+          planned_start_date: form.planned_start_date || null,
+          planned_end_date: form.planned_end_date || null,
+          // Daily reminders were removed from projects: a scheduled task now
+          // shows up in the today list on its own, so any legacy reminder time
+          // is cleared the next time the task is saved.
+          daily_reminder_time: null,
         })
       } else {
         Object.assign(payload, {
@@ -373,9 +431,7 @@ function submit(): void {
           fixed_budget_seconds: form.budget_mode === 'FIXED_CAP' ? fixedBudgetSeconds : null,
           default_estimated_seconds: defaultEstimatedSeconds > 0 ? defaultEstimatedSeconds : null,
           default_repeat_rule: form.default_repeat_rule || null,
-          default_daily_reminder_time: form.default_reminder_enabled
-            ? form.default_reminder_time
-            : null,
+          default_daily_reminder_time: null,
         })
       }
       emit('update', props.task.id, payload)
@@ -399,14 +455,12 @@ function submit(): void {
       default_repeat_rule: !isExecutableTask.value
         ? (form.default_repeat_rule || null)
         : null,
-      default_daily_reminder_time: !isExecutableTask.value && form.default_reminder_enabled
-        ? form.default_reminder_time
-        : null,
+      default_daily_reminder_time: null,
       repeat_rule: isExecutableTask.value ? form.repeat_rule : 'NONE',
       repeat_end_date: isExecutableTask.value ? (form.repeat_end_date || null) : null,
-      daily_reminder_time: isExecutableTask.value && form.reminder_enabled
-        ? form.reminder_time
-        : null,
+      planned_start_date: isExecutableTask.value ? (form.planned_start_date || null) : null,
+      planned_end_date: isExecutableTask.value ? (form.planned_end_date || null) : null,
+      daily_reminder_time: null,
     })
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)

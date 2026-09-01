@@ -98,6 +98,22 @@ function taskRepeatsOnDate(task: Task, targetDate: string): boolean {
   return false
 }
 
+/**
+ * Whether a task is scheduled to be worked on one date. Mirrors the backend
+ * rule exactly: recurrence, an explicit due date, or a planned window drawn
+ * on the Gantt chart all place the task in that day's list. Scheduling a task
+ * on the projects page is therefore all it takes for it to appear under 今日任务.
+ */
+export function taskScheduledOnDate(task: Task, targetDate: string): boolean {
+  if (task.node_type !== 'TASK' || task.status === 'DONE') return false
+  if (taskRepeatsOnDate(task, targetDate)) return true
+  if (task.due_date === targetDate) return true
+  const start = task.planned_start_date
+  const end = task.planned_end_date
+  if (!start && !end) return false
+  return (start ?? targetDate) <= targetDate && targetDate <= (end ?? targetDate)
+}
+
 export const useDailyPlanStore = defineStore('daily-plans', {
   state: (): DailyPlanState => ({
     ownerId: null,
@@ -258,7 +274,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
               this.plan =
                 (await readCachedDailyPlan(this.ownerId, targetDate)) ??
                 (await this.createLocalPlan())
-              await this.autoPopulateLocalRecurringItems()
+              await this.autoPopulateLocalScheduledItems()
               await this.buildLocalCheckIn()
               return
             }
@@ -287,7 +303,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
 
         this.plan = (await readCachedDailyPlan(this.ownerId, targetDate)) ?? null
         if (!this.plan) this.plan = await this.createLocalPlan()
-        await this.autoPopulateLocalRecurringItems()
+        await this.autoPopulateLocalScheduledItems()
         this.pendingCount = await pendingSyncCount(this.ownerId)
         this.failedCount = await getFailedSyncCount(this.ownerId)
         await this.buildLocalCheckIn()
@@ -363,7 +379,7 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       return recalculatePlan({ ...serverPlan, items: repaired })
     },
 
-    async autoPopulateLocalRecurringItems(): Promise<void> {
+    async autoPopulateLocalScheduledItems(): Promise<void> {
       if (!this.ownerId || !this.plan) return
       const taskNodes = await localDb.cachedTasks
         .where('owner_id')
@@ -372,10 +388,15 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       const existingTaskIds = new Set(
         this.plan.items.flatMap((item) => (item.task_id ? [item.task_id] : [])),
       )
+      // A task that owns subtasks is a container and can never be timed.
+      const parentIds = new Set(
+        taskNodes.flatMap((task) => (task.parent_id ? [task.parent_id] : [])),
+      )
       const dueTasks = taskNodes.filter(
         (task) =>
           !existingTaskIds.has(task.id) &&
-          taskRepeatsOnDate(task, this.selectedDate),
+          !parentIds.has(task.id) &&
+          taskScheduledOnDate(task, this.selectedDate),
       )
       if (dueTasks.length === 0) return
 
@@ -486,7 +507,10 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       })
     },
 
-    async addItem(payload: DailyPlanItemCreate): Promise<void> {
+    async addItem(
+      payload: DailyPlanItemCreate,
+      options: { deferSync?: boolean } = {},
+    ): Promise<void> {
       if (!this.ownerId || !this.plan) throw new Error('Daily plan is not loaded')
       this.saving = true
       const now = new Date().toISOString()
@@ -520,10 +544,13 @@ export const useDailyPlanStore = defineStore('daily-plans', {
         this.pendingCount = await pendingSyncCount(this.ownerId)
         // Adding a task is cache-first. The shared outbox serializes the
         // identical server write in the background, avoiding a visible wait
-        // for both the item request and a second check-in request.
-        void this.flushAndRefresh().catch(async () => {
-          this.failedCount = await getFailedSyncCount(this.ownerId!)
-        })
+        // for both the item request and a second check-in request. Bulk
+        // callers defer the flush so one import triggers one sync.
+        if (!options.deferSync) {
+          void this.flushAndRefresh().catch(async () => {
+            this.failedCount = await getFailedSyncCount(this.ownerId!)
+          })
+        }
       } finally {
         this.saving = false
       }
@@ -682,9 +709,9 @@ export const useDailyPlanStore = defineStore('daily-plans', {
     },
 
     /**
-     * Import project tasks that are due today (by `due_date` or repeat rule)
-     * but not yet present in today's daily plan. Safe to call repeatedly —
-     * tasks already referenced by an existing plan item are skipped.
+     * Import every project task scheduled for today that is not already in
+     * today's plan. Safe to call repeatedly — tasks already referenced by an
+     * existing plan item are skipped.
      */
     async syncProjectTasks(): Promise<void> {
       if (!this.plan || !this.ownerId) return
@@ -700,17 +727,25 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       )
       const candidates = taskStore.items.filter(
         (task) =>
-          task.node_type === 'TASK' &&
-          task.status !== 'DONE' &&
           !existingTaskIds.has(task.id) &&
           !parentIds.has(task.id) &&
-          (task.due_date === today || taskRepeatsOnDate(task, today)),
+          taskScheduledOnDate(task, today),
       )
+      // Queue all of them before flushing: addItem's per-item background sync
+      // would otherwise fire one request per task at the same moment.
       for (const task of candidates) {
-        await this.addItem({
-          task_id: task.id,
-          title: projectPrefixedTaskTitle(task, taskStore.items),
-          estimated_seconds: task.estimated_seconds,
+        await this.addItem(
+          {
+            task_id: task.id,
+            title: projectPrefixedTaskTitle(task, taskStore.items),
+            estimated_seconds: task.estimated_seconds,
+          },
+          { deferSync: true },
+        )
+      }
+      if (candidates.length > 0) {
+        await this.flushAndRefresh().catch(async () => {
+          this.failedCount = await getFailedSyncCount(this.ownerId!)
         })
       }
     },

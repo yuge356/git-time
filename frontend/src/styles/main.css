@@ -2839,6 +2839,16 @@ a {
   line-height: 1.65;
 }
 
+.task-hidden-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: -12px 0 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .task-root-dropzone {
   margin: 4px 0 12px;
   padding: 10px 14px;
@@ -8914,5 +8924,225 @@ button.gantt-label:hover .gantt-label__title {
     --glass-surface: var(--surface);
     --glass-surface-strong: var(--surface);
     --glass-blur: 0px;
+  }
+}
+
+/* ---------- 项目模板 ---------- */
+
+.template-picker__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.template-chip:hover {
+  border-color: var(--primary);
+}
+
+.template-chip--active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.template-picker__preview {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.template-library__backdrop {
+  position: fixed;
+  z-index: 1250;
+  inset: 0;
+  display: grid;
+  overflow: auto;
+  padding: clamp(18px, 4vh, 42px) 18px;
+  place-items: start center;
+  background: rgb(31 25 58 / 38%);
+  backdrop-filter: blur(5px);
+}
+
+.template-library {
+  display: flex;
+  width: min(680px, 100%);
+  max-height: calc(100vh - clamp(36px, 8vh, 84px));
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid #ddd5f7;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgb(35 27 70 / 24%);
+}
+
+.template-library__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.template-library__header h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+}
+
+.template-library__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.template-library__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.template-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.template-card__identity {
+  display: flex;
+  min-width: 0;
+  gap: 12px;
+}
+
+.template-card__icon {
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.template-card__identity strong {
+  font-size: 15px;
+}
+
+.template-card__badge {
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--primary-soft, #efeafd);
+  color: var(--primary-dark);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.template-card__identity p {
+  margin: 4px 0 2px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.template-card__identity small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.template-card__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-outline {
+  display: flex;
+  margin: 10px 0 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.template-outline--nested {
+  margin: 8px 0 0 26px;
+}
+
+.template-outline__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.template-outline__row input {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: none;
+  background: #fafaff;
+  font: inherit;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+}
+
+.template-outline__row input:focus {
+  border-color: var(--focus);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgb(124 92 252 / 14%);
+}
+
+.template-outline__row input[type='text'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.template-outline__row input[type='number'] {
+  width: 84px;
+  flex: 0 0 auto;
+}
+
+.template-outline__type {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: #f2eefc;
+  color: var(--primary-dark);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.template-outline__actions {
+  display: flex;
+  margin-top: 12px;
+  gap: 8px;
+}
+
+@media (width <= 640px) {
+  .template-card {
+    flex-direction: column;
+  }
+
+  .template-outline__row {
+    flex-wrap: wrap;
   }
 }

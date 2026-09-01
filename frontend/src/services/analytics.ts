@@ -4,6 +4,7 @@ import type {
   AnalyticsSummary,
   HourlyFocusDistribution,
   TaskDailyResponse,
+  TodayOverview,
 } from '@/types/analytics'
 
 const dashboardCache = new Map<string, AnalyticsDashboard>()
@@ -64,6 +65,29 @@ export const analyticsService = {
       params: {
         date_from: dateFrom,
         date_to: dateTo,
+      },
+    })
+    return data
+  },
+  /**
+   * Load the Today page's calendar, hourly focus and Gantt data at once.
+   * Three separate requests used to compete for the backend's very small
+   * database pool and regularly failed, leaving the page's charts empty.
+   */
+  async todayOverview(params: {
+    calendarFrom: string
+    calendarTo: string
+    focusDay: string
+    ganttFrom: string
+    ganttTo: string
+  }): Promise<TodayOverview> {
+    const { data } = await http.get<TodayOverview>('/analytics/today-overview', {
+      params: {
+        calendar_from: params.calendarFrom,
+        calendar_to: params.calendarTo,
+        focus_day: params.focusDay,
+        gantt_from: params.ganttFrom,
+        gantt_to: params.ganttTo,
       },
     })
     return data

@@ -66,6 +66,15 @@ function updateWasApplied(task: Task, payload: TaskUpdatePayload): boolean {
 const FLUSH_DEBOUNCE_MS = 600
 const flushTimers = new Map<string, number>()
 
+/**
+ * Guards against an older server snapshot overwriting a newer one. `load`
+ * and `flush` can overlap (route activation, debounced flush, focus retry);
+ * whichever fetch started first used to be able to finish last and replace
+ * the item list — and prune the local cache — with a list that predates a
+ * just-created project, making it vanish from the projects page.
+ */
+let listSequence = 0
+
 export const useTaskStore = defineStore('tasks', {
   state: (): TaskState => ({
     ownerId: null,
@@ -88,9 +97,28 @@ export const useTaskStore = defineStore('tasks', {
         children: [],
       }))
       const roots: TaskNode[] = []
+      // Every task must end up on screen. A node whose parent is missing --
+      // or whose ancestor chain loops back on itself after a bad offline
+      // replay -- is promoted to a root instead of silently disappearing
+      // from the projects page while still showing up everywhere else (the
+      // today page's task picker reads the same flat list).
+      const hasAncestorCycle = (node: TaskNode): boolean => {
+        const seen = new Set<string>([node.id])
+        let current: TaskNode | undefined = node
+        while (current?.parent_id) {
+          const parent = nodes.get(current.parent_id)
+          // A chain that simply runs out of ancestors is not a cycle: that
+          // orphan becomes a root itself and keeps its descendants.
+          if (!parent) return false
+          if (seen.has(parent.id)) return true
+          seen.add(parent.id)
+          current = parent
+        }
+        return false
+      }
       nodes.forEach((node) => {
         const parent = node.parent_id ? nodes.get(node.parent_id) : undefined
-        if (parent) parent.children.push(node)
+        if (parent && !hasAncestorCycle(node)) parent.children.push(node)
         else roots.push(node)
       })
       const sortTree = (items: TaskNode[]): void => {
@@ -176,8 +204,10 @@ export const useTaskStore = defineStore('tasks', {
      * Operations still sitting in the sync queue mean the server copy is
      * behind the local cache — never let it wipe unsynced local changes.
      */
-    async mergeServerItems(serverItems: Task[]): Promise<Task[]> {
+    async mergeServerItems(serverItems: Task[], sequence?: number): Promise<Task[]> {
       if (!this.ownerId) return serverItems
+      // A superseded fetch must not prune the cache with stale ids.
+      const isCurrent = sequence === undefined || sequence === listSequence
       const cached = await localDb.cachedTasks
         .where('owner_id')
         .equals(this.ownerId)
@@ -206,7 +236,7 @@ export const useTaskStore = defineStore('tasks', {
           }
           return item
         })
-        await this.dropStaleCache(serverItems, new Set())
+        if (isCurrent) await this.dropStaleCache(serverItems, new Set())
         await saveCachedTasks(merged)
         return merged
       }
@@ -223,7 +253,10 @@ export const useTaskStore = defineStore('tasks', {
       const optimisticCreates = cached.filter(
         (item) => pendingIds.has(item.id) && !serverIds.has(item.id),
       )
-      await this.dropStaleCache(serverItems, pendingIds)
+      if (isCurrent) await this.dropStaleCache(serverItems, pendingIds)
+      // Server-confirmed rows still belong in the cache, otherwise a later
+      // offline start would show a list missing everything the server owns.
+      await saveCachedTasks(merged.filter((item) => !pendingIds.has(item.id)))
       return [...merged, ...optimisticCreates]
     },
 
@@ -250,10 +283,12 @@ export const useTaskStore = defineStore('tasks', {
       this.online = navigator.onLine
       try {
         if (this.online) {
+          const sequence = ++listSequence
           try {
             this.pendingCount = await syncPendingChanges(this.ownerId)
             const serverItems = await taskService.list()
-            this.items = await this.mergeServerItems(serverItems)
+            const merged = await this.mergeServerItems(serverItems, sequence)
+            if (sequence === listSequence) this.items = merged
             return
           } catch {
             this.online = false
@@ -271,17 +306,21 @@ export const useTaskStore = defineStore('tasks', {
 
     async flush(): Promise<void> {
       if (!this.ownerId || !navigator.onLine) return
+      const apply = async (): Promise<void> => {
+        const sequence = ++listSequence
+        const serverItems = await taskService.list()
+        const merged = await this.mergeServerItems(serverItems, sequence)
+        if (sequence === listSequence) this.items = merged
+      }
       try {
         this.pendingCount = await syncPendingChanges(this.ownerId)
-        const serverItems = await taskService.list()
-        this.items = await this.mergeServerItems(serverItems)
+        await apply()
       } catch (error) {
         if (isNetworkError(error)) {
           this.online = false
           return
         }
-        const serverItems = await taskService.list()
-        this.items = await this.mergeServerItems(serverItems)
+        await apply()
         throw error
       }
     },

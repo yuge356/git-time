@@ -129,3 +129,49 @@ async def test_block_hides_search_and_closes_partnership(client: AsyncClient) ->
         headers=auth_header(first_token),
     )
     assert unblocked.status_code == 204
+
+
+async def test_incoming_invitation_survives_a_hidden_requester_profile(
+    client: AsyncClient,
+) -> None:
+    """Turning discovery off must not hide an invitation from its recipient.
+
+    On PostgreSQL the requester's profile row can become unreadable to the
+    recipient. Dropping the relationship in that case left the recipient
+    unable to see, accept or decline the request at all.
+    """
+
+    requester_token, requester_id = await register_user(client, "hidden_requester")
+    recipient_token, recipient_id = await register_user(client, "hidden_recipient")
+
+    invited = await client.post(
+        "/api/v1/partnerships/invitations",
+        headers=auth_header(requester_token),
+        json={"addressee_id": recipient_id},
+    )
+    assert invited.status_code == 201
+    partnership_id = invited.json()["id"]
+
+    hidden = await client.patch(
+        "/api/v1/profiles/me",
+        headers=auth_header(requester_token),
+        json={"is_searchable": False},
+    )
+    assert hidden.status_code == 200
+
+    incoming = await client.get(
+        "/api/v1/partnerships",
+        headers=auth_header(recipient_token),
+    )
+    assert incoming.status_code == 200
+    assert [item["id"] for item in incoming.json()] == [partnership_id]
+    assert incoming.json()[0]["direction"] == "INCOMING"
+    assert incoming.json()[0]["partner"]["id"] == requester_id
+
+    accepted = await client.patch(
+        f"/api/v1/partnerships/{partnership_id}",
+        headers=auth_header(recipient_token),
+        json={"accept": True},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["direction"] == "PARTNER"

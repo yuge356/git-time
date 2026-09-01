@@ -17,11 +17,16 @@
 | 任务 | `PATCH /tasks/{id}` | 修改任务；计划用时变更同步到今天及未来的关联每日计划条目 |
 | 任务 | `POST /tasks/{id}/apply-defaults` | 把项目/模块默认值应用到已有任务 |
 | 任务 | `DELETE /tasks/{id}` | 软删除任务子树 |
+| 项目模板 | `GET /project-templates` | 当前用户保存的项目模板 |
+| 项目模板 | `POST /project-templates` | 新建模板；重复的客户端 `id` 视为更新 |
+| 项目模板 | `PATCH /project-templates/{id}` | 修改模板 |
+| 项目模板 | `DELETE /project-templates/{id}` | 软删除模板 |
 | 计时 | `GET /sessions` | 最近 Session |
 | 计时 | `GET /sessions/active` | 当前活动 Session |
 | 计时 | `PUT /sessions/{id}` | 幂等写入 Session 快照 |
 | 每日计划 | `POST /daily-plans` | 创建/幂等读取日期计划 |
 | 每日计划 | `GET /daily-plans/by-date/{date}` | 日期计划 |
+| 每日计划 | `POST /daily-plans/{id}/auto-populate` | 按当日排期补齐计划项（重复规则、截止日期或计划窗口命中该日） |
 | 每日计划 | `POST /daily-plans/{id}/items` | 添加计划项 |
 | 每日计划 | `PATCH /daily-plan-items/{id}` | 修改计划项 |
 | 每日计划 | `DELETE /daily-plan-items/{id}` | 删除计划项 |
@@ -30,6 +35,7 @@
 | 统计 | `GET /analytics/dashboard` | 一次返回统计页范围汇总、今日汇总和打卡数据，减少页面请求与认证往返 |
 | 统计 | `GET /analytics/hourly-focus?day=YYYY-MM-DD` | 单日按小时专注分布（仅选定日期，按计时开始的小时归属，使用资料时区） |
 | 统计 | `GET /analytics/task-daily?date_from=&date_to=` | 每任务每日学习秒数（今日页计划进度表数据；仅返回有正时长记录的任务） |
+| 统计 | `GET /analytics/today-overview` | 一次返回今日页的月历趋势、单日专注分布与计划进度表数据 |
 | 搜索 | `GET /users/search?q=` | 搜索可发现用户 |
 | 伙伴 | `GET /partnerships` | 邀请和伙伴列表 |
 | 伙伴 | `POST /partnerships/invitations` | 发出邀请 |
@@ -64,6 +70,25 @@ Session 按其开始时刻的资料时区半小时槽位归属，正在计时的
 `GET /analytics/task-daily` 必须提供 `date_from=YYYY-MM-DD` 与 `date_to=YYYY-MM-DD`（最多 366 天），
 返回 `tasks[{ task_id, title, total_seconds, daily[{ date, seconds }] }]`；Session 按其开始时刻的
 资料时区日期归属，仅统计关联了项目任务的 Session，无正时长记录的任务不会出现。
+
+数据库繁忙或连接被回收时，接口返回 503（附 `Retry-After`）而不是 500：连接池等待超时和被驱动作废的
+连接都是暂时性问题，客户端应退避重放；数据库真正拒绝的语句仍然返回 500。
+
+`GET /analytics/today-overview` 必须提供 `calendar_from`、`calendar_to`、`focus_day`、`gantt_from`
+与 `gantt_to`（两段范围各自最多 366 天），返回
+`{ calendar_trend, hourly_focus, task_daily }`，字段与 `summary.daily_trend`、`hourly-focus`、
+`task-daily` 完全一致。今日页首次加载改用这一个请求：三个独立请求会同时占满后端很小的数据库连接池，
+超出的请求超时后页面就会在空白图表上显示服务器错误提示。切换月份或查看历史某天时仍使用单独的接口。
+
+`POST /daily-plans/{id}/auto-populate` 会把当日排期的可执行任务补进该日计划：命中重复规则、
+`due_date` 等于该日期，或该日期落在 `planned_start_date`~`planned_end_date` 之间的任务都会被加入。
+已完成的任务和含有子任务的容器任务不会被加入；计划项是当日快照，补齐操作只新增、不删除已有条目。
+
+项目模板载荷为 `{ name, description, icon, preset_key, budget_mode, fixed_budget_seconds,
+default_estimated_seconds, default_repeat_rule, structure }`。`structure` 是嵌套的
+`[{ node_type: MODULE|TASK, title, estimated_seconds, children }]` 大纲，只描述蓝图、不创建任务行：
+模块只能位于项目下、最多三层嵌套、最多 200 个节点，节点类型不能是 `PROJECT`，违反时返回 422。
+创建项目时由前端按大纲逐级调用 `POST /tasks`，因此套用模板同样走离线队列。
 
 Supabase Auth 的客户端调用为 `signUp({ email, password, options.data })`、`signInWithPassword(...)`、
 `updateUser({ data })` 和 `signOut()`；注册元数据中的 `onboarding_completed=false` 标记新账号需要首次使用

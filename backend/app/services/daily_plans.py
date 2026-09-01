@@ -315,13 +315,40 @@ def task_repeats_on_date(
     return False
 
 
-async def auto_populate_recurring_items(
+def task_scheduled_on_date(
+    task: Task,
+    target_date: date,
+    timezone_name: str = "UTC",
+) -> bool:
+    """Return whether a task is scheduled to be worked on one calendar date.
+
+    A task counts as scheduled when its recurrence matches the date, when it
+    is due that day, or when the date falls inside the planned window drawn
+    on the Gantt chart. Scheduling a task on the projects page is therefore
+    enough to make it appear in that day's Today list — the user never has
+    to add it a second time by hand.
+    """
+
+    if task.node_type != TaskNodeType.TASK or task.status == TaskStatus.DONE:
+        return False
+    if task_repeats_on_date(task, target_date, timezone_name):
+        return True
+    if task.due_date is not None and task.due_date == target_date:
+        return True
+    start = task.planned_start_date
+    end = task.planned_end_date
+    if start is None and end is None:
+        return False
+    return (start or target_date) <= target_date <= (end or target_date)
+
+
+async def auto_populate_scheduled_items(
     db: AsyncSession,
     owner_id: UUID,
     plan_id: UUID,
     timezone_name: str = "UTC",
 ) -> DailyPlanResponse:
-    """Add recurring tasks due on the date without removing existing items.
+    """Add tasks scheduled for the date without removing existing items.
 
     Daily-plan items are durable snapshots: once a task has entered a day's
     plan, completing the source project task must not remove that item.
@@ -339,7 +366,14 @@ async def auto_populate_recurring_items(
     )
     task_nodes = list(task_result.all())
     tasks_by_id = {task.id: task for task in task_nodes}
-    tasks = [task for task in task_nodes if task.node_type == TaskNodeType.TASK]
+    # A task that owns subtasks is a container: it cannot be timed, so it
+    # must never be auto-added to a day's plan either.
+    parent_ids = {task.parent_id for task in task_nodes if task.parent_id is not None}
+    tasks = [
+        task
+        for task in task_nodes
+        if task.node_type == TaskNodeType.TASK and task.id not in parent_ids
+    ]
 
     existing_items_result = await db.scalars(
         select(DailyPlanItem).where(
@@ -366,7 +400,7 @@ async def auto_populate_recurring_items(
         # Existing daily items are intentionally retained regardless of the
         # source task's current status. Only the explicit item-delete endpoint
         # is allowed to remove them from this day's plan.
-        if task.id in existing_task_ids or not task_repeats_on_date(
+        if task.id in existing_task_ids or not task_scheduled_on_date(
             task,
             plan.plan_date,
             timezone_name,

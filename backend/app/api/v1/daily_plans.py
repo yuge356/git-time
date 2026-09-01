@@ -20,7 +20,7 @@ from app.schemas.daily_plan import (
     DailyPlanResponse,
 )
 from app.services.daily_plans import (
-    auto_populate_recurring_items,
+    auto_populate_scheduled_items,
     build_check_in,
     build_daily_plan_response,
     get_owned_daily_item,
@@ -85,9 +85,9 @@ async def auto_populate_recurring(
     db: DatabaseSession,
     current_user: CurrentUser,
 ) -> DailyPlanResponse:
-    """Auto-populate the daily plan with recurring tasks due on its date."""
-    
-    response = await auto_populate_recurring_items(
+    """Auto-populate the daily plan with the tasks scheduled for its date."""
+
+    response = await auto_populate_scheduled_items(
         db,
         current_user.id,
         plan_id,

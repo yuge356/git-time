@@ -50,6 +50,36 @@ FastAPI 使用的 `postgres` Session Pooler 身份只被允许显式 `SET ROLE d
 | `created_at` | TIMESTAMPTZ | 创建时间 |
 | `updated_at` | TIMESTAMPTZ | 更新时间 |
 
+`profiles_discovery_select` 策略允许读取：可被搜索的资料，以及与当前用户存在 **ACCEPTED 或
+PENDING** 伙伴关系的资料（迁移 0017 加入 PENDING）；互相屏蔽的双方永远互不可见。之前只覆盖
+ACCEPTED，导致邀请发出后关闭“可被搜索”的用户，其资料对收件人不可读，整个伙伴列表以
+“未找到该用户”失败，收件人因此看不到也无法处理好友申请。API 侧还额外加了兜底：读不到对方资料
+时仍返回该邀请，只是把伙伴显示为“未公开用户”。
+
+## `project_templates`
+
+| 字段 | 类型 | 约束/说明 |
+|---|---|---|
+| `id` | UUID | PK |
+| `owner_id` | UUID | FK → `users.id`，级联删除 |
+| `name` | VARCHAR(80) | 模板名称 |
+| `description` | VARCHAR(300) | 可空 |
+| `icon` | VARCHAR(8) | 可空；单个表情符号 |
+| `preset_key` | VARCHAR(40) | 可空；非空表示这是内置预设的用户副本 |
+| `budget_mode` | VARCHAR(16) | `ROLLUP` 或 `FIXED_CAP` |
+| `fixed_budget_seconds` | INTEGER | 可空，≥ 0（CHECK 约束） |
+| `default_estimated_seconds` | INTEGER | 可空，≥ 0（CHECK 约束） |
+| `default_repeat_rule` | VARCHAR(16) | 可空 |
+| `structure` | JSON | 嵌套的模块/任务大纲蓝图 |
+| `sort_order` | INTEGER | 展示排序 |
+| `deleted_at` | TIMESTAMPTZ | 可空；软删除 |
+| `created_at` | TIMESTAMPTZ | 创建时间 |
+| `updated_at` | TIMESTAMPTZ | 更新时间 |
+
+模板只保存蓝图，不创建任务行，所以模板内容不会出现在项目页、时间统计或每日计划中。
+`project_templates_owner_all` 策略限定 owner 自读自写，运行时角色 `dayflow_app` 由迁移 0018
+显式授予该表的增删改查权限。
+
 ## `tasks`
 
 | 字段 | 类型 | 约束/说明 |
@@ -216,6 +246,7 @@ FastAPI 使用的 `postgres` Session Pooler 身份只被允许显式 `SET ROLE d
 ```text
 users 1─1 profiles
 users 1─N tasks ── self parent / task_dependencies
+users 1─N project_templates
 users 1─N sessions ── tasks / daily_plan_items
 users 1─N daily_plans 1─N daily_plan_items ── tasks
 users N─N users via partnerships

@@ -31,14 +31,23 @@ Supabase 托管 PostgreSQL
 
 ### 数据库连接与延迟
 
-托管数据库位于远程事务连接池（PgBouncer）之后，本地到库的单次往返约 100ms。后端因此遵循两条
-约定：
+托管数据库位于远程会话模式连接池之后：整个项目只有十几个客户端槽位，本地到库的单次往返约
+100ms。后端连接池因此被刻意压得很小（`pool_size=2` + `max_overflow=2`），**每个正在处理的请求
+占用一个槽位**。围绕这一点有四条约定：
 
-- **禁用 `pool_pre_ping`**：在该池化端点下每次借出连接都会重开 TLS 握手（约 0.5s），由
-  `app.main` 的应用级保活循环代替（每 45 秒 ping 池内两条连接），保持连接热可用。
-- **统计页并行查询**：`GET /analytics/dashboard` 的区间汇总与当日打卡分别运行在两个池化连接上
-  （`asyncio.Task` 并发），把串行往返从约 12 次压缩到约 6 次；前端统计视图纳入 KeepAlive，切回
-  时立即展示缓存内容并后台刷新一次。
+- **保活 + `pool_pre_ping`**：`app.main` 的保活循环每 45 秒 ping 池内两条连接，让连接保持热
+  可用，省下每次借出时的 TLS 握手；远程池会回收空闲连接，因此 `pool_pre_ping` 保持开启，避免把
+  已失效的连接交给请求后以一个看不出原因的 500 结束。
+- **共享一次行加载**：`GET /analytics/dashboard` 与 `GET /analytics/today-overview` 都在**请求
+  自己的那一条连接**上完成。它们各自只加载一次任务与 Session 行，再在 Python 里切出各段结果；
+  早期版本额外借出第二条连接做并发，反而更快耗尽项目的槽位，让每个请求都变成 500。
+- **前端限流与重试**：`services/http.ts` 中的 axios 实例最多允许 3 个请求同时在网，其余排队；
+  幂等的 GET 在 500/502/503/504、超时和网络错误时最多重试 3 次（指数退避）。页面同时打开五六个
+  请求正是今日页与伙伴页图表空白并弹出“服务器处理请求时出错”的原因。
+- **可重试的错误语义**：连接池等待超时与断开的连接返回 503（附 `Retry-After`）而不是 500，
+  客户端因此会退避重放，离线队列也会把这类失败当成网络问题保留操作，而不是当成被服务器拒绝。
+
+前端统计视图纳入 KeepAlive，切回时立即展示缓存内容并后台刷新一次。
 
 前端刷新页面的恢复路径同样按"先显示、后同步"组织：账户资料缓存于 localStorage（按用户 ID 分键，
 登录与资料刷新时写入），刷新时立即复用并后台请求 `/auth/me` 更新；计时器本地有活动快照时直接恢复
@@ -69,10 +78,21 @@ Supabase 托管 PostgreSQL
 每位用户每天最多一份计划。计划项可以引用长期任务，也可以只在当天存在。Session 可关联计划项；
 关联长期任务的计划项同时保留 `task_id`，因此每日进度和长期预算使用同一份计时数据。
 
+**排期即今日任务**：`POST /daily-plans/{id}/auto-populate` 会把当天排期的叶子任务补进计划——
+重复规则命中该日、`due_date` 等于该日，或该日落在任务的 `planned_start_date`~`planned_end_date`
+计划窗口内。前端 `stores/daily-plans.ts` 的 `taskScheduledOnDate` 使用完全相同的规则，因此在线
+补齐和离线补齐结果一致，项目页安排好的任务不会时有时无。计划项仍是当天快照：补齐只新增，删除只能
+通过显式的删除接口。
+
 ### 伙伴与分享
 
 伙伴邀请必须被接收。搜索、邀请、分享、查看和鼓励均检查双向屏蔽。分享默认只公开标题和完成状态；
 只有 `share_duration=true` 才返回计划时长和实际时长。
+
+待处理的邀请必须始终对收件人可见：`profiles` 的发现策略把 PENDING 关系与 ACCEPTED 一同放行，
+而 `to_partnership_response` 在资料确实读不到时也只把伙伴降级成“未公开用户”，不会丢掉整条邀请。
+伙伴页的各个面板独立加载（`Promise.allSettled`），一个请求失败不会连带清空邀请列表；
+收到 `PARTNER_INVITE` / `PARTNER_ACCEPTED` 通知时页面会自动重新拉取关系列表。
 
 ### 通知
 
@@ -119,12 +139,17 @@ Supabase Auth `user_metadata` 中写入 `onboarding_completed=false`；路由守
 | 计时器、历史、离线队列 | sessions、session state machine |
 | 今日计划、打卡 | daily plans、check-ins |
 | 统计图表 | analytics |
-
-Supabase 使用非对称签名密钥时，API 通过缓存的 JWKS 在本地验证访问令牌，避免每个业务请求再次访问 Auth；旧版 HS256 令牌或 JWKS 暂时不可用时仍通过 Supabase `/auth/v1/user` 安全校验。统计页使用单一 dashboard 请求聚合范围、今日与打卡数据：后端只做一次行加载并同时派生范围汇总与今日汇总，前端先立即渲染已有数字，本地计时同步与统计请求并行执行，同步完成后自动静默刷新一次，避免串行等待全部离线队列重放。
+| 项目模板库 | project templates |
 | 伙伴与屏蔽 | partnerships、blocks |
 | 分享与鼓励 | plan shares、encouragements |
 | 通知中心 | notifications、WebSocket |
 | IndexedDB 同步 | 幂等客户端 UUID API |
+
+Supabase 使用非对称签名密钥时，API 通过缓存的 JWKS 在本地验证访问令牌，避免每个业务请求再次访问
+Auth；旧版 HS256 令牌或 JWKS 暂时不可用时仍通过 Supabase `/auth/v1/user` 安全校验。统计页使用
+单一 dashboard 请求聚合范围、今日与打卡数据，今日页使用单一 today-overview 请求聚合月历、单日
+专注分布与计划进度表：后端各自只做一次行加载并派生全部结果，前端先立即渲染已有数字，本地计时同步
+与统计请求并行执行，同步完成后自动静默刷新一次，避免串行等待全部离线队列重放。
 
 前端通过统一错误翻译层处理 FastAPI `detail`、Axios 网络错误、IndexedDB DOMException 和本地状态错误。
 当前中文界面只展示中文提醒；翻译映射与业务异常分离，后续增加英文界面时可以复用同一错误标识和状态码。

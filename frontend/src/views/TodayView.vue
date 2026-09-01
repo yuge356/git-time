@@ -905,15 +905,18 @@ function hideFocusTooltip(): void {
   focusTooltip.value = null
 }
 
-async function loadTaskGantt(): Promise<void> {
-  const requestId = ++ganttRequestId
+function ganttRangeStart(): string {
   const start = new Date(`${todayDate.value}T00:00:00`)
   start.setDate(start.getDate() - GANTT_RANGE_DAYS)
-  const dateFrom = localDateString(start)
+  return localDateString(start)
+}
+
+async function loadTaskGantt(): Promise<void> {
+  const requestId = ++ganttRequestId
   ganttLoading.value = true
   ganttError.value = ''
   try {
-    const response = await analyticsService.taskDaily(dateFrom, todayDate.value)
+    const response = await analyticsService.taskDaily(ganttRangeStart(), todayDate.value)
     if (requestId === ganttRequestId) {
       ganttSeries.value = response.tasks
     }
@@ -926,6 +929,57 @@ async function loadTaskGantt(): Promise<void> {
     if (requestId === ganttRequestId) {
       ganttLoading.value = false
     }
+  }
+}
+
+/**
+ * Load the calendar, the hourly focus bars and the Gantt rows through one
+ * request. Issuing them separately made the page open three heavy analytics
+ * queries at once; on the backend's small connection pool the surplus ones
+ * timed out, which is why the progress chart and the time statistics kept
+ * showing a red server error over empty panels.
+ */
+async function loadTodayCharts(): Promise<void> {
+  ensureCalendarMonth()
+  ensureFocusDate()
+  const { year, month } = calendarMonthParts.value
+  const monthPrefix = `${year}-${String(month).padStart(2, '0')}`
+  const lastDay = new Date(year, month, 0).getDate()
+  const calendarRequest = ++calendarRequestId
+  const distributionRequest = ++distributionRequestId
+  const ganttRequest = ++ganttRequestId
+  calendarLoading.value = true
+  distributionLoading.value = true
+  ganttLoading.value = true
+  calendarError.value = ''
+  distributionError.value = ''
+  ganttError.value = ''
+  try {
+    const overview = await analyticsService.todayOverview({
+      calendarFrom: `${monthPrefix}-01`,
+      calendarTo: `${monthPrefix}-${String(lastDay).padStart(2, '0')}`,
+      focusDay: focusDate.value,
+      ganttFrom: ganttRangeStart(),
+      ganttTo: todayDate.value,
+    })
+    if (calendarRequest === calendarRequestId) calendarTrend.value = overview.calendar_trend
+    if (distributionRequest === distributionRequestId) hourlyTrend.value = overview.hourly_focus
+    if (ganttRequest === ganttRequestId) ganttSeries.value = overview.task_daily.tasks
+  } catch (error) {
+    const message = getApiErrorMessage(error)
+    if (calendarRequest === calendarRequestId) calendarError.value = message
+    if (distributionRequest === distributionRequestId) {
+      hourlyTrend.value = null
+      distributionError.value = message
+    }
+    if (ganttRequest === ganttRequestId) {
+      ganttSeries.value = []
+      ganttError.value = message
+    }
+  } finally {
+    if (calendarRequest === calendarRequestId) calendarLoading.value = false
+    if (distributionRequest === distributionRequestId) distributionLoading.value = false
+    if (ganttRequest === ganttRequestId) ganttLoading.value = false
   }
 }
 
@@ -949,19 +1003,19 @@ onMounted(async () => {
       daily.ownerId !== ownerId ||
       daily.selectedDate !== todayDate.value ||
       !daily.plan
-    if (requiresTaskLoad || requiresDailyLoad) {
-      await Promise.all([
-        requiresTaskLoad ? tasks.initialize(ownerId) : Promise.resolve(),
-        requiresDailyLoad
-          ? daily.initialize(ownerId, todayDate.value, activeItemId)
-          : Promise.resolve(daily.setActiveItem(activeItemId)),
-        loadCalendarMonth(),
-        loadHourlyFocus(),
-        loadTaskGantt(),
-      ])
-    } else {
-      daily.setActiveItem(activeItemId)
-      await Promise.all([loadCalendarMonth(), loadHourlyFocus(), loadTaskGantt()])
+    if (!requiresTaskLoad && !requiresDailyLoad) daily.setActiveItem(activeItemId)
+    // Settled, not all: a failure in one panel must not leave the rest of the
+    // page blank. Each loader records its own error next to what it renders.
+    const results = await Promise.allSettled([
+      requiresTaskLoad ? tasks.initialize(ownerId) : Promise.resolve(),
+      requiresDailyLoad
+        ? daily.initialize(ownerId, todayDate.value, activeItemId)
+        : Promise.resolve(),
+      loadTodayCharts(),
+    ])
+    const failure = results.find((result) => result.status === 'rejected')
+    if (failure) {
+      errorMessage.value = getApiErrorMessage((failure as PromiseRejectedResult).reason)
     }
     await restoreMissingActiveItem()
     await daily.syncProjectTasks()

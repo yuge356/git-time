@@ -11,13 +11,14 @@ from app.schemas.analytics import (
     AnalyticsSummary,
     HourlyFocusResponse,
     TaskDailyResponse,
+    TodayOverview,
 )
-from app.schemas.daily_plan import CheckInResponse
 from app.services.analytics import (
     build_analytics_summary,
     build_dashboard_summaries,
     build_hourly_focus,
     build_task_daily_series,
+    build_today_overview,
 )
 from app.services.daily_plans import build_check_in
 
@@ -66,6 +67,32 @@ async def read_analytics_dashboard(
         range_summary=range_summary,
         today_summary=today_summary,
         today_check_in=today_check_in,
+    )
+
+
+@router.get("/today-overview", response_model=TodayOverview)
+async def read_today_overview(
+    db: DatabaseSession,
+    current_user: CurrentUser,
+    calendar_from: Annotated[date, Query()],
+    calendar_to: Annotated[date, Query()],
+    focus_day: Annotated[date, Query()],
+    gantt_from: Annotated[date, Query()],
+    gantt_to: Annotated[date, Query()],
+) -> TodayOverview:
+    """Return the Today page's calendar, hourly focus and Gantt data at once."""
+
+    validate_range(calendar_from, calendar_to)
+    validate_range(gantt_from, gantt_to)
+    return await build_today_overview(
+        db,
+        current_user.id,
+        current_user.profile.timezone,
+        calendar_from,
+        calendar_to,
+        focus_day,
+        gantt_from,
+        gantt_to,
     )
 
 

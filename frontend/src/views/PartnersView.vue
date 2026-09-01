@@ -164,6 +164,15 @@
               />
             </label>
             <button class="button button--primary" type="submit" :disabled="busy">查找</button>
+            <button
+              class="button button--quiet"
+              type="button"
+              :disabled="busy"
+              title="重新拉取伙伴邀请与分享"
+              @click="reload"
+            >
+              刷新
+            </button>
           </form>
 
           <div v-if="searched" class="search-results">
@@ -235,7 +244,7 @@
 
 <script setup lang="ts">
 import axios from 'axios'
-import { computed, defineComponent, h, onMounted, ref, type PropType } from 'vue'
+import { computed, defineComponent, h, onMounted, ref, watch, type PropType } from 'vue'
 
 import AppShell from '@/components/AppShell.vue'
 import FormMessage from '@/components/FormMessage.vue'
@@ -243,12 +252,14 @@ import { dailyPlanService } from '@/services/daily-plans'
 import { partnershipService } from '@/services/partnerships'
 import { sharingService } from '@/services/sharing'
 import { useAuthStore } from '@/stores/auth'
+import { useNotificationStore } from '@/stores/notifications'
 import type { DailyPlan } from '@/types/daily-plan'
 import type { Partnership, PublicProfile, UserBlock, UserSearchResult } from '@/types/partnership'
 import type { EncouragementType, ReceivedSharedPlan, SentPlanShare } from '@/types/sharing'
 import { getApiErrorMessage } from '@/utils/api-error'
 
 const auth = useAuthStore()
+const notifications = useNotificationStore()
 
 const ProfileAvatar = defineComponent({
   props: {
@@ -312,11 +323,40 @@ const availablePartners = computed(() =>
 )
 const formattedPlanDate = computed(() => displayDate(planDate.value))
 
+const pageLoaded = ref(false)
+
 onMounted(async () => {
-  await runAction(async () => {
-    await Promise.all([loadPlanData(), refreshAll()])
+  busy.value = true
+  try {
+    await loadPage()
+  } finally {
+    busy.value = false
+    pageLoaded.value = true
+  }
+})
+
+// A partner invitation arrives over the notification socket. Reload the
+// relationship lists straight away so the request shows up while the page is
+// open, instead of only after a manual reload. The notification store fills
+// itself on app start, so wait for the initial page load before reacting --
+// otherwise that first fill would duplicate the load we just did.
+const partnerNotificationCount = computed(
+  () =>
+    notifications.items.filter((item) =>
+      ['PARTNER_INVITE', 'PARTNER_ACCEPTED'].includes(item.notification_type),
+    ).length,
+)
+
+watch(partnerNotificationCount, (current, previous) => {
+  if (!pageLoaded.value || current <= previous) return
+  void refreshRelationships().catch(() => {
+    // The manual refresh button and the next page visit both retry.
   })
 })
+
+async function reload(): Promise<void> {
+  await runAction(loadPage)
+}
 
 async function runAction(action: () => Promise<void>): Promise<void> {
   errorMessage.value = ''
@@ -331,6 +371,41 @@ async function runAction(action: () => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * Load every panel independently. The page used to await one `Promise.all`
+ * whose results were destructured together, so a single failing request left
+ * *all* of the lists empty — most visibly the pending invitations, which then
+ * looked as if no one had ever sent a partner request. Each section now keeps
+ * whatever it managed to load and only the failures are reported.
+ */
+async function loadPage(): Promise<void> {
+  errorMessage.value = ''
+  successMessage.value = ''
+  const results = await Promise.allSettled([
+    loadPlanData(),
+    partnershipService.list().then((value) => {
+      relationships.value = value
+    }),
+    partnershipService.listBlocks().then((value) => {
+      blocks.value = value
+    }),
+    sharingService.sent().then((value) => {
+      sent.value = value
+    }),
+    sharingService.received().then((value) => {
+      received.value = value
+    }),
+  ])
+  reportFirstFailure(results)
+}
+
+function reportFirstFailure(results: PromiseSettledResult<unknown>[]): void {
+  const failure = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  )
+  if (failure) errorMessage.value = getApiErrorMessage(failure.reason)
+}
+
 async function loadPlanData(): Promise<void> {
   try {
     plan.value = await dailyPlanService.readByDate(planDate.value)
@@ -341,23 +416,22 @@ async function loadPlanData(): Promise<void> {
   partnerId.value = ''
 }
 
-async function refreshAll(): Promise<void> {
-  ;[relationships.value, blocks.value, sent.value, received.value] = await Promise.all([
-    partnershipService.list(),
-    partnershipService.listBlocks(),
-    sharingService.sent(),
-    sharingService.received(),
-  ])
-}
-
 async function refreshRelationships(): Promise<void> {
-  ;[relationships.value, blocks.value] = await Promise.all([
-    partnershipService.list(),
-    partnershipService.listBlocks(),
+  const results = await Promise.allSettled([
+    partnershipService.list().then((value) => {
+      relationships.value = value
+    }),
+    partnershipService.listBlocks().then((value) => {
+      blocks.value = value
+    }),
+    searched.value && query.value
+      ? partnershipService.search(query.value).then((value) => {
+          searchResults.value = value
+        })
+      : Promise.resolve(),
   ])
-  if (searched.value && query.value) {
-    searchResults.value = await partnershipService.search(query.value)
-  }
+  const failure = results.find((result) => result.status === 'rejected')
+  if (failure) throw (failure as PromiseRejectedResult).reason
 }
 
 async function loadPlan(): Promise<void> {

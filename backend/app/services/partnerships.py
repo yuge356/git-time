@@ -77,6 +77,25 @@ async def get_public_profile(
     return profile
 
 
+def _hidden_partner_profile(user_id: UUID) -> PublicProfile:
+    """Describe a partner whose profile row the reader may not select.
+
+    Row-level security can hide the other participant -- a requester who
+    turned discovery off, or a database that has not run the pending-
+    invitation policy migration yet. Dropping the relationship in that case
+    made incoming invitations impossible to see or answer, so the invitation
+    is still returned with a neutral placeholder identity.
+    """
+
+    return PublicProfile(
+        id=user_id,
+        username="unavailable",
+        display_name="未公开用户",
+        avatar_url=None,
+        bio=None,
+    )
+
+
 async def to_partnership_response(
     db: AsyncSession,
     partnership: Partnership,
@@ -98,12 +117,17 @@ async def to_partnership_response(
             if partnership.status.value == "ACCEPTED"
             else RelationshipDirection.INCOMING
         )
-    profile = await get_public_profile(db, partner_id)
+    profile = await db.scalar(select(Profile).where(Profile.id == partner_id))
+    partner = (
+        PublicProfile.model_validate(profile)
+        if profile is not None
+        else _hidden_partner_profile(partner_id)
+    )
     return PartnershipResponse(
         id=partnership.id,
         status=partnership.status,
         direction=direction,
-        partner=PublicProfile.model_validate(profile),
+        partner=partner,
         created_at=partnership.created_at,
         responded_at=partnership.responded_at,
     )

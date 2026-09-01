@@ -93,6 +93,13 @@ export interface AnalyticsSummary {
   project_history: ProjectTimeHistory[]
 }
 
+/** Every Today-page chart, returned through a single request. */
+export interface TodayOverview {
+  calendar_trend: DailyTrendPoint[]
+  hourly_focus: HourlyFocusDistribution
+  task_daily: TaskDailyResponse
+}
+
 export interface AnalyticsDashboard {
   range_summary: AnalyticsSummary
   today_summary: AnalyticsSummary

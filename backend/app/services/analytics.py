@@ -22,6 +22,7 @@ from app.schemas.analytics import (
     TaskDailyResponse,
     TaskDailySeries,
     TaskTimeSlice,
+    TodayOverview,
 )
 from app.services.tasks import (
     calculate_task_time_totals,
@@ -39,6 +40,32 @@ def resolve_timezone(timezone_name: str) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def summarize_hourly_focus(
+    timezone: ZoneInfo,
+    day: date,
+    sessions: Sequence[Session],
+) -> HourlyFocusResponse:
+    """Bucket one local date's pre-loaded sessions into 24 clock hours."""
+
+    hourly_seconds = [0] * 24
+    for session in sessions:
+        seconds = effective_session_duration(session)
+        if seconds <= 0:
+            continue
+        started_at = normalize_utc(session.started_at).astimezone(timezone)
+        if started_at.date() != day:
+            continue
+        hourly_seconds[started_at.hour] += seconds
+    return HourlyFocusResponse(
+        date=day,
+        total_seconds=sum(hourly_seconds),
+        hours=[
+            HourlyFocusPoint(hour=hour, seconds=seconds)
+            for hour, seconds in enumerate(hourly_seconds)
+        ],
+    )
+
+
 async def build_hourly_focus(
     db: AsyncSession,
     owner_id: UUID,
@@ -53,67 +80,37 @@ async def build_hourly_focus(
     """
 
     timezone = resolve_timezone(timezone_name)
-    start_at = datetime.combine(day, time.min, tzinfo=timezone).astimezone(UTC)
-    end_at = datetime.combine(day + timedelta(days=1), time.min, tzinfo=timezone).astimezone(UTC)
-    sessions = list(
-        (
-            await db.scalars(
-                select(Session).where(
-                    Session.owner_id == owner_id,
-                    Session.started_at >= start_at,
-                    Session.started_at < end_at,
-                    Session.deleted_at.is_(None),
-                )
-            )
-        ).all()
-    )
-    hourly_seconds = [0] * 24
-    for session in sessions:
-        seconds = effective_session_duration(session)
-        if seconds <= 0:
-            continue
-        hour = normalize_utc(session.started_at).astimezone(timezone).hour
-        hourly_seconds[hour] += seconds
-    return HourlyFocusResponse(
-        date=day,
-        total_seconds=sum(hourly_seconds),
-        hours=[
-            HourlyFocusPoint(hour=hour, seconds=seconds)
-            for hour, seconds in enumerate(hourly_seconds)
-        ],
-    )
+    sessions = await _load_range_sessions(db, owner_id, timezone, day, day)
+    return summarize_hourly_focus(timezone, day, sessions)
 
 
-async def build_task_daily_series(
-    db: AsyncSession,
-    owner_id: UUID,
-    timezone_name: str,
+def _local_range_bounds(
+    timezone: ZoneInfo,
     date_from: date,
     date_to: date,
-) -> TaskDailyResponse:
-    """Aggregate per-task daily learning seconds for Gantt-style charts.
+) -> tuple[datetime, datetime]:
+    """Return the UTC half-open interval covering an inclusive local range."""
 
-    Sessions are attributed to the local date on which they started, the
-    same rule ``daily_trend`` uses. Only tasks with positive recorded time
-    are returned; soft-deleted tasks still surface under their last title so
-    historical spans stay visible.
-    """
-
-    timezone = resolve_timezone(timezone_name)
     start_at = datetime.combine(date_from, time.min, tzinfo=timezone).astimezone(UTC)
     end_at = datetime.combine(
         date_to + timedelta(days=1),
         time.min,
         tzinfo=timezone,
     ).astimezone(UTC)
+    return start_at, end_at
 
-    tasks = list(
-        (
-            await db.scalars(select(Task).where(Task.owner_id == owner_id))
-        ).all()
-    )
-    titles = {task.id: task.title for task in tasks}
-    sessions = list(
+
+async def _load_range_sessions(
+    db: AsyncSession,
+    owner_id: UUID,
+    timezone: ZoneInfo,
+    date_from: date,
+    date_to: date,
+) -> list[Session]:
+    """Load the owner's live sessions started inside a local date range."""
+
+    start_at, end_at = _local_range_bounds(timezone, date_from, date_to)
+    return list(
         (
             await db.scalars(
                 select(Session).where(
@@ -126,6 +123,17 @@ async def build_task_daily_series(
         ).all()
     )
 
+
+def summarize_task_daily_series(
+    timezone: ZoneInfo,
+    date_from: date,
+    date_to: date,
+    tasks: Sequence[Task],
+    sessions: Sequence[Session],
+) -> TaskDailyResponse:
+    """Aggregate pre-loaded rows into per-task daily learning seconds."""
+
+    titles = {task.id: task.title for task in tasks}
     daily_seconds: dict[UUID, dict[date, int]] = {}
     for session in sessions:
         if session.task_id is None:
@@ -134,6 +142,8 @@ async def build_task_daily_series(
         if seconds <= 0:
             continue
         local_date = normalize_utc(session.started_at).astimezone(timezone).date()
+        if local_date < date_from or local_date > date_to:
+            continue
         per_task = daily_seconds.setdefault(session.task_id, {})
         per_task[local_date] = per_task.get(local_date, 0) + seconds
 
@@ -153,6 +163,27 @@ async def build_task_daily_series(
     return TaskDailyResponse(date_from=date_from, date_to=date_to, tasks=series)
 
 
+async def build_task_daily_series(
+    db: AsyncSession,
+    owner_id: UUID,
+    timezone_name: str,
+    date_from: date,
+    date_to: date,
+) -> TaskDailyResponse:
+    """Aggregate per-task daily learning seconds for Gantt-style charts.
+
+    Sessions are attributed to the local date on which they started, the
+    same rule ``daily_trend`` uses. Only tasks with positive recorded time
+    are returned; soft-deleted tasks still surface under their last title so
+    historical spans stay visible.
+    """
+
+    timezone = resolve_timezone(timezone_name)
+    tasks = list((await db.scalars(select(Task).where(Task.owner_id == owner_id))).all())
+    sessions = await _load_range_sessions(db, owner_id, timezone, date_from, date_to)
+    return summarize_task_daily_series(timezone, date_from, date_to, tasks, sessions)
+
+
 async def _load_analytics_rows(
     db: AsyncSession,
     owner_id: UUID,
@@ -162,12 +193,7 @@ async def _load_analytics_rows(
 ) -> tuple[list[Task], list[Session], list[DailyPlanItem], list[DailyPlan]]:
     """Load every raw row one summary pass may need for a local date range."""
 
-    start_at = datetime.combine(date_from, time.min, tzinfo=timezone).astimezone(UTC)
-    end_at = datetime.combine(
-        date_to + timedelta(days=1),
-        time.min,
-        tzinfo=timezone,
-    ).astimezone(UTC)
+    start_at, end_at = _local_range_bounds(timezone, date_from, date_to)
 
     all_tasks = list(
         (
@@ -430,6 +456,84 @@ async def build_analytics_summary(
         sessions,
         items,
         plans,
+    )
+
+
+async def build_today_overview(
+    db: AsyncSession,
+    owner_id: UUID,
+    timezone_name: str,
+    calendar_from: date,
+    calendar_to: date,
+    focus_day: date,
+    gantt_from: date,
+    gantt_to: date,
+) -> TodayOverview:
+    """Derive the Today page's three charts from one shared row load.
+
+    The calendar heat map, the hourly focus bars and the Gantt rows all read
+    the same sessions. Loading the union range once keeps the page to a
+    single database round trip instead of three concurrent ones, which is
+    what exhausted the small pooled connection budget and left the charts
+    empty behind a server-error banner.
+    """
+
+    timezone = resolve_timezone(timezone_name)
+    union_from = min(calendar_from, focus_day, gantt_from)
+    union_to = max(calendar_to, focus_day, gantt_to)
+
+    tasks = list((await db.scalars(select(Task).where(Task.owner_id == owner_id))).all())
+    sessions = await _load_range_sessions(db, owner_id, timezone, union_from, union_to)
+    completed_items = list(
+        (
+            await db.scalars(
+                select(DailyPlan.plan_date)
+                .join(DailyPlanItem, DailyPlanItem.daily_plan_id == DailyPlan.id)
+                .where(
+                    DailyPlan.owner_id == owner_id,
+                    DailyPlan.plan_date >= calendar_from,
+                    DailyPlan.plan_date <= calendar_to,
+                    DailyPlan.deleted_at.is_(None),
+                    DailyPlanItem.deleted_at.is_(None),
+                    DailyPlanItem.status == DailyPlanItemStatus.DONE,
+                )
+            )
+        ).all()
+    )
+
+    daily_seconds: dict[date, int] = {}
+    for session in sessions:
+        seconds = effective_session_duration(session)
+        if seconds <= 0:
+            continue
+        local_date = normalize_utc(session.started_at).astimezone(timezone).date()
+        daily_seconds[local_date] = daily_seconds.get(local_date, 0) + seconds
+    daily_completed: dict[date, int] = {}
+    for plan_date in completed_items:
+        daily_completed[plan_date] = daily_completed.get(plan_date, 0) + 1
+
+    calendar_trend: list[DailyTrendPoint] = []
+    cursor = calendar_from
+    while cursor <= calendar_to:
+        calendar_trend.append(
+            DailyTrendPoint(
+                date=cursor,
+                seconds=daily_seconds.get(cursor, 0),
+                completed_items=daily_completed.get(cursor, 0),
+            )
+        )
+        cursor += timedelta(days=1)
+
+    return TodayOverview(
+        calendar_trend=calendar_trend,
+        hourly_focus=summarize_hourly_focus(timezone, focus_day, sessions),
+        task_daily=summarize_task_daily_series(
+            timezone,
+            gantt_from,
+            gantt_to,
+            tasks,
+            sessions,
+        ),
     )
 
 
