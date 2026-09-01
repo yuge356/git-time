@@ -59,6 +59,20 @@ class Settings(BaseSettings):
         "@localhost:5432/time_budget_tracker"
     )
     database_role: str | None = None
+    # Supabase's session-mode pooler caps the whole project at a handful of
+    # simultaneous clients (15 by default). SQLAlchemy's defaults --
+    # pool_size=5 plus max_overflow=10 -- let a single process claim every
+    # slot, and each pooled connection then holds its slot for the life of
+    # the process, so any second consumer (the deployed backend, the SQL
+    # editor, PostgREST) hits "max clients reached in session mode" and every
+    # request turns into a 500. Keep the pool small and bounded instead.
+    database_pool_size: int = Field(default=2, ge=1, le=20)
+    database_max_overflow: int = Field(default=2, ge=0, le=20)
+    database_pool_recycle_seconds: int = Field(default=240, ge=30, le=3_600)
+    database_pool_timeout_seconds: int = Field(default=20, ge=1, le=120)
+    database_pool_pre_ping: bool = True
+    database_keepalive_enabled: bool = True
+    database_keepalive_interval_seconds: int = Field(default=45, ge=5, le=900)
     cors_origins: list[str] = ["http://localhost:5174"]
 
     @field_validator("database_url")

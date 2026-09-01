@@ -4,15 +4,37 @@ from collections.abc import AsyncIterator
 from uuid import UUID
 
 from sqlalchemy import event, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 
-# pool_pre_ping is deliberately off: against the remote transaction-pooling
-# endpoint every checkout re-opened a TLS connection (~0.5s), which dominated
-# analytics page loads. The app-level keepalive in app.main pings the pool on
-# a short interval instead, so idle connections stay healthy.
-engine = create_async_engine(settings.database_url)
+
+def build_engine_kwargs() -> dict[str, object]:
+    """Size the pool for the configured backend.
+
+    Queue-pool options are only applied to server databases: SQLite pools are
+    managed internally (StaticPool/NullPool) and reject ``pool_size``.
+
+    ``pool_pre_ping`` stays on. The remote session pooler reaps idle server
+    connections, so a pooled handle can go stale between requests; without a
+    ping that stale handle is handed to a request and every query fails with
+    an opaque 500. The ping is a single cheap round trip on a warm connection.
+    """
+
+    url = make_url(settings.database_url)
+    kwargs: dict[str, object] = {"pool_pre_ping": settings.database_pool_pre_ping}
+    if url.get_backend_name() != "sqlite":
+        kwargs.update(
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_recycle=settings.database_pool_recycle_seconds,
+            pool_timeout=settings.database_pool_timeout_seconds,
+        )
+    return kwargs
+
+
+engine = create_async_engine(settings.database_url, **build_engine_kwargs())
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 

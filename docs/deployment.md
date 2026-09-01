@@ -145,6 +145,10 @@ https://<生产域名>/api/v1/...
 后端健康接口当前定义为 `/health`，而 Vercel 对外只公开 `/api/*` 给后端服务，因此它不作为公开部署探针。
 可通过登录、读取项目列表等现有 `/api/v1` 请求确认后端与 Supabase 连接正常。
 
+`/health` 在数据库可达时返回 `{"status":"ok","database":"ok"}`；数据库不可达时返回 HTTP 503，响应体形如
+`{"detail":{"status":"error","database":"error","detail":"<截断后的异常信息>"}}`，方便在 Vercel 日志里立即分辨
+“后端进程存活但数据库未连通”。
+
 Vercel 部署不会自动执行 Alembic。发布包含数据库迁移的版本前，先在受控终端使用同一个
 `APP_DATABASE_URL` 执行 `alembic upgrade head`，确认成功后再部署应用。
 

@@ -1,58 +1,71 @@
 <template>
   <main class="welcome-page">
-    <header class="welcome-header">
-      <AppLogo />
-      <nav class="welcome-header__actions" aria-label="账户入口">
-        <RouterLink class="button button--quiet" :to="{ name: 'login' }">登录</RouterLink>
-        <RouterLink class="button button--primary" :to="{ name: 'login', query: { mode: 'register' } }">
-          注册
-        </RouterLink>
-      </nav>
+    <div class="welcome-aurora" aria-hidden="true">
+      <span class="welcome-aurora__blob welcome-aurora__blob--violet" />
+      <span class="welcome-aurora__blob welcome-aurora__blob--pink" />
+      <span class="welcome-aurora__blob welcome-aurora__blob--blue" />
+    </div>
+
+    <header class="welcome-header" :class="{ 'is-scrolled': scrolled }">
+      <div class="welcome-header__inner">
+        <AppLogo />
+        <nav class="welcome-header__actions" aria-label="账户入口">
+          <RouterLink class="button button--quiet" :to="{ name: 'login' }">登录</RouterLink>
+          <RouterLink class="button button--primary" :to="{ name: 'login', query: { mode: 'register' } }">
+            免费注册
+          </RouterLink>
+        </nav>
+      </div>
     </header>
 
-    <section class="welcome-hero" aria-labelledby="welcome-title">
+    <section
+      class="welcome-hero"
+      aria-labelledby="welcome-title"
+      :style="tiltStyle"
+      @pointermove.passive="trackPointer"
+      @pointerleave="resetTilt"
+    >
       <div class="welcome-hero__copy">
-        <p class="eyebrow">DAYFLOW · 项目与时间管理</p>
-        <h1 id="welcome-title">让计划真正<br />流动起来。</h1>
-        <p class="welcome-hero__lead">把任务、专注计时和投入趋势放在同一条清晰的工作流里。</p>
-        <div class="welcome-hero__actions">
+        <p class="eyebrow welcome-rise" :style="{ '--rise': 1 }">DAYFLOW · 时间预算</p>
+        <h1 id="welcome-title" class="welcome-rise" :style="{ '--rise': 2 }">
+          让每一分钟<br />流向<em>重要的事</em>
+        </h1>
+        <p class="welcome-hero__lead welcome-rise" :style="{ '--rise': 3 }">
+          计划、专注、复盘串成一条线。<br class="welcome-only-wide" />
+          先看清时间去哪了，再谈管理时间。
+        </p>
+        <div class="welcome-hero__actions welcome-rise" :style="{ '--rise': 4 }">
           <RouterLink
             class="button button--primary welcome-hero__primary"
             :to="{ name: 'login', query: { mode: 'register' } }"
           >
             免费开始
           </RouterLink>
-          <a class="welcome-text-link" href="#product-preview">看看 DayFlow</a>
+          <a class="welcome-text-link" href="#product-preview" @click="pauseAutoplay">
+            看看 DayFlow
+          </a>
         </div>
-        <ul class="welcome-hero__notes" aria-label="产品特点">
+        <ul class="welcome-hero__notes welcome-rise" :style="{ '--rise': 5 }" aria-label="产品特点">
           <li>项目结构</li>
           <li>专注计时</li>
           <li>趋势分析</li>
+          <li>离线可用</li>
         </ul>
       </div>
 
-      <div id="product-preview" class="welcome-showcase">
-        <div
-          ref="carousel"
-          class="welcome-carousel"
-          tabindex="0"
-          aria-label="DayFlow 产品界面预览，可左右滑动"
-          @scroll.passive="updateActiveSlide"
-        >
+      <div id="product-preview" class="welcome-showcase welcome-fade" :style="{ '--rise': 3 }">
+        <div class="welcome-stage">
           <article
             v-for="(slide, index) in slides"
             :key="slide.id"
-            class="welcome-slide"
-            :aria-label="`${index + 1} / ${slides.length}：${slide.title}`"
+            class="welcome-frame"
+            :class="{ 'is-active': activeSlide === index }"
+            :aria-hidden="activeSlide === index ? undefined : 'true'"
           >
-            <header>
-              <span>{{ slide.kicker }}</span>
-              <strong>{{ slide.title }}</strong>
-              <p>{{ slide.description }}</p>
-            </header>
-            <div class="welcome-slide__image">
+            <div class="welcome-frame__visual">
               <div
                 v-if="slide.kind === 'demo'"
+                v-show="activeSlide === index"
                 :key="demoCycle"
                 class="welcome-task-tree-demo"
                 role="img"
@@ -110,59 +123,74 @@
                   </article>
                 </div>
               </div>
-              <img v-else :src="slide.image" :alt="slide.alt" loading="eager" />
+              <img v-else :src="slide.image" :alt="slide.alt" loading="eager" decoding="async" />
             </div>
           </article>
+
+          <p class="welcome-stage__caption" aria-live="polite">
+            <span>{{ activeSlideMeta.kicker }}</span>
+            <strong>{{ activeSlideMeta.title }}</strong>
+          </p>
         </div>
 
-        <div class="welcome-carousel__controls">
+        <div class="welcome-showcase__controls">
           <div class="welcome-carousel__dots" aria-label="选择预览页面">
             <button
-              v-for="(_, index) in slides"
-              :key="index"
+              v-for="(slide, index) in slides"
+              :key="slide.id"
               type="button"
               :class="{ 'is-active': activeSlide === index }"
-              :aria-label="`查看第 ${index + 1} 张预览`"
+              :aria-label="`查看预览：${slide.title}`"
               :aria-current="activeSlide === index ? 'true' : undefined"
               @click="showSlide(index)"
             />
           </div>
-          <div class="welcome-carousel__arrows">
-            <button type="button" aria-label="上一张" @click="showSlide(activeSlide - 1)">←</button>
-            <button type="button" aria-label="下一张" @click="showSlide(activeSlide + 1)">→</button>
-          </div>
+          <p class="welcome-showcase__hint">{{ activeSlide + 1 }} / {{ slides.length }}</p>
+        </div>
+
+        <div class="welcome-float-card welcome-float-card--one" aria-hidden="true">
+          <span>今日专注</span>
+          <strong>2h 15m</strong>
+        </div>
+        <div class="welcome-float-card welcome-float-card--two" aria-hidden="true">
+          <span>连续打卡</span>
+          <strong>7 天</strong>
         </div>
       </div>
     </section>
 
-    <section class="welcome-features" aria-labelledby="welcome-features-title">
-      <div>
-        <p class="eyebrow">一条更自然的工作流</p>
-        <h2 id="welcome-features-title">从计划，到专注，再到复盘。</h2>
-      </div>
-      <div class="welcome-feature-grid">
-        <article>
-          <span>01</span>
-          <h3>组织任务</h3>
-          <p>用项目、模块和任务保持结构清楚。</p>
-        </article>
-        <article>
-          <span>02</span>
-          <h3>记录投入</h3>
-          <p>今天做什么、用了多久，一目了然。</p>
-        </article>
-        <article>
-          <span>03</span>
-          <h3>看见趋势</h3>
-          <p>通过日、周、月、年数据持续调整节奏。</p>
-        </article>
-      </div>
+    <section class="welcome-highlights" ref="highlightsSection" aria-label="核心能力">
+      <article
+        v-for="(item, index) in highlights"
+        :key="item.title"
+        class="welcome-highlight"
+        :class="{ 'is-visible': highlightsVisible }"
+        :style="{ '--rise': index + 1 }"
+      >
+        <span class="welcome-highlight__icon" aria-hidden="true" v-html="item.icon" />
+        <h3>{{ item.title }}</h3>
+        <p>{{ item.text }}</p>
+      </article>
     </section>
+
+    <section class="welcome-closing">
+      <div>
+        <h2>今天就让计划流动起来。</h2>
+        <p>注册即用，数据存在你自己的空间里。</p>
+      </div>
+      <RouterLink class="button button--primary" :to="{ name: 'login', query: { mode: 'register' } }">
+        免费开始
+      </RouterLink>
+    </section>
+
+    <footer class="welcome-footer">
+      <span>DayFlow · 让计划流动起来</span>
+    </footer>
   </main>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import AppLogo from '@/components/AppLogo.vue'
@@ -203,6 +231,24 @@ const slides = [
     description: '在项目、模块和任务之间建立可执行的层级关系。',
     image: '/welcome-tasks.png',
     alt: 'DayFlow 项目与任务管理界面',
+  },
+] as const
+
+const highlights = [
+  {
+    title: '组织任务',
+    text: '用项目、模块和任务拆解复杂计划，结构清楚才执行得动。',
+    icon: '<svg viewBox="0 0 24 24"><path d="M4 6h7v5H4zM13 6h7v5h-7zM4 13h7v5H4zM13 13h7v5h-7z"/></svg>',
+  },
+  {
+    title: '记录投入',
+    text: '专注计时自动归集到任务与当日清单，不用手动记账。',
+    icon: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.6 1.6M9.5 3.5h5"/></svg>',
+  },
+  {
+    title: '看见趋势',
+    text: '日、周、月、年多粒度回看节奏，及时调整下一轮计划。',
+    icon: '<svg viewBox="0 0 24 24"><path d="M4 19h16M6.5 19V11M11 19V6M15.5 19v-6M20 19V9"/></svg>',
   },
 ] as const
 
@@ -295,39 +341,84 @@ const demoConnections = [
   { id: 'data-project', path: 'M370 437 C320 437 320 295 270 295', delay: '8.9s' },
 ] as const
 
-const carousel = ref<HTMLElement | null>(null)
 const activeSlide = ref(0)
 const demoCycle = ref(0)
-let demoCycleTimer: number | undefined
+const scrolled = ref(false)
+const highlightsVisible = ref(false)
+const highlightsSection = ref<HTMLElement | null>(null)
+const tiltX = ref(0)
+const tiltY = ref(0)
+
+let autoplayTimer: number | undefined
+let observer: IntersectionObserver | undefined
+
+const activeSlideMeta = computed(() => slides[activeSlide.value] ?? slides[0])
+
+const tiltStyle = computed(() => ({
+  '--tilt-x': `${tiltX.value}deg`,
+  '--tilt-y': `${tiltY.value}deg`,
+}))
 
 onMounted(() => {
-  demoCycleTimer = window.setInterval(() => {
-    demoCycle.value += 1
-  }, 14_400)
+  startAutoplay()
+  window.addEventListener('scroll', onScroll, { passive: true })
+  onScroll()
+
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) highlightsVisible.value = true
+    },
+    { threshold: 0.2 },
+  )
+  if (highlightsSection.value) observer.observe(highlightsSection.value)
 })
 
 onBeforeUnmount(() => {
-  if (demoCycleTimer !== undefined) window.clearInterval(demoCycleTimer)
+  stopAutoplay()
+  window.removeEventListener('scroll', onScroll)
+  observer?.disconnect()
 })
+
+function startAutoplay(): void {
+  stopAutoplay()
+  autoplayTimer = window.setInterval(() => {
+    showSlide(activeSlide.value + 1)
+  }, 5_600)
+}
+
+function stopAutoplay(): void {
+  if (autoplayTimer !== undefined) window.clearInterval(autoplayTimer)
+  autoplayTimer = undefined
+}
+
+function pauseAutoplay(): void {
+  stopAutoplay()
+}
 
 function showSlide(index: number): void {
   const normalized = (index + slides.length) % slides.length
-  activeSlide.value = normalized
   if (normalized === 0) demoCycle.value += 1
-  const target = carousel.value?.children.item(normalized)
-  if (target instanceof HTMLElement) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' })
-  }
+  activeSlide.value = normalized
 }
 
-function updateActiveSlide(): void {
-  const element = carousel.value
-  if (!element) return
-  const firstSlide = element.firstElementChild
-  if (!(firstSlide instanceof HTMLElement)) return
-  const gap = Number.parseFloat(getComputedStyle(element).columnGap || '0')
-  const slideWidth = firstSlide.offsetWidth + gap
-  if (slideWidth <= 0) return
-  activeSlide.value = Math.min(slides.length - 1, Math.max(0, Math.round(element.scrollLeft / slideWidth)))
+function onScroll(): void {
+  scrolled.value = window.scrollY > 12
+}
+
+/** Subtle pointer-driven tilt for the hero visual; clamped so it never distracts. */
+function trackPointer(event: PointerEvent): void {
+  if (event.pointerType !== 'mouse') return
+  const hero = event.currentTarget
+  if (!(hero instanceof HTMLElement)) return
+  const bounds = hero.getBoundingClientRect()
+  const ratioX = (event.clientX - bounds.left) / bounds.width - 0.5
+  const ratioY = (event.clientY - bounds.top) / bounds.height - 0.5
+  tiltY.value = Number((ratioX * 5).toFixed(2))
+  tiltX.value = Number((-ratioY * 4).toFixed(2))
+}
+
+function resetTilt(): void {
+  tiltX.value = 0
+  tiltY.value = 0
 }
 </script>
