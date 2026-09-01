@@ -112,6 +112,11 @@ function translateMessage(message: string): string | null {
   if (/String should have at least/i.test(normalized)) return '输入内容长度不足。'
   if (/String should have at most/i.test(normalized)) return '输入内容长度超过限制。'
   if (/Internal Server Error/i.test(normalized)) return '服务器内部错误，请检查数据库配置或稍后重试。'
+  // A missing table means the database is behind the code: surface the fix
+  // instead of an asyncpg class name the user cannot act on.
+  if (/UndefinedTableError|relation "[^"]+" does not exist/i.test(normalized)) {
+    return '数据库缺少所需的数据表，请重启本地服务以执行数据库迁移（corepack pnpm dev）后重试。'
+  }
   if (/[\u3400-\u9fff]/.test(normalized)) return normalized
   return null
 }

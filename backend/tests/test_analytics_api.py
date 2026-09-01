@@ -1,10 +1,11 @@
 """Date-range learning analytics API tests."""
 
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from uuid import uuid4
 
 from httpx import AsyncClient
 
+from tests.conftest import profile_today
 from tests.test_daily_plans_api import add_item, create_plan
 from tests.test_sessions_api import create_task, snapshot
 from tests.test_tasks_api import auth_header, register_user
@@ -14,7 +15,7 @@ async def test_analytics_aggregates_time_completion_and_budget(
     client: AsyncClient,
 ) -> None:
     token, _ = await register_user(client)
-    today = date.today()
+    today = profile_today()
     child_id = await create_task(client, token, "Lesson")
     plan = await create_plan(client, token, today)
     item = await add_item(client, token, plan["id"], task_id=child_id)
@@ -76,7 +77,7 @@ async def test_analytics_task_completion_follows_daily_items_in_range(
     client: AsyncClient,
 ) -> None:
     token, _ = await register_user(client, "daily_item_analytics")
-    today = date.today()
+    today = profile_today()
     yesterday = today - timedelta(days=1)
     task_id = await create_task(client, token, "Recurring project task")
 
@@ -156,7 +157,7 @@ async def test_analytics_validates_range_and_isolates_owners(
 ) -> None:
     first_token, _ = await register_user(client, "first")
     second_token, _ = await register_user(client, "second")
-    today = date.today()
+    today = profile_today()
     task_id = await create_task(client, first_token, "Private work")
     started = datetime.now(UTC)
     ended = started + timedelta(minutes=5)
@@ -199,7 +200,7 @@ async def test_hourly_focus_buckets_sessions_by_start_hour(
     from zoneinfo import ZoneInfo
 
     token, _ = await register_user(client, "hourly")
-    today = date.today()
+    today = profile_today()
     task_id = await create_task(client, token, "Hourly lesson")
 
     # New profiles default to Asia/Shanghai; build sessions on that local day.
@@ -252,7 +253,7 @@ async def test_task_daily_series_buckets_seconds_per_task_and_day(
     from zoneinfo import ZoneInfo
 
     token, _ = await register_user(client, "gantt")
-    today = date.today()
+    today = profile_today()
     yesterday = today - timedelta(days=1)
     task_id = await create_task(client, token, "Gantt lesson")
 
@@ -319,7 +320,7 @@ async def test_today_overview_matches_the_separate_endpoints(client: AsyncClient
     from zoneinfo import ZoneInfo
 
     token, _ = await register_user(client, "today_overview")
-    today = date.today()
+    today = profile_today()
     yesterday = today - timedelta(days=1)
     task_id = await create_task(client, token, "Overview lesson")
     plan = await create_plan(client, token, today)
@@ -387,7 +388,7 @@ async def test_today_overview_matches_the_separate_endpoints(client: AsyncClient
 
 async def test_today_overview_rejects_reversed_ranges(client: AsyncClient) -> None:
     token, _ = await register_user(client, "today_overview_range")
-    today = date.today()
+    today = profile_today()
 
     response = await client.get(
         "/api/v1/analytics/today-overview",

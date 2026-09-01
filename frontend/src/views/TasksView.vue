@@ -148,6 +148,7 @@
                     class="task-mindmap"
                     role="group"
                     :aria-label="`${project.title}的导图画布`"
+                    :style="mapViewportStyle(project.id)"
                     @wheel.ctrl.prevent="zoomMapAtPointer"
                   >
                     <div class="task-mindmap__surface" :style="mapSurfaceStyle(project.id)">
@@ -447,6 +448,8 @@ async function toggleProjectComplete(task: Task): Promise<void> {
 function toggleMindmapProject(projectId: string): void {
   if (collapsedMindmapProjects.has(projectId)) {
     collapsedMindmapProjects.delete(projectId)
+    // A hidden tree measures zero, so re-measure once it is visible again.
+    scheduleMapLayout()
   } else {
     collapsedMindmapProjects.add(projectId)
   }
@@ -476,6 +479,29 @@ function mapSurfaceStyle(projectId: string): CSSProperties {
   return {
     width: `${Math.ceil(size.width * mapZoom.value)}px`,
     height: `${Math.ceil(size.height * mapZoom.value)}px`,
+  }
+}
+
+// The canvas used to be a fixed 360-560px box whatever it held, so a project
+// with two tasks sat in a mostly empty panel while a large one scrolled
+// inside a small window. Size the viewport to the tree it actually contains,
+// bounded so a very large tree still scrolls instead of pushing the page down.
+const MAP_VIEWPORT_MIN_HEIGHT = 150
+// Generous ceiling rather than a tight window: a project should normally show
+// its whole tree without a nested scrollbar, and an unusually large one can be
+// collapsed from its title bar instead of stretching the page indefinitely.
+const MAP_VIEWPORT_MAX_HEIGHT = 2400
+const MAP_VIEWPORT_PADDING = 8
+
+function mapViewportStyle(projectId: string): CSSProperties {
+  const size = mapSizes.value[projectId]
+  if (!size) return {}
+  const content = Math.ceil(size.height * mapZoom.value) + MAP_VIEWPORT_PADDING
+  return {
+    height: `${Math.min(
+      MAP_VIEWPORT_MAX_HEIGHT,
+      Math.max(MAP_VIEWPORT_MIN_HEIGHT, content),
+    )}px`,
   }
 }
 
@@ -531,16 +557,12 @@ watch(
   { immediate: true },
 )
 
+// Only the tree's shape changes its measured size. Comparing a joined string
+// avoids the deep diff over every task the old watcher performed, and avoids
+// relaying out on every tick of a running timer's accumulated seconds.
 watch(
-  () => tasks.items.map((task) => [
-    task.id,
-    task.parent_id,
-    task.status,
-    task.progress_ratio,
-    task.due_date,
-  ]),
+  () => tasks.items.map((task) => `${task.id}:${task.parent_id ?? ''}:${task.status}`).join('|'),
   () => scheduleMapLayout(),
-  { deep: true },
 )
 
 // Deep link from the today page gantt (?task=<id>): open the task editor and
@@ -625,9 +647,23 @@ function syncMapLayout(): void {
     }
     nextSizes[projectId] = {
       width: Math.max(320, Math.ceil(tree.scrollWidth)),
-      height: Math.max(220, Math.ceil(tree.scrollHeight)),
+      height: Math.max(120, Math.ceil(tree.scrollHeight)),
     }
   })
+  // Writing the same sizes back would resize the canvas, wake the
+  // ResizeObserver and schedule another pass — a loop that showed up as the
+  // tree twitching after every render. Only publish real changes.
+  const current = mapSizes.value
+  const currentIds = Object.keys(current)
+  const nextIds = Object.keys(nextSizes)
+  const unchanged =
+    currentIds.length === nextIds.length &&
+    nextIds.every(
+      (id) =>
+        current[id]?.width === nextSizes[id]!.width &&
+        current[id]?.height === nextSizes[id]!.height,
+    )
+  if (unchanged) return
   mapSizes.value = nextSizes
 }
 

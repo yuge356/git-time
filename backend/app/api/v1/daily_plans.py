@@ -17,6 +17,7 @@ from app.schemas.daily_plan import (
     DailyPlanItemCreate,
     DailyPlanItemResponse,
     DailyPlanItemUpdate,
+    DailyPlanOpenResponse,
     DailyPlanResponse,
 )
 from app.services.daily_plans import (
@@ -74,6 +75,62 @@ async def create_daily_plan(
             status_code=status.HTTP_409_CONFLICT,
             detail="A daily plan already exists for this date",
         ) from exc
+
+
+@router.post("/daily-plans/open", response_model=DailyPlanOpenResponse)
+async def open_daily_plan(
+    payload: DailyPlanCreate,
+    db: DatabaseSession,
+    current_user: CurrentUser,
+) -> DailyPlanOpenResponse:
+    """Find or create one day's plan, fill in its schedule and check in.
+
+    The Today page opens a day on every visit and after every midnight
+    rollover. Doing it in one request keeps that to a single round trip to
+    the managed database instead of the three or four sequential ones the
+    separate read / create / auto-populate / check-in calls needed.
+    """
+
+    plan = await db.scalar(
+        select(DailyPlan).where(
+            DailyPlan.owner_id == current_user.id,
+            DailyPlan.plan_date == payload.plan_date,
+            DailyPlan.deleted_at.is_(None),
+        )
+    )
+    if plan is None:
+        plan = DailyPlan(
+            **({"id": payload.id} if payload.id is not None else {}),
+            owner_id=current_user.id,
+            plan_date=payload.plan_date,
+        )
+        db.add(plan)
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Another device created the same day between the read and the
+            # insert. Reuse the row it wrote instead of failing the page load.
+            await db.rollback()
+            plan = await get_owned_daily_plan_by_date(
+                db,
+                current_user.id,
+                payload.plan_date,
+            )
+
+    response = await auto_populate_scheduled_items(
+        db,
+        current_user.id,
+        plan.id,
+        current_user.profile.timezone,
+    )
+    check_in = await build_check_in(
+        db,
+        current_user.id,
+        payload.plan_date,
+        current_user.profile.timezone,
+    )
+    await db.commit()
+    return DailyPlanOpenResponse(plan=response, check_in=check_in)
 
 
 @router.post(

@@ -1,6 +1,8 @@
 """Shared in-memory API test fixtures."""
 
 from collections.abc import AsyncIterator
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -11,6 +13,19 @@ from app.core.config import settings
 from app.db.base import Base
 from app.db.session import get_db, get_service_db
 from app.main import app
+
+# New profiles default to this zone, and every date-scoped endpoint resolves
+# "today" in the profile's zone. Tests must use the same clock: plain
+# ``date.today()`` follows the machine timezone, so on a host west of the
+# profile zone the suite started failing after ~16:00 UTC purely because the
+# two disagreed about which day it was.
+PROFILE_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def profile_today() -> date:
+    """Return the date the API considers "today" for a default profile."""
+
+    return datetime.now(UTC).astimezone(PROFILE_TIMEZONE).date()
 
 
 @pytest_asyncio.fixture(autouse=True)

@@ -1,10 +1,11 @@
 """Reliable session state, idempotency and task aggregation API tests."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from httpx import AsyncClient
 
+from tests.conftest import profile_today
 from tests.test_tasks_api import auth_header, create_structured_task, register_user
 
 
@@ -243,7 +244,7 @@ async def test_switching_from_paused_timer_keeps_previous_daily_item_open(
     plan = await client.post(
         "/api/v1/daily-plans",
         headers=auth_header(token),
-        json={"plan_date": date.today().isoformat()},
+        json={"plan_date": profile_today().isoformat()},
     )
     assert plan.status_code == 201
     item = await client.post(
@@ -332,7 +333,7 @@ async def test_switching_from_paused_timer_keeps_previous_daily_item_open(
         ),
     )
     refreshed_plan = await client.get(
-        f"/api/v1/daily-plans/by-date/{date.today().isoformat()}",
+        f"/api/v1/daily-plans/by-date/{profile_today().isoformat()}",
         headers=auth_header(token),
     )
     refreshed_item = next(
@@ -451,7 +452,7 @@ async def test_legacy_daily_item_snapshot_recovers_missing_task_id(
     plan = await client.post(
         "/api/v1/daily-plans",
         headers=auth_header(token),
-        json={"plan_date": date.today().isoformat()},
+        json={"plan_date": profile_today().isoformat()},
     )
     item = await client.post(
         f"/api/v1/daily-plans/{plan.json()['id']}/items",

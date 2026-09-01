@@ -26,6 +26,7 @@
 | 计时 | `PUT /sessions/{id}` | 幂等写入 Session 快照 |
 | 每日计划 | `POST /daily-plans` | 创建/幂等读取日期计划 |
 | 每日计划 | `GET /daily-plans/by-date/{date}` | 日期计划 |
+| 每日计划 | `POST /daily-plans/open` | 一次完成“取得或创建当日计划 + 按排期补齐 + 打卡”，今日页加载只发一个请求 |
 | 每日计划 | `POST /daily-plans/{id}/auto-populate` | 按当日排期补齐计划项（重复规则、截止日期或计划窗口命中该日） |
 | 每日计划 | `POST /daily-plans/{id}/items` | 添加计划项 |
 | 每日计划 | `PATCH /daily-plan-items/{id}` | 修改计划项 |
@@ -79,6 +80,10 @@ Session 按其开始时刻的资料时区半小时槽位归属，正在计时的
 `{ calendar_trend, hourly_focus, task_daily }`，字段与 `summary.daily_trend`、`hourly-focus`、
 `task-daily` 完全一致。今日页首次加载改用这一个请求：三个独立请求会同时占满后端很小的数据库连接池，
 超出的请求超时后页面就会在空白图表上显示服务器错误提示。切换月份或查看历史某天时仍使用单独的接口。
+
+`POST /daily-plans/open` 接受 `{ plan_date, id? }`，返回 `{ plan, check_in }`：日期计划不存在时按需
+创建（并发创建同一天时复用已存在的行），随后执行排期补齐并计算打卡数据，全部在同一个事务里完成。
+今日页此前需要“读取 →（404 时）创建 → 补齐 → 打卡”三到四个串行请求，每个都要一次远程数据库往返。
 
 `POST /daily-plans/{id}/auto-populate` 会把当日排期的可执行任务补进该日计划：命中重复规则、
 `due_date` 等于该日期，或该日期落在 `planned_start_date`~`planned_end_date` 之间的任务都会被加入。

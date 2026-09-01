@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from httpx import AsyncClient
 
+from tests.conftest import profile_today
 from tests.test_sessions_api import create_task
 from tests.test_tasks_api import auth_header, create_structured_task, register_user
 
@@ -52,7 +53,7 @@ async def test_empty_project_can_be_planned_timed_and_reported(client: AsyncClie
     assert project.status_code == 201
     assert project.json()["is_leaf"] is True
 
-    plan = await create_plan(client, token, date.today())
+    plan = await create_plan(client, token, profile_today())
     item = await add_item(
         client,
         token,
@@ -92,7 +93,7 @@ async def test_empty_project_can_be_planned_timed_and_reported(client: AsyncClie
 
 async def test_daily_plan_items_progress_time_and_streak(client: AsyncClient) -> None:
     token, _ = await register_user(client)
-    today = date.today()
+    today = profile_today()
     yesterday = today - timedelta(days=1)
     task_id = await create_task(client, token, "Long-term task")
 
@@ -167,7 +168,7 @@ async def test_daily_plan_items_progress_time_and_streak(client: AsyncClient) ->
 async def test_daily_plan_uniqueness_and_owner_isolation(client: AsyncClient) -> None:
     first_token, _ = await register_user(client, "first")
     second_token, _ = await register_user(client, "second")
-    today = date.today()
+    today = profile_today()
     plan = await create_plan(client, first_token, today)
     item = await add_item(client, first_token, plan["id"], title="Private")
 
@@ -193,7 +194,7 @@ async def test_daily_plan_uniqueness_and_owner_isolation(client: AsyncClient) ->
 
 async def test_active_daily_item_timer_blocks_item_deletion(client: AsyncClient) -> None:
     token, _ = await register_user(client)
-    plan = await create_plan(client, token, date.today())
+    plan = await create_plan(client, token, profile_today())
     item = await add_item(client, token, plan["id"], title="Focused reading")
     started = datetime.now(UTC)
     session = await client.put(
@@ -224,7 +225,7 @@ async def test_client_generated_daily_item_id_is_idempotent(
     client: AsyncClient,
 ) -> None:
     token, _ = await register_user(client, "stable_daily_item")
-    plan = await create_plan(client, token, date.today())
+    plan = await create_plan(client, token, profile_today())
     item_id = str(uuid4())
     payload = {
         "id": item_id,
@@ -243,7 +244,7 @@ async def test_client_generated_daily_item_id_is_idempotent(
         json=payload,
     )
     reloaded = await client.get(
-        f"/api/v1/daily-plans/by-date/{date.today().isoformat()}",
+        f"/api/v1/daily-plans/by-date/{profile_today().isoformat()}",
         headers=auth_header(token),
     )
     assert first.status_code == 201
@@ -255,7 +256,7 @@ async def test_client_generated_daily_item_id_is_idempotent(
 
 async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) -> None:
     token, _ = await register_user(client, "auto_populate")
-    today = date.today()
+    today = profile_today()
     yesterday = today - timedelta(days=1)
 
     _, module, _ = await create_structured_task(client, token, "占位")
@@ -306,7 +307,7 @@ async def test_auto_populate_adds_due_project_tasks_once(client: AsyncClient) ->
 
 async def test_new_day_keeps_only_due_recurring_tasks(client: AsyncClient) -> None:
     token, _ = await register_user(client, "daily_refresh")
-    today = date.today()
+    today = profile_today()
     tomorrow = today + timedelta(days=1)
     ordinary_task_id = await create_task(client, token, "One day only")
     recurring_task_id = await create_task(client, token, "Repeat daily")
@@ -349,7 +350,7 @@ async def test_new_day_keeps_only_due_recurring_tasks(client: AsyncClient) -> No
 
 async def test_completed_project_keeps_existing_today_item(client: AsyncClient) -> None:
     token, _ = await register_user(client, "keep_done_item")
-    today = date.today()
+    today = profile_today()
     _, _, task = await create_structured_task(
         client,
         token,
@@ -391,7 +392,7 @@ async def test_auto_populate_adds_scheduled_and_due_tasks(client: AsyncClient) -
     """A task scheduled on the projects page lands in that day's plan."""
 
     token, _ = await register_user(client, "scheduled_today")
-    today = date.today()
+    today = profile_today()
     _, module, _ = await create_structured_task(client, token, "排期")
 
     due_today = await client.post(
@@ -447,7 +448,7 @@ async def test_auto_populate_skips_tasks_that_own_subtasks(client: AsyncClient) 
     """A task with subtasks is a container and can never be timed."""
 
     token, _ = await register_user(client, "scheduled_container")
-    today = date.today()
+    today = profile_today()
     _, module, parent_task = await create_structured_task(client, token, "容器")
     scheduled_parent = await client.patch(
         f"/api/v1/tasks/{parent_task['id']}",

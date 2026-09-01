@@ -63,7 +63,7 @@
             <option value="URGENT">紧急</option>
           </select>
         </label>
-        <label class="field">
+        <label v-if="!isExecutableTask" class="field">
           <span>截止日期</span>
           <input v-model="form.due_date" type="date" />
           <small>留空表示不设置截止日期。</small>
@@ -88,34 +88,60 @@
           </small>
         </fieldset>
 
-        <div class="task-schedule-grid">
-          <label class="field">
-            <span>重复</span>
-            <select v-model="form.repeat_rule">
-              <option value="NONE">不重复</option>
-              <option value="DAILY">每天</option>
-              <option value="WEEKDAYS">仅工作日</option>
-              <option value="WEEKLY">每周</option>
-              <option value="MONTHLY">每月</option>
-            </select>
-          </label>
+        <fieldset class="budget-fieldset schedule-fieldset">
+          <legend>安排时间</legend>
+          <p class="field-help">以下任意一项命中某一天，这项任务就会自动出现在那天的“今日任务”里。</p>
 
-          <label v-if="form.repeat_rule !== 'NONE'" class="field">
-            <span>重复截止日期</span>
-            <input v-model="form.repeat_end_date" type="date" />
-            <small>留空表示永不截止。</small>
-          </label>
+          <div class="schedule-option">
+            <span class="schedule-option__label">① 连续做几天</span>
+            <div class="date-range">
+              <label class="field">
+                <span class="sr-only">安排开始日期</span>
+                <input v-model="form.planned_start_date" type="date" aria-label="安排开始日期" />
+              </label>
+              <i aria-hidden="true">→</i>
+              <label class="field">
+                <span class="sr-only">安排结束日期</span>
+                <input v-model="form.planned_end_date" type="date" aria-label="安排结束日期" />
+              </label>
+            </div>
+            <small>这段时间里的每一天都会出现在今日任务；也可以直接在今日页的计划进度表上拖拽调整。</small>
+          </div>
 
-          <label class="field">
-            <span>安排开始</span>
-            <input v-model="form.planned_start_date" type="date" />
-          </label>
-          <label class="field">
-            <span>安排结束</span>
-            <input v-model="form.planned_end_date" type="date" />
-            <small>安排期内的每一天，这项任务都会出现在“今日任务”里。</small>
-          </label>
-        </div>
+          <div class="schedule-option">
+            <span class="schedule-option__label">② 按规律重复</span>
+            <div class="task-schedule-grid">
+              <label class="field">
+                <span class="sr-only">重复规则</span>
+                <select v-model="form.repeat_rule" aria-label="重复规则">
+                  <option value="NONE">不重复</option>
+                  <option value="DAILY">每天</option>
+                  <option value="WEEKDAYS">仅工作日</option>
+                  <option value="WEEKLY">每周</option>
+                  <option value="MONTHLY">每月</option>
+                </select>
+              </label>
+              <label v-if="form.repeat_rule !== 'NONE'" class="field">
+                <span class="sr-only">重复到哪天为止</span>
+                <input
+                  v-model="form.repeat_end_date"
+                  type="date"
+                  aria-label="重复到哪天为止"
+                />
+              </label>
+            </div>
+            <small v-if="form.repeat_rule !== 'NONE'">右侧是重复的结束日期，留空表示一直重复下去。</small>
+          </div>
+
+          <div class="schedule-option">
+            <span class="schedule-option__label">③ 只在截止当天</span>
+            <label class="field">
+              <span class="sr-only">截止日期</span>
+              <input v-model="form.due_date" type="date" aria-label="截止日期" />
+            </label>
+            <small>任务的最后期限，截止当天会出现在今日任务。留空表示不设置。</small>
+          </div>
+        </fieldset>
 
         <label v-if="task" class="field">
           <span>任务状态</span>

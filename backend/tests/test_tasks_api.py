@@ -1,9 +1,10 @@
 """Hierarchical task API behavior tests."""
 
-from datetime import date
 from uuid import uuid4
 
 from httpx import AsyncClient
+
+from tests.conftest import profile_today
 
 
 async def register_user(
@@ -178,7 +179,7 @@ async def test_task_status_controls_completed_timestamp(client: AsyncClient) -> 
 async def test_task_time_update_syncs_linked_today_item(client: AsyncClient) -> None:
     token, _ = await register_user(client, "sync_today_budget")
     _, _, task = await create_structured_task(client, token, "同步时间")
-    today = date.today().isoformat()
+    today = profile_today().isoformat()
     plan = await client.post(
         "/api/v1/daily-plans",
         headers=auth_header(token),

@@ -106,3 +106,15 @@ class CheckInResponse(BaseModel):
     completed_items: int
     total_items: int
     streak_days: int
+
+
+class DailyPlanOpenResponse(BaseModel):
+    """Everything the Today page needs to show one day, in one round trip.
+
+    Opening a day used to cost three or four sequential requests -- read,
+    create on 404, auto-populate, then check-in -- and each one paid a full
+    round trip to the managed database. They are all one transaction here.
+    """
+
+    plan: DailyPlanResponse
+    check_in: CheckInResponse

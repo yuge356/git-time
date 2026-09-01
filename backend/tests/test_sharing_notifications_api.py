@@ -1,9 +1,9 @@
 """Controlled sharing, fixed encouragement and notification tests."""
 
-from datetime import date
 
 from httpx import AsyncClient
 
+from tests.conftest import profile_today
 from tests.test_daily_plans_api import add_item, create_plan
 from tests.test_tasks_api import auth_header, register_user
 
@@ -34,7 +34,7 @@ async def test_share_privacy_encouragement_completion_and_revoke(
     client: AsyncClient,
 ) -> None:
     owner_token, _, partner_token, partner_id = await connect_partners(client)
-    plan = await create_plan(client, owner_token, date.today())
+    plan = await create_plan(client, owner_token, profile_today())
     item = await add_item(client, owner_token, plan["id"], title="Read chapter")
 
     shared = await client.post(
@@ -122,7 +122,7 @@ async def test_only_accepted_unblocked_partner_can_receive_share(
     client: AsyncClient,
 ) -> None:
     owner_token, _, stranger_token, stranger_id = await register_pair(client)
-    plan = await create_plan(client, owner_token, date.today())
+    plan = await create_plan(client, owner_token, profile_today())
     denied = await client.post(
         "/api/v1/plan-shares",
         headers=auth_header(owner_token),

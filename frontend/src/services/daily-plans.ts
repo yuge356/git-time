@@ -2,6 +2,7 @@ import { http } from './http'
 import type {
   CheckIn,
   DailyPlan,
+  DailyPlanOpenResult,
   DailyPlanItem,
   DailyPlanItemCreate,
   DailyPlanItemUpdate,
@@ -18,6 +19,20 @@ export const dailyPlanService = {
 
   async autoPopulate(planId: string): Promise<DailyPlan> {
     const { data } = await http.post<DailyPlan>(`/daily-plans/${planId}/auto-populate`)
+    return data
+  },
+
+  /**
+   * Find or create the day's plan, fill in its schedule and read the
+   * check-in in one round trip. Doing those separately cost three or four
+   * sequential requests to a remote database every time the Today page
+   * opened, which is most of what made the page feel slow.
+   */
+  async open(planDate: string, id?: string): Promise<DailyPlanOpenResult> {
+    const { data } = await http.post<DailyPlanOpenResult>('/daily-plans/open', {
+      plan_date: planDate,
+      ...(id ? { id } : {}),
+    })
     return data
   },
 

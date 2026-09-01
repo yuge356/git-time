@@ -49,3 +49,9 @@ export interface CheckIn {
   total_items: number
   streak_days: number
 }
+
+/** One request's worth of "open today": the plan plus its check-in. */
+export interface DailyPlanOpenResult {
+  plan: DailyPlan
+  check_in: CheckIn
+}

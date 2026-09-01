@@ -13,6 +13,7 @@ import {
   syncPendingChanges,
 } from '@/services/offline-sync'
 import { taskService } from '@/services/tasks'
+import { useTimerStore } from '@/stores/timer'
 import type {
   Task,
   TaskBulkApplyPayload,
@@ -88,14 +89,31 @@ export const useTaskStore = defineStore('tasks', {
 
   getters: {
     tree(state): TaskNode[] {
+      // Seconds the running timer has accrued since its last persisted
+      // snapshot. Folding them in here keeps the projects page in step with
+      // the Today page while a task is being timed: the roll-up below carries
+      // the delta up through every module and project above the task.
+      const timer = useTimerStore()
+      const running =
+        timer.active?.snapshot.status === 'RUNNING' ? timer.active.snapshot : null
+      const liveTaskId = running?.task_id ?? null
+      const liveSeconds = running
+        ? Math.max(0, timer.displaySeconds - running.duration_seconds)
+        : 0
+
       const nodes = new Map<string, TaskNode>()
-      state.items.forEach((task) => nodes.set(task.id, {
-        ...task,
-        priority: task.priority ?? 'MEDIUM',
-        due_date: task.due_date ?? null,
-        dependency_ids: task.dependency_ids ?? [],
-        children: [],
-      }))
+      state.items.forEach((task) => {
+        const extra = liveSeconds > 0 && task.id === liveTaskId ? liveSeconds : 0
+        nodes.set(task.id, {
+          ...task,
+          priority: task.priority ?? 'MEDIUM',
+          due_date: task.due_date ?? null,
+          dependency_ids: task.dependency_ids ?? [],
+          direct_actual_seconds: task.direct_actual_seconds + extra,
+          actual_seconds: task.actual_seconds + extra,
+          children: [],
+        })
+      })
       const roots: TaskNode[] = []
       // Every task must end up on screen. A node whose parent is missing --
       // or whose ancestor chain loops back on itself after a bad offline
@@ -282,6 +300,19 @@ export const useTaskStore = defineStore('tasks', {
       }
       this.online = navigator.onLine
       try {
+        // Paint the cached tree first. An IndexedDB read costs a millisecond
+        // while the server round trip costs hundreds, and the refresh below
+        // replaces the list in place once it arrives.
+        if (this.items.length === 0) {
+          const cached = await localDb.cachedTasks
+            .where('owner_id')
+            .equals(this.ownerId)
+            .toArray()
+          if (cached.length > 0) {
+            this.items = cached
+            this.loading = false
+          }
+        }
         if (this.online) {
           const sequence = ++listSequence
           try {

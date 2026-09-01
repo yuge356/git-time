@@ -3488,7 +3488,9 @@ a {
   position: relative;
   width: 100%;
   min-width: 0;
-  height: clamp(360px, 56vh, 560px);
+  /* Fallback only: TasksView sets the real height from the measured tree so
+     the canvas is exactly as tall as the task tree it holds. */
+  height: 260px;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 0;
@@ -8704,7 +8706,6 @@ button.gantt-label:hover .gantt-label__title {
   }
 
   .task-mindmap {
-    height: clamp(320px, 62vh, 480px);
     margin: 0;
     padding: 0;
   }
@@ -9144,5 +9145,64 @@ button.gantt-label:hover .gantt-label__title {
 
   .template-outline__row {
     flex-wrap: wrap;
+  }
+}
+
+/* ---------- 任务“安排时间”分区 ---------- */
+
+.schedule-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.schedule-fieldset > .field-help {
+  margin: 0;
+}
+
+.schedule-option {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+.schedule-option__label {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.schedule-option > small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.date-range .field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.date-range > i {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-style: normal;
+}
+
+@media (width <= 640px) {
+  .date-range {
+    flex-wrap: wrap;
+  }
+
+  .date-range > i {
+    display: none;
   }
 }

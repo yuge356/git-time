@@ -257,6 +257,15 @@ export const useDailyPlanStore = defineStore('daily-plans', {
       }
       this.online = navigator.onLine
       try {
+        // Show the cached day first: a remote round trip takes far longer
+        // than an IndexedDB read, and the refresh below replaces it in place.
+        if (!this.plan) {
+          const cached = await readCachedDailyPlan(this.ownerId, targetDate)
+          if (cached) {
+            this.plan = cached
+            await this.buildLocalCheckIn()
+          }
+        }
         if (this.online) {
           try {
             this.pendingCount = await syncPendingChanges(this.ownerId)
@@ -278,23 +287,11 @@ export const useDailyPlanStore = defineStore('daily-plans', {
               await this.buildLocalCheckIn()
               return
             }
-            let serverPlan: DailyPlan
-            try {
-              serverPlan = await dailyPlanService.readByDate(targetDate)
-            } catch (error) {
-              if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error
-              serverPlan = await dailyPlanService.create(targetDate)
-            }
-            serverPlan = await this.repairMissingServerItems(serverPlan)
+            // One request does find-or-create, schedule fill-in and check-in.
+            const opened = await dailyPlanService.open(targetDate)
+            const serverPlan = await this.repairMissingServerItems(opened.plan)
             this.plan = await this.mergeServerPlan(serverPlan)
-            try {
-              const populated = await dailyPlanService.autoPopulate(this.plan.id)
-              this.plan = await this.mergeServerPlan(populated)
-            } catch (error) {
-              if (!isNetworkError(error)) throw error
-              this.online = false
-            }
-            this.checkIn = await dailyPlanService.checkIn(targetDate)
+            this.checkIn = opened.check_in
             return
           } catch {
             this.online = false

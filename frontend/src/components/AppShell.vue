@@ -97,11 +97,18 @@ const logoutError = ref('')
 
 onMounted(() => {
   const ownerId = auth.user?.profile.id
-  if (ownerId) {
+  if (!ownerId) return
+  // The notification badge is never what the user opened the app for, but its
+  // two requests used to compete with the page's own data for the small pool
+  // of parallel connections. Start it once the page has had its turn.
+  const start = (): void => {
     void notifications.initialize(ownerId).catch(() => {
       // The notification center can retry independently without blocking the page.
     })
   }
+  const idle = window.requestIdleCallback as typeof window.requestIdleCallback | undefined
+  if (idle) idle(start, { timeout: 3_000 })
+  else window.setTimeout(start, 1_200)
 })
 
 async function logout(): Promise<void> {
