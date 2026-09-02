@@ -10,7 +10,7 @@
         {{ timer.active.snapshot.status === 'RUNNING' ? '计时中' : '已暂停' }}
       </span>
       <strong>{{ activeTitle }}</strong>
-      <time>{{ formatTimer(timer.displaySeconds) }}</time>
+      <time>{{ formatTimer(timer.totalSeconds) }}</time>
       <span v-if="timer.targetNotice" class="active-timer-bar__notice">
         {{ timer.targetNotice }}
       </span>
@@ -39,6 +39,7 @@
         class="button button--finish button--small"
         type="button"
         :disabled="timer.busy"
+        title="停止计时并保留已记录的时长，稍后可以继续"
         @click="finishTimer"
       >
         结束
@@ -105,15 +106,16 @@ async function runTimerAction(action: () => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * Stop the session and keep the measured time without closing the task, the
+ * same as 结束计时 on the Today page. Completion is always an explicit act.
+ */
 async function finishTimer(): Promise<void> {
   const item = activePlanItem.value
-  const liveSeconds = timer.active?.snapshot.status === 'RUNNING'
-    ? Math.max(0, timer.displaySeconds - timer.active.snapshot.duration_seconds)
-    : 0
-  const actualSeconds = item ? item.actual_seconds + liveSeconds : 0
+  const actualSeconds = item ? timer.totalSeconds : 0
   await runTimerAction(async () => {
-    await timer.finish()
-    if (item) await daily.applyFinishedTimer(item.id, actualSeconds)
+    await timer.finish(false)
+    if (item) await daily.applyEndedTimer(item.id, actualSeconds)
   })
 }
 </script>

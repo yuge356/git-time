@@ -63,6 +63,7 @@ export async function saveActiveTimer(
   sessionId: string,
   snapshot: SessionSnapshot,
   targetSeconds: number | null = null,
+  baseSeconds: number | null = null,
 ): Promise<void> {
   const storedSnapshot = cloneForStorage(snapshot)
   await localDb.timerStates.put({
@@ -71,6 +72,7 @@ export async function saveActiveTimer(
     session_id: sessionId,
     snapshot: storedSnapshot,
     target_seconds: targetSeconds,
+    base_seconds: baseSeconds,
   })
 }
 

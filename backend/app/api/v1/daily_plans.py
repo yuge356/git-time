@@ -226,6 +226,21 @@ async def add_daily_plan_item(
                 await db.commit()
             response = await build_daily_plan_response(db, plan)
             return next(item for item in response.items if item.id == existing.id)
+    if linked_task is not None:
+        # A task belongs in a day once. The browser imports newly scheduled
+        # tasks at the same time as this plan's own schedule fill-in, so the
+        # two would otherwise race and list the task twice under 今日任务.
+        duplicate = await db.scalar(
+            select(DailyPlanItem).where(
+                DailyPlanItem.daily_plan_id == plan.id,
+                DailyPlanItem.owner_id == current_user.id,
+                DailyPlanItem.task_id == linked_task.id,
+                DailyPlanItem.deleted_at.is_(None),
+            )
+        )
+        if duplicate is not None:
+            response = await build_daily_plan_response(db, plan)
+            return next(item for item in response.items if item.id == duplicate.id)
     current_max = await db.scalar(
         select(func.max(DailyPlanItem.sort_order)).where(
             DailyPlanItem.daily_plan_id == plan.id,

@@ -23,7 +23,7 @@
 | 项目模板 | `DELETE /project-templates/{id}` | 软删除模板 |
 | 计时 | `GET /sessions` | 最近 Session |
 | 计时 | `GET /sessions/active` | 当前活动 Session |
-| 计时 | `PUT /sessions/{id}` | 幂等写入 Session 快照 |
+| 计时 | `PUT /sessions/{id}` | 幂等写入 Session 快照（`complete_daily_item` 决定结束计时是否同时完成任务） |
 | 每日计划 | `POST /daily-plans` | 创建/幂等读取日期计划 |
 | 每日计划 | `GET /daily-plans/by-date/{date}` | 日期计划 |
 | 每日计划 | `POST /daily-plans/open` | 一次完成“取得或创建当日计划 + 按排期补齐 + 打卡”，今日页加载只发一个请求 |
@@ -88,12 +88,23 @@ Session 按其开始时刻的资料时区半小时槽位归属，正在计时的
 `POST /daily-plans/{id}/auto-populate` 会把当日排期的可执行任务补进该日计划：命中重复规则、
 `due_date` 等于该日期，或该日期落在 `planned_start_date`~`planned_end_date` 之间的任务都会被加入。
 已完成的任务和含有子任务的容器任务不会被加入；计划项是当日快照，补齐操作只新增、不删除已有条目。
+一项任务在一天里只占一条计划项：补齐（以及 `open`）开始前会先合并同一任务的重复条目，保留有计时
+记录或已完成的那条，另一条被软删除；两条都有计时记录时都会保留，已记录的时长不会被丢弃。
+
+`POST /daily-plans/{id}/items` 对同一任务是幂等的：该日计划里已有引用同一 `task_id` 的条目时直接返回
+已有条目，而不是新建第二条。浏览器导入新排期的任务与服务端排期补齐可能同时发生，两者各自生成条目
+id，此前会让同一个任务在“今日任务”里出现两次。
 
 项目模板载荷为 `{ name, description, icon, preset_key, budget_mode, fixed_budget_seconds,
 default_estimated_seconds, default_repeat_rule, structure }`。`structure` 是嵌套的
 `[{ node_type: MODULE|TASK, title, estimated_seconds, children }]` 大纲，只描述蓝图、不创建任务行：
 模块只能位于项目下、最多三层嵌套、最多 200 个节点，节点类型不能是 `PROJECT`，违反时返回 422。
 创建项目时由前端按大纲逐级调用 `POST /tasks`，因此套用模板同样走离线队列。
+
+`PUT /sessions/{id}` 的 `complete_daily_item` 默认为 `true`。写入 `COMPLETED` 且该值为 `false` 时，
+计划项不会被标记完成，只从“进行中”回到“已暂停”：结束计时不等于完成任务，之后还能再次开始并继续累计。
+计划项的 `actual_seconds` 始终是该条目全部 Session 时长之和，只统计在本软件中实际计时的时间，直接
+标记完成不会补记任何时长。
 
 Supabase Auth 的客户端调用为 `signUp({ email, password, options.data })`、`signInWithPassword(...)`、
 `updateUser({ data })` 和 `signOut()`；注册元数据中的 `onboarding_completed=false` 标记新账号需要首次使用

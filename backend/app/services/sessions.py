@@ -59,8 +59,14 @@ def sync_daily_item_status(
         mark_item_status(daily_item, DailyPlanItemStatus.IN_PROGRESS)
     elif session_status == SessionStatus.PAUSED:
         mark_item_status(daily_item, DailyPlanItemStatus.PAUSED)
-    elif session_status == SessionStatus.COMPLETED and complete_on_finish:
-        complete_daily_item(daily_item)
+    elif session_status == SessionStatus.COMPLETED:
+        if complete_on_finish:
+            complete_daily_item(daily_item)
+        elif daily_item.status == DailyPlanItemStatus.IN_PROGRESS:
+            # Ending a timer is not finishing the task. The item stops running
+            # but stays open, so a task ended before its planned time is used
+            # up can be started again and keep its recorded seconds.
+            mark_item_status(daily_item, DailyPlanItemStatus.PAUSED)
 
 
 def validate_transition(current: SessionStatus, incoming: SessionStatus) -> None:

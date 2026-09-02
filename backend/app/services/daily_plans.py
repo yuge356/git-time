@@ -342,6 +342,79 @@ def task_scheduled_on_date(
     return (start or target_date) <= target_date <= (end or target_date)
 
 
+async def dedupe_plan_task_items(db: AsyncSession, plan: DailyPlan) -> None:
+    """Collapse repeated items that reference the same task in one day.
+
+    A day holds one item per task. Two clients filling the same day in at the
+    same moment — the browser importing a newly scheduled task while this
+    request auto-populates it — each allocate their own item id, which used to
+    leave the task listed twice under 今日任务 forever. Keep the row that owns
+    the timed history and retire the untouched twin.
+    """
+
+    items = list(
+        (
+            await db.scalars(
+                select(DailyPlanItem)
+                .where(
+                    DailyPlanItem.daily_plan_id == plan.id,
+                    DailyPlanItem.owner_id == plan.owner_id,
+                    DailyPlanItem.task_id.is_not(None),
+                    DailyPlanItem.deleted_at.is_(None),
+                )
+                .order_by(
+                    DailyPlanItem.sort_order,
+                    DailyPlanItem.created_at,
+                    DailyPlanItem.id,
+                )
+            )
+        ).all()
+    )
+    by_task: dict[UUID, list[DailyPlanItem]] = {}
+    for item in items:
+        by_task.setdefault(item.task_id, []).append(item)
+    duplicates = {
+        task_id: group for task_id, group in by_task.items() if len(group) > 1
+    }
+    if not duplicates:
+        return
+
+    timed_item_ids = set(
+        (
+            await db.scalars(
+                select(Session.daily_plan_item_id).where(
+                    Session.owner_id == plan.owner_id,
+                    Session.daily_plan_item_id.in_(
+                        [item.id for group in duplicates.values() for item in group]
+                    ),
+                    Session.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    )
+    now = datetime.now(UTC)
+    for group in duplicates.values():
+        # Whichever twin carries timing or completion is the one the user has
+        # actually worked with. Otherwise the one listed first in the day wins,
+        # broken by id so every client collapses the pair the same way.
+        group.sort(
+            key=lambda item: (
+                item.id not in timed_item_ids,
+                item.status != DailyPlanItemStatus.DONE,
+                item.sort_order,
+                item.created_at,
+                str(item.id),
+            )
+        )
+        for extra in group[1:]:
+            # Never discard a row that holds recorded time or a completion:
+            # its history belongs to this day even when it is a duplicate.
+            if extra.id in timed_item_ids or extra.status == DailyPlanItemStatus.DONE:
+                continue
+            extra.deleted_at = now
+    await db.flush()
+
+
 async def auto_populate_scheduled_items(
     db: AsyncSession,
     owner_id: UUID,
@@ -355,6 +428,7 @@ async def auto_populate_scheduled_items(
     """
 
     plan = await get_owned_daily_plan(db, owner_id, plan_id)
+    await dedupe_plan_task_items(db, plan)
 
     task_result = await db.scalars(
         select(Task)

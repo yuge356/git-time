@@ -26,6 +26,14 @@ export interface LocalTimerState {
   session_id: string
   snapshot: SessionSnapshot
   target_seconds: number | null
+  /**
+   * Seconds the timed daily item had already accumulated when this session
+   * started. The timer displays `base_seconds + session duration`, so ending
+   * a task early and starting it again continues from where it stopped
+   * instead of restarting at zero. `null` marks a session restored from the
+   * server, whose baseline is adopted from the daily item on first render.
+   */
+  base_seconds: number | null
 }
 
 export interface SessionOutboxItem {

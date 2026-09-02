@@ -41,22 +41,43 @@ async def use_local_auth_in_tests() -> AsyncIterator[None]:
 
 
 @pytest_asyncio.fixture
-async def client() -> AsyncIterator[AsyncClient]:
-    """Run API tests against a fresh SQLite database.
-
-    PostgreSQL-specific RLS is defined and reviewed in the Alembic migration;
-    API behavior uses SQLite here so the fast test suite has no external service.
-    """
+async def database() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Create one fresh SQLite database and return its session factory."""
 
     test_engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
-
     async with test_engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+    try:
+        yield async_sessionmaker(test_engine, expire_on_commit=False)
+    finally:
+        await test_engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session(
+    database: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
+    """Open a session on the API's database, for staging rows no endpoint writes."""
+
+    async with database() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
+async def client(
+    database: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncClient]:
+    """Run API tests against a fresh SQLite database.
+
+    PostgreSQL-specific RLS is defined and reviewed in the Alembic migration;
+    API behavior uses SQLite here so the fast test suite has no external service.
+    """
+
+    session_factory = database
 
     async def override_session() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
@@ -76,4 +97,3 @@ async def client() -> AsyncIterator[AsyncClient]:
         yield test_client
 
     app.dependency_overrides.clear()
-    await test_engine.dispose()

@@ -515,3 +515,142 @@ async def test_completed_project_session_survives_later_children(
 
     assert response.status_code == 200
     assert response.json()["task_id"] == project["id"]
+
+
+async def test_ending_a_timer_early_keeps_the_task_open_and_accumulates_time(
+    client: AsyncClient,
+) -> None:
+    """Stopping before the planned time is up leaves the task startable.
+
+    The second session continues the task's own clock: only time this app
+    measured is recorded, and the item's total is the sum of both sessions.
+    """
+
+    token, _ = await register_user(client, "resume_after_early_end")
+    task_id = await create_task(client, token, "提前结束的任务")
+    plan = await client.post(
+        "/api/v1/daily-plans",
+        headers=auth_header(token),
+        json={"plan_date": profile_today().isoformat()},
+    )
+    assert plan.status_code == 201
+    plan_id = plan.json()["id"]
+    item = await client.post(
+        f"/api/v1/daily-plans/{plan_id}/items",
+        headers=auth_header(token),
+        json={"task_id": task_id, "estimated_seconds": 3_600},
+    )
+    assert item.status_code == 201
+    item_id = item.json()["id"]
+
+    async def run_session(
+        start: datetime,
+        seconds: int,
+        *,
+        complete: bool,
+    ) -> None:
+        session_id = str(uuid4())
+        client_id = str(uuid4())
+        running = snapshot(
+            task_id,
+            client_id,
+            "RUNNING",
+            start,
+            start,
+            0,
+            last_resumed_at=start,
+        )
+        running["daily_plan_item_id"] = item_id
+        assert (
+            await client.put(
+                f"/api/v1/sessions/{session_id}",
+                headers=auth_header(token),
+                json=running,
+            )
+        ).status_code == 200
+        ended_at = start + timedelta(seconds=seconds)
+        completed = snapshot(
+            task_id,
+            client_id,
+            "COMPLETED",
+            start,
+            ended_at,
+            seconds,
+            ended_at=ended_at,
+        )
+        completed.update(
+            {"daily_plan_item_id": item_id, "complete_daily_item": complete}
+        )
+        assert (
+            await client.put(
+                f"/api/v1/sessions/{session_id}",
+                headers=auth_header(token),
+                json=completed,
+            )
+        ).status_code == 200
+
+    started = datetime.now(UTC) - timedelta(hours=1)
+    await run_session(started, 600, complete=False)
+
+    stopped = await client.get(
+        f"/api/v1/daily-plans/by-date/{profile_today().isoformat()}",
+        headers=auth_header(token),
+    )
+    assert stopped.status_code == 200
+    stopped_item = next(
+        entry for entry in stopped.json()["items"] if entry["id"] == item_id
+    )
+    assert stopped_item["status"] == "PAUSED"
+    assert stopped_item["completed_at"] is None
+    assert stopped_item["actual_seconds"] == 600
+
+    # Starting the task again picks up where it stopped rather than replacing
+    # the recorded time.
+    await run_session(started + timedelta(minutes=20), 300, complete=True)
+
+    finished = await client.get(
+        f"/api/v1/daily-plans/by-date/{profile_today().isoformat()}",
+        headers=auth_header(token),
+    )
+    finished_item = next(
+        entry for entry in finished.json()["items"] if entry["id"] == item_id
+    )
+    assert finished_item["status"] == "DONE"
+    assert finished_item["actual_seconds"] == 900
+
+    task = await client.get(f"/api/v1/tasks/{task_id}", headers=auth_header(token))
+    assert task.status_code == 200
+    assert task.json()["actual_seconds"] == 900
+
+
+async def test_a_task_completed_without_a_timer_records_no_time(
+    client: AsyncClient,
+) -> None:
+    """Marking a task done directly is allowed and adds no unmeasured time."""
+
+    token, _ = await register_user(client, "complete_without_timer")
+    task_id = await create_task(client, token, "直接标记完成")
+    plan = await client.post(
+        "/api/v1/daily-plans",
+        headers=auth_header(token),
+        json={"plan_date": profile_today().isoformat()},
+    )
+    assert plan.status_code == 201
+    item = await client.post(
+        f"/api/v1/daily-plans/{plan.json()['id']}/items",
+        headers=auth_header(token),
+        json={"task_id": task_id, "estimated_seconds": 3_600},
+    )
+    assert item.status_code == 201
+
+    done = await client.patch(
+        f"/api/v1/daily-plan-items/{item.json()['id']}",
+        headers=auth_header(token),
+        json={"status": "DONE"},
+    )
+    assert done.status_code == 200
+    assert done.json()["status"] == "DONE"
+    assert done.json()["actual_seconds"] == 0
+
+    task = await client.get(f"/api/v1/tasks/{task_id}", headers=auth_header(token))
+    assert task.json()["actual_seconds"] == 0

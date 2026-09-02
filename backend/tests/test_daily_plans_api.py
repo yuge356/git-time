@@ -1,10 +1,12 @@
 """Daily planning, ad-hoc timer and check-in API tests."""
 
 from datetime import UTC, date, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.daily_plan import DailyPlanItem
 from tests.conftest import profile_today
 from tests.test_sessions_api import create_task
 from tests.test_tasks_api import auth_header, create_structured_task, register_user
@@ -478,3 +480,103 @@ async def test_auto_populate_skips_tasks_that_own_subtasks(client: AsyncClient) 
     assert [item["task_id"] for item in populated.json()["items"]] == [
         subtask.json()["id"]
     ]
+
+
+async def test_scheduled_task_enters_the_day_only_once(client: AsyncClient) -> None:
+    """A client import of an already auto-populated task reuses its item."""
+
+    token, _ = await register_user(client, "one_item_per_task")
+    _, _, task = await create_structured_task(client, token, "只出现一次")
+    today = profile_today()
+    assert (
+        await client.patch(
+            f"/api/v1/tasks/{task['id']}",
+            headers=auth_header(token),
+            json={"due_date": today.isoformat()},
+        )
+    ).status_code == 200
+
+    opened = await client.post(
+        "/api/v1/daily-plans/open",
+        headers=auth_header(token),
+        json={"plan_date": today.isoformat()},
+    )
+    assert opened.status_code == 200
+    plan = opened.json()["plan"]
+    auto_item_id = next(
+        item["id"] for item in plan["items"] if item["task_id"] == task["id"]
+    )
+
+    # The browser imports newly scheduled tasks with an id of its own. That
+    # write must land on the existing item instead of listing the task twice.
+    imported = await client.post(
+        f"/api/v1/daily-plans/{plan['id']}/items",
+        headers=auth_header(token),
+        json={
+            "id": str(uuid4()),
+            "task_id": task["id"],
+            "title": "只出现一次",
+            "estimated_seconds": 1_800,
+        },
+    )
+    assert imported.status_code == 201
+    assert imported.json()["id"] == auto_item_id
+
+    reopened = await client.post(
+        "/api/v1/daily-plans/open",
+        headers=auth_header(token),
+        json={"plan_date": today.isoformat()},
+    )
+    assert reopened.status_code == 200
+    items = [
+        item
+        for item in reopened.json()["plan"]["items"]
+        if item["task_id"] == task["id"]
+    ]
+    assert [item["id"] for item in items] == [auto_item_id]
+
+
+async def test_opening_a_day_collapses_duplicate_task_items(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Duplicates left by earlier releases disappear, keeping the timed one."""
+
+    token, _ = await register_user(client, "collapse_duplicates")
+    _, _, task = await create_structured_task(client, token, "重复条目")
+    today = profile_today()
+    plan = await create_plan(client, token, today)
+    kept = await add_item(client, token, plan["id"], task_id=task["id"])
+
+    # Stage the duplicate the old race produced: the same task, a second id.
+    stray_id = uuid4()
+    db_session.add(
+        DailyPlanItem(
+            id=stray_id,
+            daily_plan_id=UUID(plan["id"]),
+            owner_id=UUID(kept["owner_id"]),
+            task_id=UUID(task["id"]),
+            title="重复条目",
+            estimated_seconds=1_800,
+            sort_order=9,
+            created_at=datetime.fromisoformat(kept["created_at"]),
+        )
+    )
+    await db_session.commit()
+
+    before = await client.get(
+        f"/api/v1/daily-plans/by-date/{today.isoformat()}",
+        headers=auth_header(token),
+    )
+    assert {item["id"] for item in before.json()["items"]} == {
+        kept["id"],
+        str(stray_id),
+    }
+
+    opened = await client.post(
+        "/api/v1/daily-plans/open",
+        headers=auth_header(token),
+        json={"plan_date": today.isoformat()},
+    )
+    assert opened.status_code == 200
+    assert [item["id"] for item in opened.json()["plan"]["items"]] == [kept["id"]]

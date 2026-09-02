@@ -28,16 +28,30 @@ function isNonExecutableTaskConflict(error: unknown): boolean {
   )
 }
 
-async function replaceCachedDailyItem(item: DailyPlanItem): Promise<void> {
+/**
+ * Write the server's version of one daily item back into the cached plan.
+ * `localId` names the row the request was made for: the server answers a
+ * create for an already-scheduled task with the item it kept, so the local
+ * row is replaced by that one rather than lingering as a second entry.
+ */
+async function replaceCachedDailyItem(
+  item: DailyPlanItem,
+  localId: string = item.id,
+): Promise<void> {
   const plans = await localDb.cachedDailyPlans
     .where('owner_id')
     .equals(item.owner_id)
     .toArray()
   const plan = plans.find((candidate) =>
-    candidate.items.some((existing) => existing.id === item.id),
+    candidate.items.some((existing) => existing.id === localId),
   )
   if (!plan) return
-  const items = plan.items.map((existing) => (existing.id === item.id ? item : existing))
+  const alreadyPresent = localId !== item.id
+    && plan.items.some((existing) => existing.id === item.id)
+  const items = plan.items.flatMap((existing) => {
+    if (existing.id !== localId) return [existing]
+    return alreadyPresent ? [] : [item]
+  })
   await saveCachedDailyPlan(recalculatePlan({ ...plan, items }))
 }
 
@@ -135,7 +149,7 @@ async function replayOperation(operation: SyncOperation): Promise<void> {
       )
       data = response.data
     }
-    await replaceCachedDailyItem(data)
+    await replaceCachedDailyItem(data, operation.entity_id)
   } else if (operation.action === 'update') {
     const body = { ...operation.payload }
     delete body.daily_plan_id

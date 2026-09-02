@@ -47,7 +47,7 @@
 
           <div class="focus-timer__body">
             <time class="focus-timer__display" aria-live="polite">
-              {{ timer.active ? formatTimer(timer.displaySeconds) : '00:00:00' }}
+              {{ timer.active ? formatTimer(timer.totalSeconds) : formatTimer(pendingStartSeconds) }}
             </time>
             <p v-if="timerTargetItem">
               已投入 {{ formatDuration(displayActual(timerTargetItem)) }}
@@ -82,8 +82,23 @@
               >
                 继续
               </button>
-              <button class="button button--finish" type="button" :disabled="timer.busy" @click="finish">
+              <button
+                class="button button--finish"
+                type="button"
+                :disabled="timer.busy"
+                title="停止计时并保留已记录的时长，稍后可以继续"
+                @click="stopTiming"
+              >
                 结束计时
+              </button>
+              <button
+                class="button button--quiet"
+                type="button"
+                :disabled="timer.busy"
+                title="结束计时并把任务标记为已完成"
+                @click="completeActive"
+              >
+                完成任务
               </button>
             </template>
             <button
@@ -93,7 +108,7 @@
               :disabled="!selectedTimerItem || timer.busy"
               @click="startSelectedItem"
             >
-              {{ selectedTimerItem ? '开始计时' : '请先选择任务' }}
+              {{ selectedTimerItem ? (pendingStartSeconds > 0 ? '继续计时' : '开始计时') : '请先选择任务' }}
             </button>
           </div>
         </section>
@@ -134,7 +149,7 @@
                 :class="{ 'daily-check--done': item.status === 'DONE' }"
                 type="button"
                 :aria-label="item.status === 'DONE' ? `将${item.title}标为未完成` : `完成${item.title}`"
-                :disabled="daily.saving || isTiming(item)"
+                :disabled="daily.saving || timer.busy"
                 @click="toggleDone(item)"
               >
                 {{ item.status === 'DONE' ? '✓' : '' }}
@@ -157,7 +172,7 @@
               </button>
 
               <div class="daily-item-usage">
-                <strong>{{ isTiming(item) ? formatTimer(timer.displaySeconds) : formatDuration(displayActual(item)) }}</strong>
+                <strong>{{ isTiming(item) ? formatTimer(timer.totalSeconds) : formatDuration(displayActual(item)) }}</strong>
                 <span v-if="isOverrun(item)" class="daily-overrun">⚠ 已超时 {{ formatDuration(overrunSeconds(item)) }}</span>
                 <span v-else>{{ progressPercent(item) }}% 用时</span>
               </div>
@@ -182,7 +197,13 @@
                   >
                     继续
                   </button>
-                  <button class="button button--finish button--small" type="button" :disabled="timer.busy" @click="finish">
+                  <button
+                    class="button button--finish button--small"
+                    type="button"
+                    :disabled="timer.busy"
+                    title="停止计时并保留已记录的时长，稍后可以继续"
+                    @click="stopTiming"
+                  >
                     结束
                   </button>
                 </template>
@@ -546,7 +567,7 @@ const distributionHours = computed(() => {
   return Array.from({ length: 24 }, (_, hour) => {
     const recorded = base.find((point) => point.hour === hour)?.seconds ?? 0
     const seconds = hour === currentHour.value && focusDate.value === todayDate.value
-      ? recorded + liveTimerExtra.value
+      ? recorded + activeItemLiveDelta.value
       : recorded
     return {
       hour,
@@ -696,17 +717,29 @@ const orderedDailyItems = computed(() => {
 })
 /**
  * Seconds accrued by the running timer since the last server-persisted
- * snapshot. Added on top of server-known values so learning time, budget
- * remaining and the daily list all tick live while timing. Completed timer
- * actions update the local snapshot immediately and synchronize separately.
+ * snapshot. Used for a timer with no daily item behind it, where there is no
+ * accumulated item total to compare against.
  */
 const liveTimerExtra = computed(() => {
   if (!timer.active || timer.active.snapshot.status !== 'RUNNING') return 0
   return Math.max(0, timer.displaySeconds - timer.active.snapshot.duration_seconds)
 })
 
+/**
+ * How far the timer face has run ahead of the timed item's last known total.
+ * Both the check-in and the item totals count the running session, so this
+ * difference — and not the raw session duration — is what the day's figures
+ * still owe the clock. It falls back to zero as soon as a refresh catches up.
+ */
+const activeItemLiveDelta = computed(() => {
+  if (!timer.active) return 0
+  const item = activeTimerItem.value
+  if (!item) return liveTimerExtra.value
+  return Math.max(0, timer.totalSeconds - item.actual_seconds)
+})
+
 const displayLearningSeconds = computed(
-  () => (daily.checkIn?.learning_seconds ?? 0) + liveTimerExtra.value,
+  () => (daily.checkIn?.learning_seconds ?? 0) + activeItemLiveDelta.value,
 )
 const selectedTimerItem = computed(() =>
   daily.plan?.items.find((item) => item.id === selectedItemId.value && item.status !== 'DONE'),
@@ -727,9 +760,18 @@ const timerTargetTitle = computed(() => {
   return '选择一个今日任务'
 })
 const timerStateLabel = computed(() => {
-  if (!timer.active) return '等待开始'
-  return timer.active.snapshot.status === 'RUNNING' ? '计时中' : '已暂停'
+  if (timer.active) {
+    return timer.active.snapshot.status === 'RUNNING' ? '计时中' : '已暂停'
+  }
+  // The idle face already shows the selected task's accumulated time, so say
+  // which of the two it is rather than always reading "等待开始" above 00:25:00.
+  return pendingStartSeconds.value > 0 ? '可继续' : '等待开始'
 })
+/**
+ * What the idle face shows: the selected task's accumulated time, which is
+ * also the point a new session continues from.
+ */
+const pendingStartSeconds = computed(() => selectedTimerItem.value?.actual_seconds ?? 0)
 const timerRemainingSeconds = computed(() => {
   const item = timerTargetItem.value
   if (!item || item.estimated_seconds <= 0) return 0
@@ -1025,6 +1067,7 @@ onMounted(async () => {
       errorMessage.value = getApiErrorMessage((failure as PromiseRejectedResult).reason)
     }
     await restoreMissingActiveItem()
+    await adoptTimerBaseline()
     await daily.syncProjectTasks()
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error)
@@ -1078,13 +1121,14 @@ onActivated(() => {
   })
 })
 
-function liveExtra(item: DailyPlanItem): number {
-  if (!isTiming(item)) return 0
-  return liveTimerExtra.value
-}
-
+/**
+ * Time invested in one daily item today. The timed item reads straight off
+ * the timer face, so the focus panel, this row and the floating bar can never
+ * drift apart — and a server refresh mid-session cannot double-count the
+ * seconds the running session has already contributed.
+ */
 function displayActual(item: DailyPlanItem): number {
-  return item.actual_seconds + liveExtra(item)
+  return isTiming(item) ? timer.totalSeconds : item.actual_seconds
 }
 
 async function restoreMissingActiveItem(): Promise<void> {
@@ -1110,6 +1154,17 @@ async function restoreMissingActiveItem(): Promise<void> {
     title: task ? projectPrefixedTaskTitle(task, tasks.items) : '进行中的临时事项',
     estimated_seconds: task?.estimated_seconds ?? timer.targetSeconds ?? 0,
   })
+}
+
+/**
+ * A session restored from the server (or from another device) carries no
+ * local baseline. Hand it the item's accumulated time once the plan is
+ * loaded so the face keeps showing the task's whole clock.
+ */
+async function adoptTimerBaseline(): Promise<void> {
+  const item = activeTimerItem.value
+  if (!item) return
+  await timer.adoptBaseSeconds(item.actual_seconds)
 }
 
 function isTiming(item: DailyPlanItem): boolean {
@@ -1139,6 +1194,7 @@ function statusLabel(item: DailyPlanItem): string {
   if (isTiming(item)) {
     return timer.active?.snapshot.status === 'RUNNING' ? '正在专注' : '计时已暂停'
   }
+  if (item.actual_seconds > 0) return '已计时，未完成'
   if (item.status === 'IN_PROGRESS') return '进行中'
   if (item.status === 'PAUSED') return '已暂停'
   return '待开始'
@@ -1157,7 +1213,7 @@ function startItemLabel(item: DailyPlanItem): string {
   if (item.status === 'DONE') return '已完成'
   if (timer.active?.snapshot.status === 'PAUSED') return '切换并开始'
   if (timer.active?.snapshot.status === 'RUNNING') return '请先暂停'
-  return '开始'
+  return item.actual_seconds > 0 ? '继续' : '开始'
 }
 
 function startItemTitle(item: DailyPlanItem): string {
@@ -1167,7 +1223,9 @@ function startItemTitle(item: DailyPlanItem): string {
     return '保存当前已暂停的计时，然后开始该任务'
   }
   if (timer.active?.snapshot.status === 'RUNNING') return '请先暂停当前计时'
-  return '开始该任务的计时'
+  return item.actual_seconds > 0
+    ? `从已计时的 ${formatDuration(item.actual_seconds)} 继续`
+    : '开始该任务的计时'
 }
 
 async function runAction(action: () => Promise<void>): Promise<void> {
@@ -1203,8 +1261,18 @@ async function addItem(): Promise<void> {
   })
 }
 
+/**
+ * Marking a task done never needs a timer: the statistics only ever count
+ * time this app measured, so completing a task simply closes it with
+ * whatever was timed. A task being timed right now is stopped first, so its
+ * measured seconds are recorded before the task closes.
+ */
 async function toggleDone(item: DailyPlanItem): Promise<void> {
   const newStatus = item.status === 'DONE' ? 'TODO' : 'DONE'
+  if (newStatus === 'DONE' && isTiming(item)) {
+    await completeActive()
+    return
+  }
   await runAction(async () => {
     await daily.updateItem(item.id, {
       status: newStatus,
@@ -1222,15 +1290,20 @@ async function startItem(item: DailyPlanItem): Promise<void> {
   const previousItem = activeTimerItem.value
   const previousActualSeconds = previousItem ? displayActual(previousItem) : 0
   await runTimerAction(async () => {
-    const remaining = item.estimated_seconds - item.actual_seconds
-    const remainingSeconds = item.estimated_seconds > 0 && remaining > 0
-      ? remaining
-      : null
+    const targetSeconds = item.estimated_seconds > 0 ? item.estimated_seconds : null
     const executableTaskId = tasks.items.some((task) => task.id === item.task_id)
       ? item.task_id
       : null
-    await timer.start(executableTaskId, item.id, remainingSeconds)
-    if (previousItem && previousItem.id !== item.id) {
+    // The new session continues the task's own clock: everything it has
+    // already accumulated today is the baseline the face counts up from, so
+    // a task ended early resumes at the point it stopped. Restarting the item
+    // a paused timer already sat on keeps that timer's reading too, which the
+    // item total has not necessarily been given yet.
+    const baseSeconds = previousItem?.id === item.id
+      ? Math.max(item.actual_seconds, previousActualSeconds)
+      : item.actual_seconds
+    await timer.start(executableTaskId, item.id, targetSeconds, baseSeconds)
+    if (previousItem) {
       await daily.applyStoppedTimer(previousItem.id, previousActualSeconds)
     }
     if (item.status !== 'IN_PROGRESS') {
@@ -1246,23 +1319,36 @@ async function startSelectedItem(): Promise<void> {
 
 async function pause(): Promise<void> {
   const item = activeTimerItem.value
-  const actualSeconds = item ? displayActual(item) : 0
   await runTimerAction(async () => {
     await timer.pause()
-    if (item) await daily.applyStoppedTimer(item.id, actualSeconds)
+    // Read the face after the pause: it now holds the session's final second.
+    if (item) await daily.applyStoppedTimer(item.id, displayActual(item))
   })
-  if (calendarMonth.value === todayDate.value.slice(0, 7)) {
-    await loadCalendarMonth()
-  }
-  void loadHourlyFocus()
-  void loadTaskGantt()
+  refreshTimeCharts()
 }
 
 async function resume(): Promise<void> {
   await runTimerAction(() => timer.resume())
 }
 
-async function finish(): Promise<void> {
+/**
+ * End the session without closing the task. The measured time is kept and
+ * the item stays startable, so a task stopped before its planned time is
+ * used up can be picked up again later and keep counting from there.
+ */
+async function stopTiming(): Promise<void> {
+  const item = activeTimerItem.value
+  const actualSeconds = item ? displayActual(item) : 0
+  await runAction(async () => {
+    await timer.finish(false)
+    daily.setActiveItem(null)
+    if (item) await daily.applyEndedTimer(item.id, actualSeconds)
+  })
+  refreshTimeCharts()
+}
+
+/** End the session and mark the task complete in one step. */
+async function completeActive(): Promise<void> {
   const item = activeTimerItem.value
   const actualSeconds = item ? displayActual(item) : 0
   await runAction(async () => {
@@ -1275,7 +1361,11 @@ async function finish(): Promise<void> {
       }
     }
   })
-  // 刷新全部在后台进行：本地状态已更新，UI 立即回到可操作状态。
+  refreshTimeCharts()
+}
+
+// 刷新全部在后台进行：本地状态已更新，UI 立即回到可操作状态。
+function refreshTimeCharts(): void {
   if (calendarMonth.value === todayDate.value.slice(0, 7)) {
     void loadCalendarMonth()
   }

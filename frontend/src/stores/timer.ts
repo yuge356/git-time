@@ -23,6 +23,7 @@ interface TimerState {
   active: LocalTimerState | null
   history: StudySession[]
   displaySeconds: number
+  baseSeconds: number | null
   targetSeconds: number | null
   pendingCount: number
   initialized: boolean
@@ -44,6 +45,7 @@ interface PendingExitPause {
   owner_id: string
   session_id: string
   target_seconds: number | null
+  base_seconds: number | null
   snapshot: SessionSnapshot
 }
 
@@ -182,6 +184,7 @@ async function restorePendingExitPause(ownerId: string): Promise<void> {
     pending.session_id,
     pending.snapshot,
     pending.target_seconds,
+    pending.base_seconds ?? null,
   )
   await enqueueSessionSnapshot(ownerId, pending.session_id, pending.snapshot)
   clearPendingExitPause(ownerId)
@@ -240,6 +243,7 @@ async function recoverInterruptedRunningTimer(
     timerState.session_id,
     snapshot,
     timerState.target_seconds,
+    timerState.base_seconds ?? null,
   )
   await enqueueSessionSnapshot(ownerId, timerState.session_id, snapshot)
   clearTimerHeartbeat(ownerId)
@@ -310,6 +314,7 @@ export const useTimerStore = defineStore('timer', {
     active: null,
     history: [],
     displaySeconds: 0,
+    baseSeconds: null,
     targetSeconds: null,
     pendingCount: 0,
     initialized: false,
@@ -326,6 +331,19 @@ export const useTimerStore = defineStore('timer', {
     observedLocalDate: localDateString(),
     rolloverPausePending: false,
   }),
+
+  getters: {
+    /**
+     * Seconds shown on the timer face: everything the timed daily item has
+     * accumulated today, not just the current session. Ending a task early
+     * and starting it again therefore continues from the point it stopped,
+     * and the focus panel, the today list and the floating bar all read the
+     * same number.
+     */
+    totalSeconds(state): number {
+      return (state.baseSeconds ?? 0) + state.displaySeconds
+    },
+  },
 
   actions: {
     startTicker(): void {
@@ -348,6 +366,27 @@ export const useTimerStore = defineStore('timer', {
       }, 1_000)
     },
 
+    /**
+     * Give a restored session the accumulated time of its daily item. A
+     * session recovered from the server (or from a device whose local
+     * database was cleared) has no stored baseline, so the item's own total
+     * minus this session's contribution is the closest exact starting point.
+     */
+    async adoptBaseSeconds(itemActualSeconds: number): Promise<void> {
+      if (!this.ownerId || !this.active || this.baseSeconds !== null) return
+      const sessionSeconds = snapshotDuration(this.active.snapshot)
+      const base = Math.max(0, Math.round(itemActualSeconds) - sessionSeconds)
+      this.baseSeconds = base
+      this.active = { ...this.active, base_seconds: base }
+      await saveActiveTimer(
+        this.ownerId,
+        this.active.session_id,
+        this.active.snapshot,
+        this.targetSeconds,
+        base,
+      )
+    },
+
     async initialize(ownerId: string): Promise<void> {
       if (this.initialized && this.ownerId === ownerId) return
       this.ownerId = ownerId
@@ -358,6 +397,7 @@ export const useTimerStore = defineStore('timer', {
         ? await recoverInterruptedRunningTimer(ownerId, storedTimer)
         : null
       this.targetSeconds = this.active?.target_seconds ?? null
+      this.baseSeconds = this.active ? (this.active.base_seconds ?? null) : null
       this.history = []
       this.syncError = ''
       this.online = navigator.onLine
@@ -431,6 +471,8 @@ export const useTimerStore = defineStore('timer', {
                 owner_id: ownerId,
                 session_id: serverActive.id,
                 target_seconds: this.targetSeconds,
+                // Adopted from the daily item once the Today page knows it.
+                base_seconds: null,
                 snapshot: {
                   task_id: serverActive.task_id,
                   daily_plan_item_id: serverActive.daily_plan_item_id,
@@ -448,6 +490,7 @@ export const useTimerStore = defineStore('timer', {
                 this.active.session_id,
                 this.active.snapshot,
                 this.targetSeconds,
+                null,
               )
               this.displaySeconds = snapshotDuration(this.active.snapshot)
             }
@@ -478,7 +521,7 @@ export const useTimerStore = defineStore('timer', {
         !this.active ||
         this.active.snapshot.status !== 'RUNNING' ||
         !this.targetSeconds ||
-        this.displaySeconds < this.targetSeconds
+        this.totalSeconds < this.targetSeconds
       ) {
         return
       }
@@ -543,6 +586,7 @@ export const useTimerStore = defineStore('timer', {
                 item.session_id,
                 syncedSnapshot,
                 this.targetSeconds,
+                this.baseSeconds,
               )
             }
             await localDb.sessionOutbox.delete(item.session_id)
@@ -590,12 +634,14 @@ export const useTimerStore = defineStore('timer', {
           sessionId,
           snapshot,
           this.targetSeconds,
+          this.baseSeconds,
         )
         this.active = {
           id: this.ownerId,
           owner_id: this.ownerId,
           session_id: sessionId,
           target_seconds: this.targetSeconds,
+          base_seconds: this.baseSeconds,
           snapshot,
         }
         this.displaySeconds = snapshotDuration(snapshot)
@@ -603,6 +649,7 @@ export const useTimerStore = defineStore('timer', {
         await clearActiveTimer(this.ownerId)
         this.active = null
         this.displaySeconds = 0
+        this.baseSeconds = null
       }
       await enqueueSessionSnapshot(this.ownerId, sessionId, snapshot)
       this.pendingCount = await localDb.sessionOutbox
@@ -633,6 +680,7 @@ export const useTimerStore = defineStore('timer', {
             sessionId,
             syncedSnapshot,
             this.targetSeconds,
+            this.baseSeconds,
           )
         }
         await localDb.sessionOutbox.delete(sessionId)
@@ -672,10 +720,16 @@ export const useTimerStore = defineStore('timer', {
       this.maybeNotifyTargetReached()
     },
 
+    /**
+     * Begin a new session. `targetSeconds` is the item's whole planned time
+     * and `baseSeconds` the time it has already accumulated today, so a task
+     * that was ended early keeps counting from where it stopped.
+     */
     async start(
       taskId: string | null,
       dailyPlanItemId: string | null = null,
       targetSeconds: number | null = null,
+      baseSeconds = 0,
     ): Promise<void> {
       if (this.active?.snapshot.status === 'RUNNING') {
         throw new Error('请先暂停当前计时，再切换到其他任务。')
@@ -688,6 +742,7 @@ export const useTimerStore = defineStore('timer', {
       this.busy = true
       this.syncError = ''
       this.targetSeconds = targetSeconds && targetSeconds > 0 ? targetSeconds : null
+      this.baseSeconds = Math.max(0, Math.round(baseSeconds))
       const sessionId = crypto.randomUUID()
       this.targetNotice = ''
       this.notifiedSessionId = null
@@ -804,6 +859,7 @@ export const useTimerStore = defineStore('timer', {
         owner_id: ownerId,
         session_id: sessionId,
         target_seconds: this.targetSeconds,
+        base_seconds: this.baseSeconds,
         snapshot,
       }
 
@@ -872,6 +928,7 @@ export const useTimerStore = defineStore('timer', {
         if (this.ownerId) clearTimerHeartbeat(this.ownerId)
         if (this.ownerId) clearTargetNoticeMarker(this.ownerId, sessionId)
         this.targetSeconds = null
+        this.baseSeconds = null
         this.targetNotice = ''
         this.notifiedSessionId = null
         this.completedRevision += 1
